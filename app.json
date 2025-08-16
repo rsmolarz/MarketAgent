@@ -1,0 +1,37 @@
+{
+  "name": "Market Inefficiency Detection Platform",
+  "description": "AI-powered platform for detecting market inefficiencies across crypto, equity, and macro markets",
+  "keywords": ["flask", "market", "ai", "agents", "trading", "inefficiencies"],
+  "website": "https://github.com/your-repo/market-inefficiency-platform",
+  "success_url": "/",
+  "env": {
+    "SESSION_SECRET": {
+      "description": "Secret key for Flask sessions",
+      "generator": "secret"
+    },
+    "DATABASE_URL": {
+      "description": "PostgreSQL database URL"
+    },
+    "COINBASE_API_KEY": {
+      "description": "Coinbase API key for market data"
+    },
+    "COINBASE_API_SECRET": {
+      "description": "Coinbase API secret"
+    },
+    "YAHOO_FINANCE_KEY": {
+      "description": "Yahoo Finance API key (optional)"
+    }
+  },
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "free"
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "stack": "heroku-22"
+}

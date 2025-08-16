@@ -80,6 +80,9 @@ def findings():
             db.session.rollback()
             logger.error(f"Error creating finding: {e}")
             return jsonify({'error': str(e)}), 500
+    
+    # Default return for unexpected method
+    return jsonify({'error': 'Method not allowed'}), 405
 
 @api_bp.route('/agents', methods=['GET'])
 def get_agents():
