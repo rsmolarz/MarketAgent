@@ -1,0 +1,40 @@
+modules = ["python-3.11"]
+
+[nix]
+
+[[ports]]
+localPort = 5000
+externalPort = 5000
+
+[[ports]]
+localPort = 8000
+externalPort = 80
+
+[deployment]
+deploymentTarget = "cloudrun"
+run = ["sh", "-c", "cd MarketInefficiencyPlatform_Web && python -m uvicorn ui.server:app --host 0.0.0.0 --port $PORT"]
+
+[workflows]
+runButton = "Run Web App"
+
+[[workflows.workflow]]
+name = "Run Web App"
+author = 41009479
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd MarketInefficiencyPlatform_Web && python -m uvicorn ui.server:app --host 0.0.0.0 --port 5000"
+
+[[workflows.workflow]]
+name = "Run Full App"
+author = 41009479
+mode = "parallel"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd MarketInefficiencyPlatform_Web && python -u main.py --agents all --mode realtime"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd MarketInefficiencyPlatform_Web && python -m uvicorn ui.server:app --host 0.0.0.0 --port $PORT"

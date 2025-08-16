@@ -1,0 +1,17 @@
+
+{
+  "MacroWatcherAgent": 60,
+  "AltDataSignalAgent": 15,
+  "CommoditiesWatcherAgent": 30,
+  "BondStressAgent": 60,
+  "RetailSentimentAgent": 30,
+  "EquityMomentumAgent": 45,
+  "ShortInterestSpikeAgent": 60,
+  "WhaleWalletWatcherAgent": 15,
+  "ETFFlowShiftAgent": 45,
+  "RegulatoryAlertAgent": 60,
+  "CorrelationBreakAgent": 30,
+  "SentimentDivergenceAgent": 20,
+  "CryptoFundingRateAgent": 15,
+  "SatelliteDataAgent": 60
+}
