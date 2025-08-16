@@ -1,6 +1,7 @@
 import os
 import logging
-from flask import Flask
+from datetime import datetime
+from flask import Flask, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import DeclarativeBase
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -66,11 +67,25 @@ def create_app():
             app.logger.error(f"Failed to initialize scheduler: {e}")
             # Continue without scheduler for basic health checks
     
-    # Add fallback health check route directly to app (in case blueprint fails)
+    # Add fallback health check routes directly to app (in case blueprint fails)
     @app.route('/healthz')
     def fallback_health():
         """Fallback health check endpoint"""
         return 'OK', 200
+    
+    @app.route('/ping')
+    def ping():
+        """Simple ping endpoint for basic connectivity check"""
+        return 'pong', 200
+    
+    @app.route('/status')
+    def status():
+        """Basic status endpoint"""
+        return jsonify({
+            'status': 'running',
+            'service': 'Market Inefficiency Detection Platform',
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
     
     return app
 

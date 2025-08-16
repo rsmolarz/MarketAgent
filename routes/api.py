@@ -8,6 +8,26 @@ import logging
 logger = logging.getLogger(__name__)
 api_bp = Blueprint('api', __name__)
 
+@api_bp.route('/health')
+def api_health():
+    """JSON health check endpoint for API"""
+    try:
+        # Test database connection
+        db.session.execute(db.text('SELECT 1'))
+        return jsonify({
+            'status': 'healthy', 
+            'timestamp': datetime.utcnow().isoformat(),
+            'service': 'Market Inefficiency Detection Platform API'
+        }), 200
+    except Exception as e:
+        logger.error(f"API health check failed: {e}")
+        return jsonify({
+            'status': 'unhealthy', 
+            'error': str(e),
+            'timestamp': datetime.utcnow().isoformat(),
+            'service': 'Market Inefficiency Detection Platform API'
+        }), 500
+
 @api_bp.route('/findings', methods=['GET', 'POST'])
 def findings():
     """Get or create findings"""
