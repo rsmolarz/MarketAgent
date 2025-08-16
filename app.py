@@ -67,25 +67,16 @@ def create_app():
             app.logger.error(f"Failed to initialize scheduler: {e}")
             # Continue without scheduler for basic health checks
     
-    # Critical health check routes - these must always work for deployment
+    # Ultra-fast health check routes - highest priority for deployment systems
     @app.route('/healthz')
     def fallback_health():
-        """Primary health check endpoint for deployment systems"""
+        """Primary health check endpoint for deployment systems - ultra fast"""
         return 'OK', 200
     
     @app.route('/ping')
     def ping():
         """Simple ping endpoint for basic connectivity check"""
         return 'pong', 200
-    
-    @app.route('/status')
-    def status():
-        """Basic status endpoint with minimal processing"""
-        return jsonify({
-            'status': 'running',
-            'service': 'Market Inefficiency Detection Platform',
-            'timestamp': datetime.utcnow().isoformat()
-        }), 200
     
     @app.route('/health')
     def health():
@@ -101,6 +92,15 @@ def create_app():
     def live():
         """Liveness probe for Kubernetes-style deployments"""
         return 'LIVE', 200
+    
+    @app.route('/status')
+    def status():
+        """Basic status endpoint with minimal processing"""
+        return jsonify({
+            'status': 'running',
+            'service': 'Market Inefficiency Detection Platform',
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
     
     return app
 
