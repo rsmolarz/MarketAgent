@@ -17,6 +17,7 @@ class AgentScheduler:
         self.scheduler = BackgroundScheduler()
         self.scheduler.start()
         self.active_jobs = {}
+        self.agents = {}  # Store loaded agent instances
         if app:
             self.init_app(app)
     
@@ -235,4 +236,19 @@ class AgentScheduler:
             
         except Exception as e:
             logger.error(f"Error running agent {agent_name} manually: {e}")
+            return False
+    
+    def _load_agent(self, agent_name: str) -> bool:
+        """Load an agent class and instantiate it"""
+        try:
+            agent_class = get_agent_class(agent_name)
+            if agent_class:
+                self.agents[agent_name] = agent_class()
+                logger.info(f"Loaded agent: {agent_name}")
+                return True
+            else:
+                logger.error(f"Agent class not found: {agent_name}")
+                return False
+        except Exception as e:
+            logger.error(f"Error loading agent {agent_name}: {e}")
             return False
