@@ -5,7 +5,10 @@ This file is imported by gunicorn to run the Flask application.
 
 import os
 import logging
-from app import app
+from app import create_app
+
+# Create Flask application instance
+app = create_app()
 
 # Configure logging for production
 if os.environ.get('DEPLOYMENT_ENV') == 'production':

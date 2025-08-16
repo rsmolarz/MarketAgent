@@ -77,6 +77,7 @@ def findings():
             return jsonify(finding.to_dict()), 201
             
         except Exception as e:
+            db.session.rollback()
             logger.error(f"Error creating finding: {e}")
             return jsonify({'error': str(e)}), 500
 

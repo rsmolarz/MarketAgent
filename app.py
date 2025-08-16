@@ -88,11 +88,11 @@ def create_app():
         
         # Web browser request - redirect to dashboard
         try:
-            from routes.dashboard import dashboard_bp
-            return dashboard_bp.view_functions['index']()
+            from flask import render_template
+            return render_template('dashboard.html')
         except Exception as e:
-            app.logger.error(f"Dashboard fallback failed: {e}")
-            return 'OK', 200  # Still return 200 for health checks
+            app.logger.error(f"Dashboard rendering failed: {e}")
+            return 'Application Running', 200  # Still return 200 for health checks
     
     # Additional health check endpoints for different deployment systems
     @app.route('/healthz')
