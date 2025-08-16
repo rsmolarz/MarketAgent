@@ -35,16 +35,25 @@ def create_app():
     db.init_app(app)
     
     with app.app_context():
-        # Import models to ensure tables are created
-        import models
-        db.create_all()
+        try:
+            # Import models to ensure tables are created
+            import models
+            db.create_all()
+            app.logger.info("Database tables created successfully")
+        except Exception as e:
+            app.logger.error(f"Database initialization failed: {e}")
+            # Continue without database for basic health checks
         
         # Register blueprints
-        from routes.dashboard import dashboard_bp
-        from routes.api import api_bp
-        
-        app.register_blueprint(dashboard_bp)
-        app.register_blueprint(api_bp, url_prefix='/api')
+        try:
+            from routes.dashboard import dashboard_bp
+            from routes.api import api_bp
+            
+            app.register_blueprint(dashboard_bp)
+            app.register_blueprint(api_bp, url_prefix='/api')
+            app.logger.info("Blueprints registered successfully")
+        except Exception as e:
+            app.logger.error(f"Blueprint registration failed: {e}")
         
         # Initialize scheduler
         try:
@@ -52,9 +61,16 @@ def create_app():
             scheduler = AgentScheduler(app)
             # Store scheduler as an application extension instead of direct attribute
             app.extensions['scheduler'] = scheduler
+            app.logger.info("Scheduler initialized successfully")
         except Exception as e:
             app.logger.error(f"Failed to initialize scheduler: {e}")
             # Continue without scheduler for basic health checks
+    
+    # Add fallback health check route directly to app (in case blueprint fails)
+    @app.route('/healthz')
+    def fallback_health():
+        """Fallback health check endpoint"""
+        return 'OK', 200
     
     return app
 

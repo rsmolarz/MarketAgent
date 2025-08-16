@@ -86,8 +86,11 @@ Preferred communication style: Simple, everyday language.
 ### Deployment Fixes (Aug 16, 2025)
 - ✅ Fixed duplicate health check endpoint conflicts causing startup failures
 - ✅ Implemented smart health check detection on root path (/) for deployment systems
-- ✅ Added dedicated API health check endpoint (/api/health) with database connectivity tests
-- ✅ Resolved scheduler initialization issues to prevent app startup failures
-- ✅ Enhanced health check logic to distinguish between deployment probes and web browsers
-- ✅ Application now starts successfully and responds to health checks with 200 status codes
+- ✅ Added dedicated health check endpoints: `/health`, `/healthz` (fallback), `/api/health` (JSON)
+- ✅ Enhanced health check detection for Google Cloud Run, AWS ALB, and Kubernetes probes
+- ✅ Resolved scheduler initialization issues with improved error handling
+- ✅ Added production-ready logging configuration in main.py
+- ✅ Implemented graceful degradation - app starts even if components fail
+- ✅ All health endpoints return 200 status codes as required by deployment systems
 - ✅ Maintained full web dashboard functionality for normal browser requests
+- ✅ Tested with deployment-style user agents (GoogleHC, Cloud-Run-Health-Check)

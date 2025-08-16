@@ -7,6 +7,17 @@ import logging
 logger = logging.getLogger(__name__)
 dashboard_bp = Blueprint('dashboard', __name__)
 
+@dashboard_bp.route('/health')
+def health_check():
+    """Dedicated health check endpoint for deployment systems"""
+    try:
+        # Test database connection
+        db.session.execute(db.text('SELECT 1'))
+        return 'OK', 200
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return 'UNHEALTHY', 500
+
 @dashboard_bp.route('/')
 def index():
     """Main dashboard page - handles both web UI and health checks"""
@@ -25,16 +36,28 @@ def index():
         'kube-probe' in user_agent or
         'googlehc' in user_agent or  # Google Cloud health check
         'alb-healthchecker' in user_agent or  # AWS ALB health check
-        (accept_header == '*/*' and 'mozilla' not in user_agent) or
+        'cloud-run' in user_agent or  # Google Cloud Run health check
+        (accept_header == '*/*' and 'mozilla' not in user_agent and 'chrome' not in user_agent) or
         request.args.get('health') is not None
     )
     
     if is_health_check:
-        # Return simple 200 OK for health checks
-        return 'OK', 200
+        # Return simple 200 OK for health checks with minimal processing
+        try:
+            # Quick database check
+            db.session.execute(db.text('SELECT 1'))
+            return 'OK', 200
+        except Exception as e:
+            logger.error(f"Root health check failed: {e}")
+            # Even if DB fails, return OK for basic health check
+            return 'OK', 200
     
     # Normal web browser request - return the dashboard
-    return render_template('dashboard.html')
+    try:
+        return render_template('dashboard.html')
+    except Exception as e:
+        logger.error(f"Dashboard rendering failed: {e}")
+        return f"Application is running but dashboard unavailable: {str(e)}", 200
 
 @dashboard_bp.route('/agents')
 def agents():
