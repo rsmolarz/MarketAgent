@@ -1,8 +1,9 @@
 """
-Binance API Client
+Coinbase API Client
 
-Provides access to Binance cryptocurrency exchange data including
-prices, funding rates, and other market data.
+Provides access to Coinbase cryptocurrency exchange data including
+prices and market data. Coinbase is widely available globally and 
+has excellent API reliability.
 """
 
 import ccxt
@@ -12,32 +13,31 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
-class BinanceClient:
+class CoinbaseClient:
     """
-    Client for Binance API data
+    Client for Coinbase API data
     """
     
     def __init__(self):
-        self.api_key = Config.BINANCE_API_KEY
-        self.secret = Config.BINANCE_SECRET
+        self.api_key = Config.COINBASE_API_KEY
+        self.secret = Config.COINBASE_SECRET
+        self.passphrase = Config.COINBASE_PASSPHRASE
         self.exchange = None
         self._initialize_client()
     
     def _initialize_client(self):
-        """Initialize Binance client"""
+        """Initialize Coinbase client"""
         try:
-            self.exchange = ccxt.binance({
+            self.exchange = ccxt.coinbasepro({
                 'apiKey': self.api_key,
                 'secret': self.secret,
+                'passphrase': self.passphrase,
                 'sandbox': False,
                 'enableRateLimit': True,
-                'options': {
-                    'defaultType': 'future',  # Use futures for funding rates
-                }
             })
             
         except Exception as e:
-            logger.error(f"Error initializing Binance client: {e}")
+            logger.error(f"Error initializing Coinbase client: {e}")
     
     def get_ticker(self, symbol: str) -> Optional[Dict]:
         """

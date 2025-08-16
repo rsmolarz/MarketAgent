@@ -218,3 +218,21 @@ class AgentScheduler:
         except Exception as e:
             logger.error(f"Error updating agent interval: {e}")
             return False
+    
+    def run_agent_immediately(self, agent_name: str) -> bool:
+        """Run an agent immediately (manually triggered)"""
+        try:
+            # Load agent if not already loaded
+            if agent_name not in self.agents:
+                if not self._load_agent(agent_name):
+                    logger.error(f"Failed to load agent {agent_name}")
+                    return False
+            
+            # Run the agent
+            self._run_agent(agent_name)
+            logger.info(f"Manual execution of agent {agent_name} completed")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error running agent {agent_name} manually: {e}")
+            return False

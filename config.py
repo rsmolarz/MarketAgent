@@ -3,8 +3,9 @@ from typing import Dict, Any
 
 class Config:
     # API Keys from environment
-    BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
-    BINANCE_SECRET = os.getenv("BINANCE_SECRET", "")
+    COINBASE_API_KEY = os.getenv("COINBASE_API_KEY", "")
+    COINBASE_SECRET = os.getenv("COINBASE_SECRET", "")
+    COINBASE_PASSPHRASE = os.getenv("COINBASE_PASSPHRASE", "")
     ETHERSCAN_API_KEY = os.getenv("ETHERSCAN_API_KEY", "")
     GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
@@ -41,7 +42,7 @@ class Config:
             },
             "ArbitrageFinder Agent": {
                 "interval": 5,
-                "exchanges": ["binance", "coinbase", "kraken"],
+                "exchanges": ["coinbase", "kraken", "kucoin"],
                 "min_profit": cls.ARBITRAGE_PROFIT_THRESHOLD
             },
             "SentimentDivergenceAgent": {

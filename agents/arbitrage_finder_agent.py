@@ -8,7 +8,7 @@ by comparing prices for the same assets.
 import ccxt
 from typing import List, Dict, Any
 from .base_agent import BaseAgent
-from data_sources.binance_client import BinanceClient
+from data_sources.coinbase_client import CoinbaseClient
 from config import Config
 
 class ArbitrageFinderAgent(BaseAgent):
@@ -18,7 +18,7 @@ class ArbitrageFinderAgent(BaseAgent):
     
     def __init__(self):
         super().__init__()
-        self.binance_client = BinanceClient()
+        self.coinbase_client = CoinbaseClient()
         
         # Initialize exchanges
         self.exchanges = self._initialize_exchanges()
@@ -40,10 +40,11 @@ class ArbitrageFinderAgent(BaseAgent):
         exchanges = {}
         
         try:
-            # Binance
-            exchanges['binance'] = ccxt.binance({
-                'apiKey': Config.BINANCE_API_KEY,
-                'secret': Config.BINANCE_SECRET,
+            # Coinbase Pro (globally accessible and reliable)
+            exchanges['coinbase'] = ccxt.coinbasepro({
+                'apiKey': Config.COINBASE_API_KEY,
+                'secret': Config.COINBASE_SECRET,
+                'passphrase': Config.COINBASE_PASSPHRASE,
                 'sandbox': False,
                 'enableRateLimit': True,
             })

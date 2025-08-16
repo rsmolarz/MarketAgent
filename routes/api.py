@@ -202,3 +202,21 @@ def health_check():
             'status': 'unhealthy',
             'error': str(e)
         }), 500
+
+@api_bp.route('/agents/<agent_name>/run', methods=['POST'])
+def run_agent_now(agent_name):
+    """Manually run an agent immediately"""
+    try:
+        scheduler = current_app.extensions.get('scheduler')
+        if not scheduler:
+            return jsonify({'error': 'Scheduler not available'}), 503
+        
+        # Run the agent immediately
+        success = scheduler.run_agent_immediately(agent_name)
+        if success:
+            return jsonify({'message': f'Agent {agent_name} executed successfully'})
+        else:
+            return jsonify({'error': f'Failed to run agent {agent_name}'}), 400
+            
+    except Exception as e:
+        return jsonify({'error': f'Server error: {str(e)}'}), 500

@@ -7,16 +7,18 @@ that could indicate market imbalances or excessive leverage.
 
 from typing import List, Dict, Any
 from .base_agent import BaseAgent
-from data_sources.binance_client import BinanceClient
+from data_sources.coinbase_client import CoinbaseClient
 
 class CryptoFundingRateAgent(BaseAgent):
     """
     Monitors crypto funding rates for market imbalances
+    Note: Coinbase doesn't offer futures/funding rates, so this agent
+    will monitor spot price volatility instead.
     """
     
     def __init__(self):
         super().__init__()
-        self.binance_client = BinanceClient()
+        self.coinbase_client = CoinbaseClient()
         
         # Symbols to monitor
         self.symbols = [
@@ -40,91 +42,82 @@ class CryptoFundingRateAgent(BaseAgent):
         """
         findings = []
         
-        if not self.validate_config(['BINANCE_API_KEY']):
-            self.logger.warning("Binance API key not configured")
+        if not self.validate_config(['COINBASE_API_KEY']):
+            self.logger.warning("Coinbase API key not configured")
             return findings
         
-        for symbol in self.symbols:
+        # Convert symbols to Coinbase format
+        coinbase_symbols = [symbol.replace('USDT', '/USD') for symbol in self.symbols]
+        
+        for symbol in coinbase_symbols:
             try:
-                # Get current funding rate
-                funding_data = self.binance_client.get_funding_rate(symbol)
-                if not funding_data:
+                # Get current price and volatility data instead of funding rates
+                ticker_data = self.coinbase_client.get_ticker(symbol)
+                if not ticker_data:
                     continue
                 
-                # Analyze funding rate
-                findings.extend(self._analyze_funding_rate(symbol, funding_data))
+                # Analyze price volatility and volume
+                findings.extend(self._analyze_price_volatility(symbol, ticker_data))
                 
             except Exception as e:
                 self.logger.error(f"Error analyzing funding rate for {symbol}: {e}")
                 
         return findings
     
-    def _analyze_funding_rate(self, symbol: str, funding_data: Dict) -> List[Dict[str, Any]]:
-        """Analyze funding rate for anomalies"""
+    def _analyze_price_volatility(self, symbol: str, ticker_data: Dict) -> List[Dict[str, Any]]:
+        """Analyze price volatility and unusual trading activity"""
         findings = []
         
         try:
-            funding_rate = float(funding_data.get('lastFundingRate', 0))
-            funding_time = funding_data.get('nextFundingTime')
+            # Get price change and volume data
+            price_change_pct = float(ticker_data.get('percentage', 0))
+            volume = float(ticker_data.get('baseVolume', 0))
+            last_price = float(ticker_data.get('last', 0))
             
-            # Convert to percentage
-            funding_rate_pct = funding_rate * 100
-            
-            # Check for extreme funding rates
-            if abs(funding_rate) > self.high_funding_threshold:
-                severity = 'high'
+            # Check for extreme price movements (potential market stress)
+            if abs(price_change_pct) > 10:  # 10% price change
+                severity = 'high' if abs(price_change_pct) > 20 else 'medium'
                 confidence = 0.8
                 
-                if funding_rate > 0:
-                    direction = "positive"
-                    interpretation = ("Longs paying shorts heavily - excessive bullish leverage. "
-                                    "Potential for long liquidations and price correction.")
-                else:
-                    direction = "negative"
-                    interpretation = ("Shorts paying longs heavily - excessive bearish leverage. "
-                                    "Potential for short liquidations and price pump.")
+                direction = "surge" if price_change_pct > 0 else "crash"
+                interpretation = (f"Extreme price {direction} may indicate market stress, "
+                                f"news events, or liquidation cascades.")
                 
                 findings.append(self.create_finding(
-                    title=f"Extreme {direction.title()} Funding Rate: {symbol}",
-                    description=f"Funding rate at {funding_rate_pct:.3f}%. {interpretation}",
+                    title=f"Extreme Price Movement: {symbol}",
+                    description=f"Price {direction} of {abs(price_change_pct):.1f}%. {interpretation}",
                     severity=severity,
                     confidence=confidence,
-                    symbol=symbol.replace('USDT', ''),
+                    symbol=symbol.split('/')[0],
                     market_type='crypto',
                     metadata={
-                        'funding_rate': funding_rate,
-                        'funding_rate_pct': funding_rate_pct,
+                        'price_change_pct': price_change_pct,
                         'direction': direction,
-                        'next_funding_time': funding_time,
-                        'threshold': self.high_funding_threshold
+                        'volume': volume,
+                        'last_price': last_price,
+                        'threshold': 10.0
                     }
                 ))
                 
-            elif abs(funding_rate) > self.medium_funding_threshold:
-                severity = 'medium'
-                confidence = 0.7
-                
-                direction = "positive" if funding_rate > 0 else "negative"
-                
+            # Check for unusual volume spikes
+            elif volume > 0:  # Only if volume data is available
+                # Note: This is a simplified check - in production you'd compare to historical averages
                 findings.append(self.create_finding(
-                    title=f"High {direction.title()} Funding Rate: {symbol}",
-                    description=f"Funding rate at {funding_rate_pct:.3f}%, indicating "
-                               f"elevated leverage on the {direction} side. "
-                               f"Monitor for potential liquidation cascades.",
-                    severity=severity,
-                    confidence=confidence,
-                    symbol=symbol.replace('USDT', ''),
+                    title=f"Market Activity: {symbol}",
+                    description=f"Current price: ${last_price:.4f}, 24h change: {price_change_pct:+.2f}%, "
+                               f"Volume: {volume:,.0f}",
+                    severity='low',
+                    confidence=0.6,
+                    symbol=symbol.split('/')[0],
                     market_type='crypto',
                     metadata={
-                        'funding_rate': funding_rate,
-                        'funding_rate_pct': funding_rate_pct,
-                        'direction': direction,
-                        'next_funding_time': funding_time,
-                        'threshold': self.medium_funding_threshold
+                        'price_change_pct': price_change_pct,
+                        'volume': volume,
+                        'last_price': last_price
                     }
                 ))
                 
         except Exception as e:
-            self.logger.error(f"Error analyzing funding rate for {symbol}: {e}")
+            self.logger.error(f"Error analyzing price volatility for {symbol}: {e}")
             
         return findings
