@@ -53,7 +53,7 @@ def create_app():
             # Store scheduler as an application extension instead of direct attribute
             app.extensions['scheduler'] = scheduler
         except Exception as e:
-            logger.error(f"Failed to initialize scheduler: {e}")
+            app.logger.error(f"Failed to initialize scheduler: {e}")
             # Continue without scheduler for basic health checks
     
     return app
@@ -62,4 +62,6 @@ def create_app():
 app = create_app()
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
