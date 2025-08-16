@@ -54,7 +54,7 @@ class CoinbaseClient:
             
         try:
             ticker = self.exchange.fetch_ticker(symbol)
-            return ticker
+            return dict(ticker) if ticker else None
             
         except Exception as e:
             logger.error(f"Error getting ticker for {symbol}: {e}")
@@ -120,7 +120,7 @@ class CoinbaseClient:
             
         try:
             orderbook = self.exchange.fetch_order_book(symbol, limit)
-            return orderbook
+            return dict(orderbook) if orderbook else None
             
         except Exception as e:
             logger.error(f"Error getting orderbook for {symbol}: {e}")

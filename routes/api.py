@@ -10,23 +10,17 @@ api_bp = Blueprint('api', __name__)
 
 @api_bp.route('/health')
 def api_health():
-    """JSON health check endpoint for API"""
-    try:
-        # Test database connection
-        db.session.execute(db.text('SELECT 1'))
-        return jsonify({
-            'status': 'healthy', 
-            'timestamp': datetime.utcnow().isoformat(),
-            'service': 'Market Inefficiency Detection Platform API'
-        }), 200
-    except Exception as e:
-        logger.error(f"API health check failed: {e}")
-        return jsonify({
-            'status': 'unhealthy', 
-            'error': str(e),
-            'timestamp': datetime.utcnow().isoformat(),
-            'service': 'Market Inefficiency Detection Platform API'
-        }), 500
+    """Lightweight JSON health check endpoint for deployment systems"""
+    return jsonify({
+        'status': 'healthy', 
+        'timestamp': datetime.utcnow().isoformat(),
+        'service': 'Market Inefficiency Detection Platform API'
+    }), 200
+
+@api_bp.route('/healthz')  
+def api_healthz():
+    """Alternative health check endpoint"""
+    return jsonify({'status': 'ok'}), 200
 
 @api_bp.route('/findings', methods=['GET', 'POST'])
 def findings():

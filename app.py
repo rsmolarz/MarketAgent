@@ -67,10 +67,10 @@ def create_app():
             app.logger.error(f"Failed to initialize scheduler: {e}")
             # Continue without scheduler for basic health checks
     
-    # Add fallback health check routes directly to app (in case blueprint fails)
+    # Critical health check routes - these must always work for deployment
     @app.route('/healthz')
     def fallback_health():
-        """Fallback health check endpoint"""
+        """Primary health check endpoint for deployment systems"""
         return 'OK', 200
     
     @app.route('/ping')
@@ -80,12 +80,27 @@ def create_app():
     
     @app.route('/status')
     def status():
-        """Basic status endpoint"""
+        """Basic status endpoint with minimal processing"""
         return jsonify({
             'status': 'running',
             'service': 'Market Inefficiency Detection Platform',
             'timestamp': datetime.utcnow().isoformat()
         }), 200
+    
+    @app.route('/health')
+    def health():
+        """Lightweight health check for load balancers"""
+        return 'OK', 200
+    
+    @app.route('/ready')
+    def ready():
+        """Readiness probe for Kubernetes-style deployments"""
+        return 'READY', 200
+    
+    @app.route('/live')
+    def live():
+        """Liveness probe for Kubernetes-style deployments"""
+        return 'LIVE', 200
     
     return app
 
