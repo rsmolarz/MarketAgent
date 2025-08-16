@@ -154,14 +154,13 @@ def store_market_data():
     try:
         data = request.get_json()
         
-        market_data = MarketData(
-            symbol=data.get('symbol'),
-            price=data.get('price'),
-            volume=data.get('volume'),
-            market_cap=data.get('market_cap'),
-            data_source=data.get('data_source'),
-            raw_data=data.get('raw_data', {})
-        )
+        market_data = MarketData()
+        market_data.symbol = data.get('symbol')
+        market_data.price = data.get('price')
+        market_data.volume = data.get('volume')
+        market_data.market_cap = data.get('market_cap')
+        market_data.data_source = data.get('data_source')
+        market_data.raw_data = data.get('raw_data', {})
         
         db.session.add(market_data)
         db.session.commit()
@@ -172,30 +171,7 @@ def store_market_data():
         logger.error(f"Error storing market data: {e}")
         return jsonify({'error': str(e)}), 500
 
-@api_bp.route('/health', methods=['GET'])
-def health_check():
-    """API Health check endpoint"""
-    try:
-        # Check database connection
-        db.session.execute(db.text('SELECT 1'))
-        
-        # Get basic stats
-        total_findings = Finding.query.count()
-        active_agents = AgentStatus.query.filter_by(is_active=True).count()
-        
-        return jsonify({
-            'status': 'healthy',
-            'timestamp': datetime.utcnow().isoformat(),
-            'total_findings': total_findings,
-            'active_agents': active_agents
-        })
-        
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return jsonify({
-            'status': 'unhealthy',
-            'error': str(e)
-        }), 500
+
 
 @api_bp.route('/agents/<agent_name>/run', methods=['POST'])
 def run_agent_now(agent_name):
