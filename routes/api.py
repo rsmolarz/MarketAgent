@@ -101,7 +101,9 @@ def get_agents():
 def start_agent(agent_name):
     """Start an agent"""
     try:
-        scheduler = current_app.scheduler
+        scheduler = current_app.extensions.get('scheduler')
+        if not scheduler:
+            return jsonify({'error': 'Scheduler not available'}), 503
         success = scheduler.start_agent(agent_name)
         if success:
             return jsonify({'message': f'Agent {agent_name} started'})
@@ -116,7 +118,9 @@ def start_agent(agent_name):
 def stop_agent(agent_name):
     """Stop an agent"""
     try:
-        scheduler = current_app.scheduler
+        scheduler = current_app.extensions.get('scheduler')
+        if not scheduler:
+            return jsonify({'error': 'Scheduler not available'}), 503
         success = scheduler.stop_agent(agent_name)
         if success:
             return jsonify({'message': f'Agent {agent_name} stopped'})
@@ -137,7 +141,9 @@ def update_agent_interval(agent_name):
         if not interval or interval < 1:
             return jsonify({'error': 'Invalid interval'}), 400
         
-        scheduler = current_app.scheduler
+        scheduler = current_app.extensions.get('scheduler')
+        if not scheduler:
+            return jsonify({'error': 'Scheduler not available'}), 503
         success = scheduler.update_agent_interval(agent_name, interval)
         if success:
             return jsonify({'message': f'Agent {agent_name} interval updated to {interval} minutes'})
