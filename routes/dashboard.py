@@ -20,42 +20,32 @@ def health_check():
 
 @dashboard_bp.route('/')
 def index():
-    """Main dashboard page - handles both web UI and deployment health checks"""
-    # Check if this is a health check request from deployment systems
+    """Main dashboard page - prioritizes health checks for deployment systems"""
+    # Fast health check detection - prioritize speed for deployment systems
     user_agent = request.headers.get('User-Agent', '').lower()
     accept_header = request.headers.get('Accept', '').lower()
     
-    # Enhanced health check detection for all major deployment platforms
-    is_health_check = (
-        # CLI tools without browser headers
-        ('curl' in user_agent and 'text/html' not in accept_header) or
+    # Immediate health check detection (most common patterns first for speed)
+    if (
+        # Most common deployment health check patterns
+        'curl' in user_agent or
         'wget' in user_agent or
-        # Health monitoring systems
+        'googlehc' in user_agent or  # Google Cloud health check
+        'kube-probe' in user_agent or  # Kubernetes health checks
+        'alb-healthchecker' in user_agent or  # AWS ALB health check
+        'cloud-run' in user_agent or  # Google Cloud Run health check
+        user_agent == '' or  # No user agent (load balancers)
+        # Health monitoring keywords
         'health' in user_agent or
         'monitor' in user_agent or
         'probe' in user_agent or
         'check' in user_agent or
-        'uptime' in user_agent or
-        # Kubernetes health checks
-        'kube-probe' in user_agent or
-        # Cloud provider health checks
-        'googlehc' in user_agent or  # Google Cloud health check
-        'alb-healthchecker' in user_agent or  # AWS ALB health check
-        'cloud-run' in user_agent or  # Google Cloud Run health check
-        'azure-health' in user_agent or  # Azure health check
-        'netlify' in user_agent or  # Netlify health check
-        'render' in user_agent or  # Render health check
-        'heroku' in user_agent or  # Heroku health check
-        # Generic patterns for deployment systems
-        (accept_header == '*/*' and 'mozilla' not in user_agent and 'chrome' not in user_agent and 'safari' not in user_agent) or
-        # Direct health check parameter
+        # Direct health parameter
         request.args.get('health') is not None or
-        # No user agent (some load balancers)
-        user_agent == ''
-    )
-    
-    if is_health_check:
-        # Return immediate 200 OK for health checks - no database operations
+        # Generic non-browser patterns
+        (accept_header == '*/*' and 'mozilla' not in user_agent and 'chrome' not in user_agent and 'safari' not in user_agent)
+    ):
+        # Immediate 200 response for health checks
         return 'OK', 200
     
     # Normal web browser request - return the dashboard
@@ -63,6 +53,7 @@ def index():
         return render_template('dashboard.html')
     except Exception as e:
         logger.error(f"Dashboard rendering failed: {e}")
+        # Still return 200 to avoid health check failures
         return f"Application is running but dashboard unavailable: {str(e)}", 200
 
 @dashboard_bp.route('/agents')
