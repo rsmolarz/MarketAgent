@@ -47,9 +47,14 @@ def create_app():
         app.register_blueprint(api_bp, url_prefix='/api')
         
         # Initialize scheduler
-        from scheduler import AgentScheduler
-        scheduler = AgentScheduler(app)
-        app.scheduler = scheduler
+        try:
+            from scheduler import AgentScheduler
+            scheduler = AgentScheduler(app)
+            # Store scheduler as an application extension instead of direct attribute
+            app.extensions['scheduler'] = scheduler
+        except Exception as e:
+            logger.error(f"Failed to initialize scheduler: {e}")
+            # Continue without scheduler for basic health checks
     
     return app
 

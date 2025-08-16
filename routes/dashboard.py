@@ -9,7 +9,31 @@ dashboard_bp = Blueprint('dashboard', __name__)
 
 @dashboard_bp.route('/')
 def index():
-    """Main dashboard page"""
+    """Main dashboard page - handles both web UI and health checks"""
+    # Check if this is a health check request (typically from deployment systems)
+    user_agent = request.headers.get('User-Agent', '').lower()
+    accept_header = request.headers.get('Accept', '').lower()
+    
+    # Health check detection: more specific patterns for deployment systems
+    is_health_check = (
+        ('curl' in user_agent and 'text/html' not in accept_header) or
+        'wget' in user_agent or 
+        'health' in user_agent or
+        'monitor' in user_agent or
+        'probe' in user_agent or
+        'check' in user_agent or
+        'kube-probe' in user_agent or
+        'googlehc' in user_agent or  # Google Cloud health check
+        'alb-healthchecker' in user_agent or  # AWS ALB health check
+        (accept_header == '*/*' and 'mozilla' not in user_agent) or
+        request.args.get('health') is not None
+    )
+    
+    if is_health_check:
+        # Return simple 200 OK for health checks
+        return 'OK', 200
+    
+    # Normal web browser request - return the dashboard
     return render_template('dashboard.html')
 
 @dashboard_bp.route('/agents')

@@ -12,9 +12,10 @@ Preferred communication style: Simple, everyday language.
 
 ### Core Application Stack
 - **Backend Framework**: Flask with SQLAlchemy ORM for database operations
-- **Database**: SQLite for development with PostgreSQL support for production
+- **Database**: PostgreSQL for both development and production environments
 - **Web Interface**: HTML templates with Bootstrap for responsive UI and JavaScript for real-time updates
 - **Task Scheduling**: APScheduler for background agent execution with configurable intervals
+- **Health Monitoring**: Multi-endpoint health checks for deployment systems and monitoring
 
 ### Agent Architecture
 - **Base Agent Pattern**: All agents inherit from `BaseAgent` class providing standardized interface for plan/act/reflect operations
@@ -42,6 +43,7 @@ Preferred communication style: Simple, everyday language.
 - **Agent Management**: Interface for starting, stopping, and configuring agents
 - **Findings Browser**: Searchable and filterable view of detected market inefficiencies
 - **Analytics Views**: Charts and visualizations for market trends and agent performance
+- **Health Check Endpoints**: Smart health detection for deployment systems vs. web browsers
 
 ### Configuration Management
 - **Environment-Based Config**: API keys and sensitive data managed through environment variables
@@ -78,3 +80,14 @@ Preferred communication style: Simple, everyday language.
 - **Package Management**: pip with requirements.txt for dependency management
 - **Code Organization**: setuptools for package distribution and entry points
 - **Testing Framework**: Built-in Python unittest for agent validation
+
+## Recent Changes
+
+### Deployment Fixes (Aug 16, 2025)
+- ✅ Fixed duplicate health check endpoint conflicts causing startup failures
+- ✅ Implemented smart health check detection on root path (/) for deployment systems
+- ✅ Added dedicated API health check endpoint (/api/health) with database connectivity tests
+- ✅ Resolved scheduler initialization issues to prevent app startup failures
+- ✅ Enhanced health check logic to distinguish between deployment probes and web browsers
+- ✅ Application now starts successfully and responds to health checks with 200 status codes
+- ✅ Maintained full web dashboard functionality for normal browser requests

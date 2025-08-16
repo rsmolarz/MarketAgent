@@ -154,10 +154,10 @@ def store_market_data():
 
 @api_bp.route('/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """API Health check endpoint"""
     try:
         # Check database connection
-        db.session.execute('SELECT 1')
+        db.session.execute(db.text('SELECT 1'))
         
         # Get basic stats
         total_findings = Finding.query.count()
