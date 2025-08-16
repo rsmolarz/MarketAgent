@@ -31,3 +31,6 @@ externalPort = 80
 
 [agent]
 integrations = ["styling_replit==1.0.0"]
+
+[deployment]
+deploymentTarget = "cloudrun"
