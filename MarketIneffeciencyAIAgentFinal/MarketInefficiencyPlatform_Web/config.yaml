@@ -1,0 +1,16 @@
+agents:
+  enabled: ["SpreadScannerAgent","MomentumVolumeAgent","PortfolioRiskAgent"]
+  settings:
+    paper_mode: true
+data_sources:
+  crypto:
+    enabled: false
+  equities:
+    enabled: false
+thresholds:
+  risk_thresholds: {}
+logging:
+  level: DEBUG
+alerts:
+  email_to: ""
+  whatsapp_to: ""

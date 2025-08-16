@@ -1,0 +1,10 @@
+{
+  "MacroWatcherAgent": 60,
+  "WhaleWalletWatcherAgent": 15,
+  "ArbitrageFinderAgent": 5,
+  "SentimentDivergenceAgent": 30,
+  "AltDataSignalAgent": 45,
+  "EquityMomentumAgent": 30,
+  "CryptoFundingRateAgent": 15,
+  "BondStressAgent": 60
+}

@@ -1,0 +1,236 @@
+/* Custom styles for Market Inefficiency Platform */
+
+/* Override minimal styles only when necessary */
+.navbar-brand {
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.card {
+    border: none;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    transition: box-shadow 0.15s ease-in-out;
+}
+
+.card:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+}
+
+/* Status indicators */
+.status-indicator {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 0.5rem;
+}
+
+.status-active {
+    background-color: var(--bs-success);
+}
+
+.status-inactive {
+    background-color: var(--bs-secondary);
+}
+
+.status-error {
+    background-color: var(--bs-danger);
+}
+
+/* Severity badges */
+.severity-critical {
+    background-color: var(--bs-danger) !important;
+}
+
+.severity-high {
+    background-color: var(--bs-warning) !important;
+}
+
+.severity-medium {
+    background-color: var(--bs-info) !important;
+}
+
+.severity-low {
+    background-color: var(--bs-success) !important;
+}
+
+/* Finding cards */
+.finding-card {
+    border-left: 4px solid var(--bs-secondary);
+    margin-bottom: 1rem;
+}
+
+.finding-card.severity-critical {
+    border-left-color: var(--bs-danger);
+}
+
+.finding-card.severity-high {
+    border-left-color: var(--bs-warning);
+}
+
+.finding-card.severity-medium {
+    border-left-color: var(--bs-info);
+}
+
+.finding-card.severity-low {
+    border-left-color: var(--bs-success);
+}
+
+/* Agent cards */
+.agent-card {
+    position: relative;
+    cursor: pointer;
+    transition: transform 0.2s ease-in-out;
+}
+
+.agent-card:hover {
+    transform: translateY(-2px);
+}
+
+.agent-card.agent-active {
+    border: 2px solid var(--bs-success);
+}
+
+.agent-card.agent-inactive {
+    border: 2px solid var(--bs-secondary);
+}
+
+.agent-card.agent-error {
+    border: 2px solid var(--bs-danger);
+}
+
+/* Chart containers */
+.chart-container {
+    position: relative;
+    height: 300px;
+    margin: 1rem 0;
+}
+
+/* Market data items */
+.market-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+.market-item:last-child {
+    border-bottom: none;
+}
+
+.market-symbol {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.market-price {
+    font-weight: 500;
+}
+
+.market-change.positive {
+    color: var(--bs-success);
+}
+
+.market-change.negative {
+    color: var(--bs-danger);
+}
+
+/* Loading states */
+.loading-spinner {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 200px;
+}
+
+/* Responsive utilities */
+@media (max-width: 768px) {
+    .card {
+        margin-bottom: 1rem;
+    }
+    
+    .navbar-brand {
+        font-size: 1rem;
+    }
+    
+    .btn-group .btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+}
+
+/* Custom scrollbar for webkit browsers */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bs-gray-900);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--bs-gray-600);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--bs-gray-500);
+}
+
+/* Animation for new findings */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fade-in-up {
+    animation: fadeInUp 0.5s ease-out;
+}
+
+/* Pulse animation for live data */
+@keyframes pulse {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+.pulse {
+    animation: pulse 2s infinite;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .card {
+        border: 1px solid var(--bs-border-color);
+    }
+    
+    .status-indicator {
+        border: 1px solid var(--bs-border-color);
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .card,
+    .agent-card {
+        transition: none;
+    }
+    
+    .fade-in-up,
+    .pulse {
+        animation: none;
+    }
+}

@@ -1,0 +1,148 @@
+from flask import Blueprint, render_template, request, jsonify, redirect, url_for
+from models import Finding, AgentStatus, MarketData
+from app import db
+from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
+dashboard_bp = Blueprint('dashboard', __name__)
+
+@dashboard_bp.route('/')
+def index():
+    """Main dashboard page"""
+    return render_template('dashboard.html')
+
+@dashboard_bp.route('/agents')
+def agents():
+    """Agent management page"""
+    return render_template('agents.html')
+
+@dashboard_bp.route('/findings')
+def findings():
+    """Findings page"""
+    return render_template('findings.html')
+
+@dashboard_bp.route('/api/dashboard/stats')
+def dashboard_stats():
+    """Get dashboard statistics"""
+    try:
+        # Get recent findings count
+        recent_findings = Finding.query.filter(
+            Finding.timestamp >= datetime.utcnow() - timedelta(hours=24)
+        ).count()
+        
+        # Get active agents count
+        active_agents = AgentStatus.query.filter_by(is_active=True).count()
+        
+        # Get total agents count
+        total_agents = AgentStatus.query.count()
+        
+        # Get high severity findings in last hour
+        critical_findings = Finding.query.filter(
+            Finding.timestamp >= datetime.utcnow() - timedelta(hours=1),
+            Finding.severity.in_(['high', 'critical'])
+        ).count()
+        
+        return jsonify({
+            'recent_findings': recent_findings,
+            'active_agents': active_agents,
+            'total_agents': total_agents,
+            'critical_findings': critical_findings
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting dashboard stats: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@dashboard_bp.route('/api/findings/recent')
+def recent_findings():
+    """Get recent findings for dashboard"""
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        
+        findings = Finding.query.order_by(
+            Finding.timestamp.desc()
+        ).limit(limit).all()
+        
+        return jsonify([finding.to_dict() for finding in findings])
+        
+    except Exception as e:
+        logger.error(f"Error getting recent findings: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@dashboard_bp.route('/api/findings/chart_data')
+def findings_chart_data():
+    """Get findings data for charts"""
+    try:
+        days = request.args.get('days', 7, type=int)
+        start_date = datetime.utcnow() - timedelta(days=days)
+        
+        # Get findings by hour for the chart
+        findings = Finding.query.filter(
+            Finding.timestamp >= start_date
+        ).order_by(Finding.timestamp.asc()).all()
+        
+        # Group by hour
+        hourly_data = {}
+        for finding in findings:
+            hour_key = finding.timestamp.strftime('%Y-%m-%d %H:00')
+            if hour_key not in hourly_data:
+                hourly_data[hour_key] = {'high': 0, 'medium': 0, 'low': 0}
+            hourly_data[hour_key][finding.severity] += 1
+        
+        # Convert to chart format
+        labels = list(hourly_data.keys())
+        high_data = [hourly_data[label]['high'] for label in labels]
+        medium_data = [hourly_data[label]['medium'] for label in labels]
+        low_data = [hourly_data[label]['low'] for label in labels]
+        
+        return jsonify({
+            'labels': labels,
+            'datasets': [
+                {
+                    'label': 'High Severity',
+                    'data': high_data,
+                    'backgroundColor': 'rgba(220, 53, 69, 0.5)',
+                    'borderColor': 'rgba(220, 53, 69, 1)'
+                },
+                {
+                    'label': 'Medium Severity',
+                    'data': medium_data,
+                    'backgroundColor': 'rgba(255, 193, 7, 0.5)',
+                    'borderColor': 'rgba(255, 193, 7, 1)'
+                },
+                {
+                    'label': 'Low Severity',
+                    'data': low_data,
+                    'backgroundColor': 'rgba(40, 167, 69, 0.5)',
+                    'borderColor': 'rgba(40, 167, 69, 1)'
+                }
+            ]
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting chart data: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@dashboard_bp.route('/api/market_data')
+def market_data():
+    """Get recent market data"""
+    try:
+        symbols = request.args.getlist('symbols')
+        if not symbols:
+            symbols = ['BTC', 'ETH', 'SPY', 'VIX']
+        
+        data = {}
+        for symbol in symbols:
+            recent_data = MarketData.query.filter_by(
+                symbol=symbol
+            ).order_by(MarketData.timestamp.desc()).first()
+            
+            if recent_data:
+                data[symbol] = recent_data.to_dict()
+        
+        return jsonify(data)
+        
+    except Exception as e:
+        logger.error(f"Error getting market data: {e}")
+        return jsonify({'error': str(e)}), 500

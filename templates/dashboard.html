@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Market Inefficiency Platform{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h2 mb-0">
+            <i data-feather="trending-up" class="me-2"></i>
+            Market Inefficiency Dashboard
+        </h1>
+        <p class="text-muted">Real-time monitoring of market anomalies and inefficiencies</p>
+    </div>
+</div>
+
+<!-- Key Metrics -->
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i data-feather="search" class="text-info" width="32" height="32"></i>
+                    </div>
+                    <div>
+                        <h6 class="card-subtitle mb-1 text-muted">Recent Findings</h6>
+                        <h3 class="card-title mb-0" id="recent-findings-count">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i data-feather="cpu" class="text-success" width="32" height="32"></i>
+                    </div>
+                    <div>
+                        <h6 class="card-subtitle mb-1 text-muted">Active Agents</h6>
+                        <h3 class="card-title mb-0" id="active-agents-count">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i data-feather="alert-triangle" class="text-warning" width="32" height="32"></i>
+                    </div>
+                    <div>
+                        <h6 class="card-subtitle mb-1 text-muted">Critical Findings</h6>
+                        <h3 class="card-title mb-0" id="critical-findings-count">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i data-feather="settings" class="text-secondary" width="32" height="32"></i>
+                    </div>
+                    <div>
+                        <h6 class="card-subtitle mb-1 text-muted">Total Agents</h6>
+                        <h3 class="card-title mb-0" id="total-agents-count">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts and Recent Activity -->
+<div class="row">
+    <!-- Findings Chart -->
+    <div class="col-lg-8 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i data-feather="bar-chart-2" class="me-2"></i>
+                    Findings Over Time
+                </h5>
+            </div>
+            <div class="card-body">
+                <canvas id="findings-chart" width="400" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Market Data -->
+    <div class="col-lg-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i data-feather="trending-up" class="me-2"></i>
+                    Key Markets
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="market-data-container">
+                    <div class="text-center">
+                        <div class="spinner-border text-secondary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-2">Loading market data...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Findings -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i data-feather="clock" class="me-2"></i>
+                    Recent Findings
+                </h5>
+                <a href="{{ url_for('dashboard.findings') }}" class="btn btn-outline-secondary btn-sm">
+                    <i data-feather="arrow-right" class="me-1"></i>
+                    View All
+                </a>
+            </div>
+            <div class="card-body">
+                <div id="recent-findings-container">
+                    <div class="text-center">
+                        <div class="spinner-border text-secondary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-2">Loading recent findings...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

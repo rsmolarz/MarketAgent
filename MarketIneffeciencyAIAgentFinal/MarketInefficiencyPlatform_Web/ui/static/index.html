@@ -1,0 +1,92 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Market Inefficiency Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; background-color: #1e1e2f; color: #fff; }
+        .header { padding: 20px; background-color: #111; text-align: center; }
+        .container { padding: 20px; }
+        .chart { width: 100%; height: 600px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📊 Market Inefficiency Dashboard</h1>
+        <p>Live BTC/USDT Candlestick Chart + Signal Overlays</p>
+    </div>
+    <div class="container">
+        <div id="chart" class="chart"></div>
+    </div>
+
+    <script>
+        async function fetchOHLCV() {
+            const response = await fetch('/ohlcv');
+            const result = await response.json();
+            return result.data || [];
+        }
+
+        async function fetchFindings() {
+            const response = await fetch('/findings');
+            const result = await response.json();
+            return result.recent || [];
+        }
+
+        function mapFindingsToAnnotations(findings) {
+            return findings.map((f, idx) => {
+                const icon = f.agent.includes("Arbitrage") ? "🔺" :
+                             f.agent.includes("Macro") ? "⚠️" : "📌";
+                return {
+                    x: `2025-08-${30 - idx}`,
+                    y: 30000 + idx * 200,
+                    text: `${icon} ${f.title}<br>${f.agent}`,
+                    showarrow: true,
+                    arrowhead: 3,
+                    ax: 0,
+                    ay: -40,
+                    font: { color: '#fff' },
+                    bgcolor: f.severity === 'high' ? '#e74c3c' :
+                             f.severity === 'medium' ? '#f39c12' : '#2ecc71',
+                    bordercolor: '#333',
+                    borderwidth: 1
+                };
+            });
+        }
+
+        async function renderChart() {
+            const candles = await fetchOHLCV();
+            const findings = await fetchFindings();
+
+            const trace = {
+                x: candles.map(d => d.x),
+                open: candles.map(d => d.open),
+                high: candles.map(d => d.high),
+                low: candles.map(d => d.low),
+                close: candles.map(d => d.close),
+                type: 'candlestick',
+                name: 'BTC/USDT',
+                increasing: { line: { color: '#00ff00' } },
+                decreasing: { line: { color: '#ff4136' } }
+            };
+
+            const layout = {
+                dragmode: 'zoom',
+                margin: { t: 25, r: 50, b: 40, l: 50 },
+                paper_bgcolor: '#1e1e2f',
+                plot_bgcolor: '#1e1e2f',
+                font: { color: '#fff' },
+                xaxis: { title: 'Date', rangeslider: { visible: false } },
+                yaxis: { title: 'Price (USD)' },
+                annotations: mapFindingsToAnnotations(findings)
+            };
+
+            Plotly.newPlot('chart', [trace], layout);
+        }
+
+        renderChart();
+        setInterval(renderChart, 60000); // Refresh every 60s
+    </script>
+</body>
+</html>

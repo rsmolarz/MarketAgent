@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}Findings - Market Inefficiency Platform{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h2 mb-0">
+            <i data-feather="search" class="me-2"></i>
+            Market Findings
+        </h1>
+        <p class="text-muted">Browse and analyze detected market inefficiencies and anomalies</p>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i data-feather="filter" class="me-2"></i>
+                    Filters
+                </h6>
+            </div>
+            <div class="card-body">
+                <form id="findings-filter-form">
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label for="agent-filter" class="form-label">Agent</label>
+                            <select class="form-select" id="agent-filter" name="agent">
+                                <option value="">All Agents</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-3 mb-3">
+                            <label for="severity-filter" class="form-label">Severity</label>
+                            <select class="form-select" id="severity-filter" name="severity">
+                                <option value="">All Severities</option>
+                                <option value="critical">Critical</option>
+                                <option value="high">High</option>
+                                <option value="medium">Medium</option>
+                                <option value="low">Low</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-3 mb-3">
+                            <label for="market-filter" class="form-label">Market Type</label>
+                            <select class="form-select" id="market-filter" name="market_type">
+                                <option value="">All Markets</option>
+                                <option value="crypto">Crypto</option>
+                                <option value="equity">Equity</option>
+                                <option value="macro">Macro</option>
+                                <option value="bond">Bond</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-3 mb-3">
+                            <label for="time-filter" class="form-label">Time Range</label>
+                            <select class="form-select" id="time-filter" name="hours">
+                                <option value="1">Last Hour</option>
+                                <option value="6">Last 6 Hours</option>
+                                <option value="24" selected>Last 24 Hours</option>
+                                <option value="168">Last Week</option>
+                                <option value="720">Last Month</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="symbol-filter" class="form-label">Symbol</label>
+                            <input type="text" class="form-control" id="symbol-filter" name="symbol" placeholder="e.g. BTC, TSLA, SPY">
+                        </div>
+                        
+                        <div class="col-md-6 mb-3">
+                            <label for="limit-filter" class="form-label">Results Limit</label>
+                            <select class="form-select" id="limit-filter" name="limit">
+                                <option value="50">50</option>
+                                <option value="100" selected>100</option>
+                                <option value="200">200</option>
+                                <option value="500">500</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-primary">
+                                <i data-feather="search" class="me-1"></i>
+                                Apply Filters
+                            </button>
+                            <button type="button" class="btn btn-secondary" id="clear-filters">
+                                <i data-feather="x" class="me-1"></i>
+                                Clear
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" id="refresh-findings">
+                                <i data-feather="refresh-cw" class="me-1"></i>
+                                Refresh
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Findings Statistics -->
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <i data-feather="alert-circle" class="text-danger mb-2" width="32" height="32"></i>
+                <h4 id="critical-count">0</h4>
+                <small class="text-muted">Critical</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <i data-feather="alert-triangle" class="text-warning mb-2" width="32" height="32"></i>
+                <h4 id="high-count">0</h4>
+                <small class="text-muted">High</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <i data-feather="info" class="text-info mb-2" width="32" height="32"></i>
+                <h4 id="medium-count">0</h4>
+                <small class="text-muted">Medium</small>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <i data-feather="check-circle" class="text-success mb-2" width="32" height="32"></i>
+                <h4 id="low-count">0</h4>
+                <small class="text-muted">Low</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Findings List -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i data-feather="list" class="me-2"></i>
+                    Findings (<span id="findings-count">0</span>)
+                </h5>
+                <div class="btn-group btn-group-sm">
+                    <button type="button" class="btn btn-outline-secondary" id="export-findings">
+                        <i data-feather="download" class="me-1"></i>
+                        Export
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="findings-container">
+                    <div class="text-center">
+                        <div class="spinner-border text-secondary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-2">Loading findings...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Finding Details Modal -->
+<div class="modal fade" id="finding-details-modal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i data-feather="info" class="me-2"></i>
+                    Finding Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="finding-details-content">
+                    <!-- Content will be populated by JavaScript -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/findings.js') }}"></script>
+{% endblock %}

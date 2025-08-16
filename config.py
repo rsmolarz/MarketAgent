@@ -1,0 +1,53 @@
+import os
+from typing import Dict, Any
+
+class Config:
+    # API Keys from environment
+    BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
+    BINANCE_SECRET = os.getenv("BINANCE_SECRET", "")
+    ETHERSCAN_API_KEY = os.getenv("ETHERSCAN_API_KEY", "")
+    GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+    TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
+    TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+    
+    # Email configuration
+    EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.gmail.com")
+    EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+    EMAIL_USER = os.getenv("EMAIL_USER", "")
+    EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
+    
+    # Agent configuration
+    DEFAULT_AGENT_INTERVAL = 60  # minutes
+    MAX_FINDINGS_PER_AGENT = 100
+    
+    # Risk thresholds
+    WHALE_WALLET_THRESHOLD = 1000  # ETH
+    ARBITRAGE_PROFIT_THRESHOLD = 0.02  # 2%
+    SENTIMENT_DIVERGENCE_THRESHOLD = 0.3
+    
+    @classmethod
+    def get_agent_config(cls, agent_name: str) -> Dict[str, Any]:
+        """Get configuration specific to an agent"""
+        configs = {
+            "MacroWatcherAgent": {
+                "interval": 60,
+                "sources": ["yahoo", "fed"],
+                "indicators": ["vix", "dxy", "rates"]
+            },
+            "WhaleWalletWatcherAgent": {
+                "interval": 15,
+                "threshold": cls.WHALE_WALLET_THRESHOLD,
+                "networks": ["ethereum", "bitcoin"]
+            },
+            "ArbitrageFinder Agent": {
+                "interval": 5,
+                "exchanges": ["binance", "coinbase", "kraken"],
+                "min_profit": cls.ARBITRAGE_PROFIT_THRESHOLD
+            },
+            "SentimentDivergenceAgent": {
+                "interval": 30,
+                "sources": ["twitter", "reddit", "news"],
+                "threshold": cls.SENTIMENT_DIVERGENCE_THRESHOLD
+            }
+        }
+        return configs.get(agent_name, {"interval": cls.DEFAULT_AGENT_INTERVAL})
