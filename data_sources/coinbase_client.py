@@ -28,7 +28,7 @@ class CoinbaseClient:
     def _initialize_client(self):
         """Initialize Coinbase client"""
         try:
-            self.exchange = ccxt.coinbasepro({
+            self.exchange = ccxt.coinbase({
                 'apiKey': self.api_key,
                 'secret': self.secret,
                 'passphrase': self.passphrase,
