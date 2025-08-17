@@ -148,6 +148,15 @@ def create_app():
             'timestamp': datetime.utcnow().isoformat()
         }), 200
     
+    # Add no-cache headers to prevent stale UI
+    @app.after_request
+    def add_no_cache_headers(response):
+        """Add headers to prevent caching of dynamic content"""
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        return response
+    
     return app
 
 # Create the app instance

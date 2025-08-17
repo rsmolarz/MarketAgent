@@ -21,7 +21,8 @@ AVAILABLE_AGENTS = [
     'AltDataSignalAgent',
     'EquityMomentumAgent',
     'CryptoFundingRateAgent',
-    'BondStressAgent'
+    'BondStressAgent',
+    'HeartbeatAgent'
 ]
 
 def get_agent_class(agent_name: str) -> Optional[Type[BaseAgent]]:

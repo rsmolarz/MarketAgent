@@ -64,10 +64,36 @@ def agents():
 
 @dashboard_bp.route('/findings')
 def findings():
-    """Findings page with direct server-side data embedding"""
+    """Findings page with server-side filtering"""
     try:
-        # Get findings directly from database and embed in template
-        findings = Finding.query.order_by(Finding.timestamp.desc()).limit(50).all()
+        # Get filter parameters from request
+        agent_name = request.args.get('agent_name', '')
+        symbol = request.args.get('symbol', '')
+        severity = request.args.get('severity', '')
+        market_type = request.args.get('market_type', '')
+        hours = request.args.get('hours', '24')
+        limit = min(int(request.args.get('limit', 50)), 500)  # Cap at 500
+        
+        # Build query with filters
+        query = Finding.query
+        
+        if agent_name:
+            query = query.filter(Finding.agent_name.ilike(f'%{agent_name}%'))
+        if symbol:
+            query = query.filter(Finding.symbol.ilike(f'%{symbol}%'))
+        if severity:
+            query = query.filter(Finding.severity == severity)
+        if market_type:
+            query = query.filter(Finding.market_type == market_type)
+        
+        # Time filter
+        if hours:
+            time_threshold = datetime.utcnow() - timedelta(hours=int(hours))
+            query = query.filter(Finding.timestamp >= time_threshold)
+        
+        # Execute query
+        findings = query.order_by(Finding.timestamp.desc()).limit(limit).all()
+        
         findings_data = []
         for finding in findings:
             findings_data.append({
@@ -82,6 +108,7 @@ def findings():
                 'timestamp': finding.timestamp.isoformat() + 'Z',
                 'metadata': finding.metadata or {}
             })
+        
         return render_template('findings.html', embedded_findings=findings_data)
     except Exception as e:
         logger.error(f"Error loading findings: {e}")
