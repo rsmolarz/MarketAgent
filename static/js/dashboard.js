@@ -106,86 +106,237 @@ class Dashboard {
     renderRecentFindings(findings) {
         const container = document.getElementById('recent-findings-container');
         
+        // Clear container safely
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
+        
         if (!findings || findings.length === 0) {
-            container.innerHTML = `
-                <div class="text-center text-muted">
-                    <i data-feather="inbox" class="mb-2"></i>
-                    <p>No recent findings</p>
-                </div>
-            `;
+            const emptyDiv = document.createElement('div');
+            emptyDiv.className = 'text-center text-muted';
+            
+            const icon = document.createElement('i');
+            icon.setAttribute('data-feather', 'inbox');
+            icon.className = 'mb-2';
+            
+            const text = document.createElement('p');
+            text.textContent = 'No recent findings';
+            
+            emptyDiv.appendChild(icon);
+            emptyDiv.appendChild(text);
+            container.appendChild(emptyDiv);
             feather.replace();
             return;
         }
         
-        const findingsHtml = findings.map(finding => `
-            <div class="finding-card card mb-2 severity-${finding.severity}">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div class="flex-grow-1">
-                            <h6 class="card-title mb-1">
-                                <span class="badge bg-${this.getSeverityColor(finding.severity)} me-2">
-                                    ${finding.severity.toUpperCase()}
-                                </span>
-                                ${this.escapeHtml(finding.title)}
-                            </h6>
-                            <p class="card-text text-muted mb-2">${this.escapeHtml(finding.description)}</p>
-                            <small class="text-muted">
-                                <i data-feather="cpu" class="me-1"></i>
-                                ${this.escapeHtml(finding.agent_name)}
-                                ${finding.symbol ? ` • ${this.escapeHtml(finding.symbol)}` : ''}
-                                <i data-feather="clock" class="ms-2 me-1"></i>
-                                ${this.formatTimestamp(finding.timestamp)}
-                            </small>
-                        </div>
-                        <div class="ms-3">
-                            <div class="badge bg-secondary">
-                                ${Math.round(finding.confidence * 100)}%
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `).join('');
+        findings.forEach(finding => {
+            const findingCard = this.createFindingElement(finding);
+            container.appendChild(findingCard);
+        });
         
-        container.innerHTML = findingsHtml;
         feather.replace();
+    }
+    
+    createFindingElement(finding) {
+        // Create main card structure
+        const cardDiv = document.createElement('div');
+        cardDiv.className = `finding-card card mb-2 severity-${this.sanitizeClassName(finding.severity)}`;
+        
+        const cardBody = document.createElement('div');
+        cardBody.className = 'card-body';
+        
+        const flexContainer = document.createElement('div');
+        flexContainer.className = 'd-flex justify-content-between align-items-start';
+        
+        // Left side content
+        const leftDiv = document.createElement('div');
+        leftDiv.className = 'flex-grow-1';
+        
+        // Title with severity badge
+        const titleH6 = document.createElement('h6');
+        titleH6.className = 'card-title mb-1';
+        
+        const severityBadge = document.createElement('span');
+        severityBadge.className = `badge bg-${this.getSeverityColor(finding.severity)} me-2`;
+        severityBadge.textContent = (finding.severity || '').toUpperCase();
+        
+        const titleText = document.createTextNode(finding.title || '');
+        
+        titleH6.appendChild(severityBadge);
+        titleH6.appendChild(titleText);
+        
+        // Description
+        const descriptionP = document.createElement('p');
+        descriptionP.className = 'card-text text-muted mb-2';
+        descriptionP.textContent = finding.description || '';
+        
+        // Metadata line
+        const metaSmall = document.createElement('small');
+        metaSmall.className = 'text-muted';
+        
+        const cpuIcon = document.createElement('i');
+        cpuIcon.setAttribute('data-feather', 'cpu');
+        cpuIcon.className = 'me-1';
+        
+        const agentText = document.createTextNode(finding.agent_name || '');
+        
+        metaSmall.appendChild(cpuIcon);
+        metaSmall.appendChild(agentText);
+        
+        if (finding.symbol) {
+            const symbolText = document.createTextNode(` • ${finding.symbol}`);
+            metaSmall.appendChild(symbolText);
+        }
+        
+        const clockIcon = document.createElement('i');
+        clockIcon.setAttribute('data-feather', 'clock');
+        clockIcon.className = 'ms-2 me-1';
+        
+        const timestampText = document.createTextNode(this.formatTimestamp(finding.timestamp));
+        
+        metaSmall.appendChild(clockIcon);
+        metaSmall.appendChild(timestampText);
+        
+        // Right side confidence
+        const rightDiv = document.createElement('div');
+        rightDiv.className = 'ms-3';
+        
+        const confidenceBadge = document.createElement('div');
+        confidenceBadge.className = 'badge bg-secondary';
+        confidenceBadge.textContent = `${Math.round((finding.confidence || 0) * 100)}%`;
+        
+        rightDiv.appendChild(confidenceBadge);
+        
+        // Assemble the structure
+        leftDiv.appendChild(titleH6);
+        leftDiv.appendChild(descriptionP);
+        leftDiv.appendChild(metaSmall);
+        
+        flexContainer.appendChild(leftDiv);
+        flexContainer.appendChild(rightDiv);
+        
+        cardBody.appendChild(flexContainer);
+        cardDiv.appendChild(cardBody);
+        
+        return cardDiv;
+    }
+    
+    sanitizeClassName(className) {
+        // Only allow alphanumeric characters and hyphens for CSS class names
+        return (className || '').replace(/[^a-zA-Z0-9-]/g, '');
+    }
+    
+    createErrorElement(message, retryCallback) {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'text-center text-danger';
+        
+        const icon = document.createElement('i');
+        icon.setAttribute('data-feather', 'alert-triangle');
+        icon.className = 'mb-2';
+        
+        const messageP = document.createElement('p');
+        messageP.textContent = message || 'An error occurred';
+        
+        const retryButton = document.createElement('button');
+        retryButton.className = 'btn btn-outline-secondary btn-sm';
+        retryButton.addEventListener('click', retryCallback);
+        
+        const refreshIcon = document.createElement('i');
+        refreshIcon.setAttribute('data-feather', 'refresh-cw');
+        refreshIcon.className = 'me-1';
+        
+        const retryText = document.createTextNode('Retry');
+        
+        retryButton.appendChild(refreshIcon);
+        retryButton.appendChild(retryText);
+        
+        errorDiv.appendChild(icon);
+        errorDiv.appendChild(messageP);
+        errorDiv.appendChild(retryButton);
+        
+        return errorDiv;
     }
     
     renderMarketData(marketData) {
         const container = document.getElementById('market-data-container');
         
+        // Clear container safely
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
+        
         if (!marketData || Object.keys(marketData).length === 0) {
-            container.innerHTML = `
-                <div class="text-center text-muted">
-                    <i data-feather="trending-down" class="mb-2"></i>
-                    <p>No market data available</p>
-                </div>
-            `;
+            const emptyDiv = document.createElement('div');
+            emptyDiv.className = 'text-center text-muted';
+            
+            const icon = document.createElement('i');
+            icon.setAttribute('data-feather', 'trending-down');
+            icon.className = 'mb-2';
+            
+            const text = document.createElement('p');
+            text.textContent = 'No market data available';
+            
+            emptyDiv.appendChild(icon);
+            emptyDiv.appendChild(text);
+            container.appendChild(emptyDiv);
             feather.replace();
             return;
         }
         
-        const marketHtml = Object.entries(marketData).map(([symbol, data]) => {
-            const price = data.price ? data.price.toFixed(2) : 'N/A';
-            return `
-                <div class="market-item">
-                    <div>
-                        <div class="market-symbol">${symbol}</div>
-                        <small class="text-muted">${data.data_source || 'Market'}</small>
-                    </div>
-                    <div class="text-end">
-                        <div class="market-price">$${price}</div>
-                        <small class="text-muted">
-                            <i data-feather="clock" class="me-1"></i>
-                            ${this.formatTimestamp(data.timestamp)}
-                        </small>
-                    </div>
-                </div>
-            `;
-        }).join('');
+        Object.entries(marketData).forEach(([symbol, data]) => {
+            const marketItem = this.createMarketItemElement(symbol, data);
+            container.appendChild(marketItem);
+        });
         
-        container.innerHTML = marketHtml;
         feather.replace();
+    }
+    
+    createMarketItemElement(symbol, data) {
+        const marketItem = document.createElement('div');
+        marketItem.className = 'market-item';
+        
+        // Left side with symbol and source
+        const leftDiv = document.createElement('div');
+        
+        const symbolDiv = document.createElement('div');
+        symbolDiv.className = 'market-symbol';
+        symbolDiv.textContent = symbol || '';
+        
+        const sourceSmall = document.createElement('small');
+        sourceSmall.className = 'text-muted';
+        sourceSmall.textContent = data.data_source || 'Market';
+        
+        leftDiv.appendChild(symbolDiv);
+        leftDiv.appendChild(sourceSmall);
+        
+        // Right side with price and timestamp
+        const rightDiv = document.createElement('div');
+        rightDiv.className = 'text-end';
+        
+        const priceDiv = document.createElement('div');
+        priceDiv.className = 'market-price';
+        const price = data.price ? data.price.toFixed(2) : 'N/A';
+        priceDiv.textContent = `$${price}`;
+        
+        const timestampSmall = document.createElement('small');
+        timestampSmall.className = 'text-muted';
+        
+        const clockIcon = document.createElement('i');
+        clockIcon.setAttribute('data-feather', 'clock');
+        clockIcon.className = 'me-1';
+        
+        const timestampText = document.createTextNode(this.formatTimestamp(data.timestamp));
+        
+        timestampSmall.appendChild(clockIcon);
+        timestampSmall.appendChild(timestampText);
+        
+        rightDiv.appendChild(priceDiv);
+        rightDiv.appendChild(timestampSmall);
+        
+        marketItem.appendChild(leftDiv);
+        marketItem.appendChild(rightDiv);
+        
+        return marketItem;
     }
     
     renderFindingsChart(chartData) {
@@ -277,55 +428,57 @@ class Dashboard {
         }
     }
     
-    escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
+
     
     showError(message) {
-        const alertHtml = `
-            <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                <i data-feather="alert-circle" class="me-2"></i>
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        `;
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+        alertDiv.setAttribute('role', 'alert');
+        
+        const icon = document.createElement('i');
+        icon.setAttribute('data-feather', 'alert-circle');
+        icon.className = 'me-2';
+        
+        const messageText = document.createTextNode(message || 'An error occurred');
+        
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'btn-close';
+        closeButton.setAttribute('data-bs-dismiss', 'alert');
+        
+        alertDiv.appendChild(icon);
+        alertDiv.appendChild(messageText);
+        alertDiv.appendChild(closeButton);
         
         // Insert at top of main container
         const main = document.querySelector('main');
-        main.insertAdjacentHTML('afterbegin', alertHtml);
+        main.insertBefore(alertDiv, main.firstChild);
         feather.replace();
     }
     
     showFindingsError(message) {
         const container = document.getElementById('recent-findings-container');
-        container.innerHTML = `
-            <div class="text-center text-danger">
-                <i data-feather="alert-triangle" class="mb-2"></i>
-                <p>${message}</p>
-                <button class="btn btn-outline-secondary btn-sm" onclick="dashboard.loadRecentFindings()">
-                    <i data-feather="refresh-cw" class="me-1"></i>
-                    Retry
-                </button>
-            </div>
-        `;
+        
+        // Clear container safely
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
+        
+        const errorDiv = this.createErrorElement(message, () => this.loadRecentFindings());
+        container.appendChild(errorDiv);
         feather.replace();
     }
     
     showMarketDataError(message) {
         const container = document.getElementById('market-data-container');
-        container.innerHTML = `
-            <div class="text-center text-danger">
-                <i data-feather="alert-triangle" class="mb-2"></i>
-                <p>${message}</p>
-                <button class="btn btn-outline-secondary btn-sm" onclick="dashboard.loadMarketData()">
-                    <i data-feather="refresh-cw" class="me-1"></i>
-                    Retry
-                </button>
-            </div>
-        `;
+        
+        // Clear container safely
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
+        
+        const errorDiv = this.createErrorElement(message, () => this.loadMarketData());
+        container.appendChild(errorDiv);
         feather.replace();
     }
     
@@ -334,16 +487,14 @@ class Dashboard {
         ctx.style.display = 'none';
         
         const container = ctx.parentElement;
-        container.innerHTML = `
-            <div class="text-center text-danger">
-                <i data-feather="alert-triangle" class="mb-2"></i>
-                <p>${message}</p>
-                <button class="btn btn-outline-secondary btn-sm" onclick="dashboard.loadFindingsChart()">
-                    <i data-feather="refresh-cw" class="me-1"></i>
-                    Retry
-                </button>
-            </div>
-        `;
+        
+        // Clear container safely
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
+        
+        const errorDiv = this.createErrorElement(message, () => this.loadFindingsChart());
+        container.appendChild(errorDiv);
         feather.replace();
     }
     
