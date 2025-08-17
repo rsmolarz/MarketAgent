@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market Data - Direct View</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            margin: 0 0 10px 0;
+            color: #2c3e50;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 28px;
+            font-weight: bold;
+            color: #3498db;
+        }
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+        .findings-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .finding {
+            padding: 20px;
+            border-bottom: 1px solid #ecf0f1;
+            border-left: 4px solid #3498db;
+        }
+        .finding:last-child {
+            border-bottom: none;
+        }
+        .finding.high {
+            border-left-color: #e74c3c;
+        }
+        .finding.medium {
+            border-left-color: #f39c12;
+        }
+        .finding.low {
+            border-left-color: #27ae60;
+        }
+        .finding-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin: 0 0 8px 0;
+        }
+        .finding-meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        .meta-item {
+            color: #7f8c8d;
+        }
+        .meta-value {
+            color: #2c3e50;
+            font-weight: 500;
+        }
+        .finding-description {
+            color: #34495e;
+            line-height: 1.5;
+            margin-top: 10px;
+        }
+        .timestamp {
+            font-size: 12px;
+            color: #95a5a6;
+            font-style: italic;
+        }
+        .refresh-notice {
+            background: #e8f5e8;
+            border: 1px solid #27ae60;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+            color: #2d8738;
+        }
+        .no-findings {
+            text-align: center;
+            padding: 60px 20px;
+            color: #7f8c8d;
+            font-size: 18px;
+        }
+    </style>
+    <meta http-equiv="refresh" content="30">
+</head>
+<body>
+    <div class="header">
+        <h1>🔍 Market Data - Direct View</h1>
+        <p>Real-time market inefficiency findings from AI agents</p>
+    </div>
+
+    <div class="refresh-notice">
+        ✅ This page auto-refreshes every 30 seconds to show fresh market data
+    </div>
+
+    <div class="stats">
+        <div class="stat-card">
+            <div class="stat-number">{{ findings|length }}</div>
+            <div class="stat-label">Total Findings</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ findings|selectattr('severity', 'equalto', 'high')|list|length }}</div>
+            <div class="stat-label">High Priority</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ findings|selectattr('severity', 'equalto', 'medium')|list|length }}</div>
+            <div class="stat-label">Medium Priority</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number">{{ findings|selectattr('severity', 'equalto', 'low')|list|length }}</div>
+            <div class="stat-label">Low Priority</div>
+        </div>
+    </div>
+
+    <div class="findings-container">
+        {% if findings %}
+            {% for finding in findings %}
+            <div class="finding {{ finding.severity }}">
+                <div class="finding-title">{{ finding.title }}</div>
+                <div class="finding-meta">
+                    <div class="meta-item">
+                        <strong>Agent:</strong> 
+                        <span class="meta-value">{{ finding.agent_name }}</span>
+                    </div>
+                    {% if finding.symbol %}
+                    <div class="meta-item">
+                        <strong>Symbol:</strong> 
+                        <span class="meta-value">{{ finding.symbol }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="meta-item">
+                        <strong>Severity:</strong> 
+                        <span class="meta-value">{{ finding.severity.title() }}</span>
+                    </div>
+                    <div class="meta-item">
+                        <strong>Confidence:</strong> 
+                        <span class="meta-value">{{ "%.1f"|format(finding.confidence * 100) }}%</span>
+                    </div>
+                    {% if finding.market_type %}
+                    <div class="meta-item">
+                        <strong>Market:</strong> 
+                        <span class="meta-value">{{ finding.market_type }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="finding-description">{{ finding.description }}</div>
+                <div class="timestamp">
+                    📅 {{ finding.timestamp.strftime('%Y-%m-%d %H:%M:%S UTC') }}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="no-findings">
+                <h3>No market findings available</h3>
+                <p>Agents are working to detect market inefficiencies...</p>
+            </div>
+        {% endif %}
+    </div>
+
+    <div style="text-align: center; margin-top: 30px; color: #7f8c8d;">
+        <p><a href="/findings" style="color: #3498db;">← Back to Advanced View</a> | 
+           <a href="/simple" style="color: #3498db;">🔄 Refresh Now</a></p>
+        <p><em>Page automatically refreshes every 30 seconds</em></p>
+    </div>
+</body>
+</html>

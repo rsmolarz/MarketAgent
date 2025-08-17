@@ -4,6 +4,9 @@ from app import db
 from datetime import datetime, timedelta
 import logging
 
+# Import and register raw data blueprint
+from routes.raw import raw_bp
+
 logger = logging.getLogger(__name__)
 dashboard_bp = Blueprint('dashboard', __name__)
 
@@ -63,6 +66,16 @@ def agents():
 def findings():
     """Findings page"""
     return render_template('findings.html')
+
+@dashboard_bp.route('/simple')
+def simple_findings():
+    """Simple findings page with direct server-side rendering"""
+    try:
+        findings = Finding.query.order_by(Finding.timestamp.desc()).limit(50).all()
+        return render_template('simple_findings.html', findings=findings)
+    except Exception as e:
+        logger.error(f"Error loading findings: {e}")
+        return f"Error loading findings: {e}", 500
 
 @dashboard_bp.route('/api/dashboard/stats')
 def dashboard_stats():

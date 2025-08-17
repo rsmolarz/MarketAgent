@@ -52,6 +52,11 @@ def create_app():
             
             app.register_blueprint(dashboard_bp)
             app.register_blueprint(api_bp, url_prefix='/api')
+            
+            # Register raw data blueprint for debugging
+            from routes.raw import raw_bp
+            app.register_blueprint(raw_bp)
+            
             app.logger.info("Blueprints registered successfully")
         except Exception as e:
             app.logger.error(f"Blueprint registration failed: {e}")
