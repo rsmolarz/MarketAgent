@@ -57,6 +57,10 @@ def create_app():
             from routes.raw import raw_bp
             app.register_blueprint(raw_bp)
             
+            # Register simple blueprint for ultra-minimal display
+            from routes.simple import simple_bp
+            app.register_blueprint(simple_bp)
+            
             app.logger.info("Blueprints registered successfully")
         except Exception as e:
             app.logger.error(f"Blueprint registration failed: {e}")
