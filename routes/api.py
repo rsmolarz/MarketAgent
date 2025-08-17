@@ -29,7 +29,9 @@ def findings():
         try:
             # Query parameters
             agent_name = request.args.get('agent_name')
+            symbol = request.args.get('symbol')
             severity = request.args.get('severity')
+            market_type = request.args.get('market_type')
             hours = request.args.get('hours', 24, type=int)
             limit = request.args.get('limit', 100, type=int)
             
@@ -39,8 +41,14 @@ def findings():
             if agent_name:
                 query = query.filter_by(agent_name=agent_name)
             
+            if symbol:
+                query = query.filter_by(symbol=symbol)
+            
             if severity:
                 query = query.filter_by(severity=severity)
+            
+            if market_type:
+                query = query.filter_by(market_type=market_type)
             
             # Filter by time
             if hours:

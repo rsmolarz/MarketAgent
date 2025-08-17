@@ -77,6 +77,76 @@ class FindingsManager {
                     agentSelect.appendChild(option);
                 });
             }
+            
+            // Get unique symbols and other filter options from findings
+            const findingsResponse = await fetch('/api/findings?limit=1000');
+            if (findingsResponse.ok) {
+                const findings = await findingsResponse.json();
+                
+                // Populate symbols
+                const symbols = new Set();
+                const severities = new Set();
+                const marketTypes = new Set();
+                
+                findings.forEach(finding => {
+                    if (finding.symbol) symbols.add(finding.symbol);
+                    if (finding.severity) severities.add(finding.severity);
+                    if (finding.market_type) marketTypes.add(finding.market_type);
+                });
+                
+                // Populate symbol input with datalist for autocomplete
+                const symbolInput = document.getElementById('symbol-filter');
+                if (symbolInput && symbols.size > 0) {
+                    // Create or update datalist for autocomplete
+                    let datalist = document.getElementById('symbol-datalist');
+                    if (!datalist) {
+                        datalist = document.createElement('datalist');
+                        datalist.id = 'symbol-datalist';
+                        symbolInput.setAttribute('list', 'symbol-datalist');
+                        symbolInput.parentNode.appendChild(datalist);
+                    }
+                    
+                    // Clear and populate datalist
+                    datalist.innerHTML = '';
+                    Array.from(symbols).sort().forEach(symbol => {
+                        const option = document.createElement('option');
+                        option.value = symbol;
+                        datalist.appendChild(option);
+                    });
+                }
+                
+                // Populate severity dropdown (clear existing except "All Severities")
+                const severitySelect = document.getElementById('severity-filter');
+                if (severitySelect) {
+                    // Clear existing options except the first "All Severities" option
+                    while (severitySelect.children.length > 1) {
+                        severitySelect.removeChild(severitySelect.lastChild);
+                    }
+                    
+                    Array.from(severities).sort().forEach(severity => {
+                        const option = document.createElement('option');
+                        option.value = severity;
+                        option.textContent = severity.charAt(0).toUpperCase() + severity.slice(1);
+                        severitySelect.appendChild(option);
+                    });
+                }
+                
+                // Populate market type dropdown
+                const marketTypeSelect = document.getElementById('market-filter');
+                if (marketTypeSelect) {
+                    // Clear existing options except the first "All Markets" option
+                    while (marketTypeSelect.children.length > 1) {
+                        marketTypeSelect.removeChild(marketTypeSelect.lastChild);
+                    }
+                    
+                    Array.from(marketTypes).sort().forEach(marketType => {
+                        const option = document.createElement('option');
+                        option.value = marketType;
+                        option.textContent = marketType.charAt(0).toUpperCase() + marketType.slice(1);
+                        marketTypeSelect.appendChild(option);
+                    });
+                }
+            }
         } catch (error) {
             console.error('Error populating filter options:', error);
         }
