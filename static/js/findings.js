@@ -70,18 +70,34 @@ class FindingsManager {
     }
     
     async loadFindings() {
+        console.log('Loading findings...');
         try {
             const params = new URLSearchParams(this.filters);
+            console.log('Filters:', this.filters);
             const response = await fetch(`/api/findings?${params.toString()}`);
-            if (!response.ok) throw new Error('Failed to fetch findings');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
             
-            this.findings = await response.json();
-            this.renderFindings();
-            this.updateStatistics();
+            const data = await response.json();
+            console.log('Loaded findings data:', data.length, 'items');
+            this.findings = data;
+            this.renderFindings(data);
+            this.updateStatistics(data);
+            
+            // Force display even if no data
+            if (data.length === 0) {
+                console.log('No findings data received - displaying empty state');
+                this.renderFindings([]);
+            }
+            
+            console.log(`✓ Successfully loaded ${data.length} findings`);
             
         } catch (error) {
-            console.error('Error loading findings:', error);
-            this.showError('Failed to load findings');
+            console.error('❌ Error loading findings:', error);
+            this.showError('Failed to load findings. Please try again.');
+            // Show empty state on error
+            this.renderFindings([]);
         }
     }
     
@@ -174,18 +190,19 @@ class FindingsManager {
         }
     }
     
-    renderFindings() {
+    renderFindings(findings = null) {
         const container = document.getElementById('findings-container');
         const countElement = document.getElementById('findings-count');
         
-        countElement.textContent = this.findings.length;
+        const data = findings || this.findings || [];
+        if (countElement) countElement.textContent = data.length;
         
         // Clear container safely
         while (container.firstChild) {
             container.removeChild(container.firstChild);
         }
         
-        if (!this.findings || this.findings.length === 0) {
+        if (!data || data.length === 0) {
             const emptyState = this.createEmptyStateElement();
             container.appendChild(emptyState);
             feather.replace();
@@ -193,15 +210,19 @@ class FindingsManager {
         }
         
         // Create findings elements using safe DOM methods
-        this.findings.forEach(finding => {
+        data.forEach(finding => {
             const findingElement = this.createFindingCardElement(finding);
-            container.appendChild(findingElement);
+            if (findingElement) {
+                container.appendChild(findingElement);
+            }
         });
         
         feather.replace();
         
-        // Add event listeners to finding cards
-        this.attachFindingEventListeners();
+        // Add event listeners to finding cards if function exists
+        if (this.attachFindingEventListeners) {
+            this.attachFindingEventListeners();
+        }
     }
     
     createEmptyStateElement() {
@@ -676,7 +697,9 @@ class FindingsManager {
         this.loadFindings();
     }
     
-    updateStatistics() {
+    updateStatistics(data = null) {
+        const findings = data || this.findings || [];
+        console.log('Updating statistics for', findings.length, 'findings');
         const stats = this.calculateStatistics();
         
         document.getElementById('critical-count').textContent = stats.critical;
