@@ -70,7 +70,10 @@
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="symbol-filter" class="form-label">Symbol</label>
-                            <input type="text" class="form-control" id="symbol-filter" name="symbol" placeholder="e.g. BTC, TSLA, SPY">
+                            <input type="text" class="form-control" id="symbol-filter" name="symbol" placeholder="e.g. BTC, TSLA, SPY" list="symbol-datalist">
+                            <datalist id="symbol-datalist">
+                                <!-- Options will be populated by JavaScript -->
+                            </datalist>
                         </div>
                         
                         <div class="col-md-6 mb-3">

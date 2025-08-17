@@ -96,30 +96,22 @@ class FindingsManager {
                 
                 // Populate symbol input with datalist for autocomplete
                 const symbolInput = document.getElementById('symbol-filter');
-                if (symbolInput && symbols.size > 0) {
+                const datalist = document.getElementById('symbol-datalist');
+                
+                if (symbolInput && datalist && symbols.size > 0) {
                     console.log('Setting up symbol autocomplete with symbols:', Array.from(symbols));
-                    
-                    // Create or update datalist for autocomplete
-                    let datalist = document.getElementById('symbol-datalist');
-                    if (!datalist) {
-                        datalist = document.createElement('datalist');
-                        datalist.id = 'symbol-datalist';
-                        symbolInput.setAttribute('list', 'symbol-datalist');
-                        document.body.appendChild(datalist);
-                    }
                     
                     // Clear and populate datalist
                     datalist.innerHTML = '';
                     Array.from(symbols).sort().forEach(symbol => {
                         const option = document.createElement('option');
                         option.value = symbol;
-                        option.textContent = symbol;
                         datalist.appendChild(option);
                     });
                     
                     console.log('Symbol datalist populated with', datalist.children.length, 'options');
                 } else {
-                    console.log('No symbols found or symbol input not available. Symbols found:', symbols.size);
+                    console.log('Symbol autocomplete setup failed. Input:', !!symbolInput, 'Datalist:', !!datalist, 'Symbols:', symbols.size);
                 }
                 
                 // Populate severity dropdown (clear existing except "All Severities")
