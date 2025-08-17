@@ -274,5 +274,14 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{{ url_for('static', filename='js/findings.js') }}"></script>
+<!-- JavaScript disabled for findings - using server-side rendering -->
+<script>
+console.log('Findings page: Server-side rendering mode');
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize feather icons only
+    if (typeof feather !== 'undefined') {
+        feather.replace();
+    }
+});
+</script>
 {% endblock %}
