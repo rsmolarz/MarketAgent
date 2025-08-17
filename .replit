@@ -38,3 +38,4 @@ integrations = ["styling_replit==1.0.0"]
 
 [deployment]
 deploymentTarget = "cloudrun"
+run = ["sh", "-c", "gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app"]
