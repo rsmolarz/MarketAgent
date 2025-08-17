@@ -113,7 +113,7 @@ class FindingsManager {
         const severityColor = this.getSeverityColor(finding.severity);
         
         return `
-            <div class="finding-card card mb-3 severity-${finding.severity}" data-finding-id="${finding.id}">
+            <div class="finding-card card mb-3 severity-${finding.severity}" data-finding-id="${this.escapeHtml(String(finding.id))}">
                 <div class="card-header">
                     <div class="row align-items-center">
                         <div class="col">
@@ -148,7 +148,7 @@ class FindingsManager {
                     </div>
                     
                     <div class="mt-3">
-                        <button class="btn btn-outline-primary btn-sm view-details" data-finding-id="${finding.id}">
+                        <button class="btn btn-outline-primary btn-sm view-details" data-finding-id="${this.escapeHtml(String(finding.id))}">
                             <i data-feather="info" class="me-1"></i>
                             View Details
                         </button>
@@ -253,7 +253,7 @@ class FindingsManager {
             
             return `
                 <tr>
-                    <td><strong>${this.formatMetadataKey(key)}:</strong></td>
+                    <td><strong>${this.escapeHtml(this.formatMetadataKey(key))}:</strong></td>
                     <td>${this.escapeHtml(String(displayValue))}</td>
                 </tr>
             `;
@@ -420,7 +420,7 @@ class FindingsManager {
         const alertHtml = `
             <div class="alert alert-success alert-dismissible fade show" role="alert">
                 <i data-feather="check-circle" class="me-2"></i>
-                ${message}
+                ${this.escapeHtml(message)}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         `;
@@ -442,7 +442,7 @@ class FindingsManager {
         const alertHtml = `
             <div class="alert alert-danger alert-dismissible fade show" role="alert">
                 <i data-feather="alert-circle" class="me-2"></i>
-                ${message}
+                ${this.escapeHtml(message)}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         `;

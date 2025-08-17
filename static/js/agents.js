@@ -95,7 +95,7 @@ class AgentManager {
         
         return `
             <div class="col-lg-4 col-md-6 mb-4">
-                <div class="card agent-card ${statusClass}" data-agent="${agent.agent_name}">
+                <div class="card agent-card ${statusClass}" data-agent="${this.escapeHtml(agent.agent_name)}">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <h6 class="card-title mb-0">
                             <span class="status-indicator ${statusIndicator}"></span>
@@ -107,20 +107,20 @@ class AgentManager {
                             </button>
                             <ul class="dropdown-menu">
                                 <li>
-                                    <button class="dropdown-item agent-start" data-agent="${agent.agent_name}" 
+                                    <button class="dropdown-item agent-start" data-agent="${this.escapeHtml(agent.agent_name)}" 
                                             ${agent.is_active ? 'disabled' : ''}>
                                         <i data-feather="play" class="me-2"></i>Start
                                     </button>
                                 </li>
                                 <li>
-                                    <button class="dropdown-item agent-stop" data-agent="${agent.agent_name}" 
+                                    <button class="dropdown-item agent-stop" data-agent="${this.escapeHtml(agent.agent_name)}" 
                                             ${!agent.is_active ? 'disabled' : ''}>
                                         <i data-feather="pause" class="me-2"></i>Stop
                                     </button>
                                 </li>
                                 <li><hr class="dropdown-divider"></li>
                                 <li>
-                                    <button class="dropdown-item agent-settings" data-agent="${agent.agent_name}">
+                                    <button class="dropdown-item agent-settings" data-agent="${this.escapeHtml(agent.agent_name)}">
                                         <i data-feather="settings" class="me-2"></i>Settings
                                     </button>
                                 </li>
@@ -131,19 +131,19 @@ class AgentManager {
                         <div class="row text-center mb-3">
                             <div class="col-4">
                                 <div class="text-success">
-                                    <strong>${agent.run_count}</strong>
+                                    <strong>${this.escapeHtml(String(agent.run_count || 0))}</strong>
                                     <br><small>Runs</small>
                                 </div>
                             </div>
                             <div class="col-4">
                                 <div class="text-danger">
-                                    <strong>${agent.error_count}</strong>
+                                    <strong>${this.escapeHtml(String(agent.error_count || 0))}</strong>
                                     <br><small>Errors</small>
                                 </div>
                             </div>
                             <div class="col-4">
                                 <div class="text-info">
-                                    <strong>${agent.schedule_interval}m</strong>
+                                    <strong>${this.escapeHtml(String(agent.schedule_interval || 0))}m</strong>
                                     <br><small>Interval</small>
                                 </div>
                             </div>
@@ -404,7 +404,7 @@ class AgentManager {
         const alertHtml = `
             <div class="alert alert-success alert-dismissible fade show" role="alert">
                 <i data-feather="check-circle" class="me-2"></i>
-                ${message}
+                ${this.escapeHtml(message)}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         `;
@@ -427,7 +427,7 @@ class AgentManager {
         const alertHtml = `
             <div class="alert alert-danger alert-dismissible fade show" role="alert">
                 <i data-feather="alert-circle" class="me-2"></i>
-                ${message}
+                ${this.escapeHtml(message)}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         `;
