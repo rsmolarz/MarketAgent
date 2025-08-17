@@ -69,23 +69,238 @@ class AgentManager {
     renderAgents() {
         const container = document.getElementById('agents-container');
         
+        // Clear container safely
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
+        
         if (!this.agents || this.agents.length === 0) {
-            container.innerHTML = `
-                <div class="text-center text-muted">
-                    <i data-feather="cpu" class="mb-2"></i>
-                    <p>No agents configured</p>
-                </div>
-            `;
+            const emptyState = this.createEmptyStateElement();
+            container.appendChild(emptyState);
             feather.replace();
             return;
         }
         
-        const agentsHtml = this.agents.map(agent => this.renderAgentCard(agent)).join('');
-        container.innerHTML = agentsHtml;
+        // Create agent elements using safe DOM methods
+        this.agents.forEach(agent => {
+            const agentElement = this.createAgentCardElement(agent);
+            container.appendChild(agentElement);
+        });
+        
         feather.replace();
         
         // Add event listeners to agent cards
         this.attachAgentEventListeners();
+    }
+    
+    createEmptyStateElement() {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'text-center text-muted';
+        
+        const icon = document.createElement('i');
+        icon.setAttribute('data-feather', 'cpu');
+        icon.className = 'mb-2';
+        
+        const paragraph = document.createElement('p');
+        paragraph.textContent = 'No agents configured';
+        
+        emptyDiv.appendChild(icon);
+        emptyDiv.appendChild(paragraph);
+        
+        return emptyDiv;
+    }
+    
+    createAgentCardElement(agent) {
+        const statusClass = agent.is_active ? 'agent-active' : (agent.error_count > 0 ? 'agent-error' : 'agent-inactive');
+        const statusIndicator = agent.is_active ? 'status-active' : (agent.error_count > 0 ? 'status-error' : 'status-inactive');
+        const lastRun = agent.last_run ? this.formatTimestamp(agent.last_run) : 'Never';
+        
+        // Create main column div
+        const colDiv = document.createElement('div');
+        colDiv.className = 'col-lg-4 col-md-6 mb-4';
+        
+        // Create card
+        const cardDiv = document.createElement('div');
+        cardDiv.className = `card agent-card ${statusClass}`;
+        cardDiv.setAttribute('data-agent', agent.agent_name);
+        
+        // Create card header
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'card-header d-flex justify-content-between align-items-center';
+        
+        const titleElement = document.createElement('h6');
+        titleElement.className = 'card-title mb-0';
+        
+        const statusSpan = document.createElement('span');
+        statusSpan.className = `status-indicator ${statusIndicator}`;
+        
+        const titleText = document.createTextNode(agent.agent_name);
+        
+        titleElement.appendChild(statusSpan);
+        titleElement.appendChild(titleText);
+        
+        // Create dropdown
+        const dropdownDiv = document.createElement('div');
+        dropdownDiv.className = 'dropdown';
+        
+        const dropdownButton = document.createElement('button');
+        dropdownButton.className = 'btn btn-sm btn-outline-secondary';
+        dropdownButton.type = 'button';
+        dropdownButton.setAttribute('data-bs-toggle', 'dropdown');
+        
+        const dropdownIcon = document.createElement('i');
+        dropdownIcon.setAttribute('data-feather', 'more-horizontal');
+        dropdownButton.appendChild(dropdownIcon);
+        
+        const dropdownMenu = document.createElement('ul');
+        dropdownMenu.className = 'dropdown-menu';
+        
+        // Start button
+        const startLi = document.createElement('li');
+        const startButton = document.createElement('button');
+        startButton.className = 'dropdown-item agent-start';
+        startButton.setAttribute('data-agent', agent.agent_name);
+        if (agent.is_active) startButton.disabled = true;
+        
+        const startIcon = document.createElement('i');
+        startIcon.setAttribute('data-feather', 'play');
+        startIcon.className = 'me-2';
+        const startText = document.createTextNode('Start');
+        
+        startButton.appendChild(startIcon);
+        startButton.appendChild(startText);
+        startLi.appendChild(startButton);
+        
+        // Stop button
+        const stopLi = document.createElement('li');
+        const stopButton = document.createElement('button');
+        stopButton.className = 'dropdown-item agent-stop';
+        stopButton.setAttribute('data-agent', agent.agent_name);
+        if (!agent.is_active) stopButton.disabled = true;
+        
+        const stopIcon = document.createElement('i');
+        stopIcon.setAttribute('data-feather', 'pause');
+        stopIcon.className = 'me-2';
+        const stopText = document.createTextNode('Stop');
+        
+        stopButton.appendChild(stopIcon);
+        stopButton.appendChild(stopText);
+        stopLi.appendChild(stopButton);
+        
+        // Settings button
+        const settingsLi = document.createElement('li');
+        const settingsButton = document.createElement('button');
+        settingsButton.className = 'dropdown-item agent-settings';
+        settingsButton.setAttribute('data-agent', agent.agent_name);
+        
+        const settingsIcon = document.createElement('i');
+        settingsIcon.setAttribute('data-feather', 'settings');
+        settingsIcon.className = 'me-2';
+        const settingsText = document.createTextNode('Settings');
+        
+        settingsButton.appendChild(settingsIcon);
+        settingsButton.appendChild(settingsText);
+        settingsLi.appendChild(settingsButton);
+        
+        // Run button
+        const runLi = document.createElement('li');
+        const runButton = document.createElement('button');
+        runButton.className = 'dropdown-item agent-run';
+        runButton.setAttribute('data-agent', agent.agent_name);
+        
+        const runIcon = document.createElement('i');
+        runIcon.setAttribute('data-feather', 'play-circle');
+        runIcon.className = 'me-2';
+        const runText = document.createTextNode('Run Once');
+        
+        runButton.appendChild(runIcon);
+        runButton.appendChild(runText);
+        runLi.appendChild(runButton);
+        
+        dropdownMenu.appendChild(startLi);
+        dropdownMenu.appendChild(stopLi);
+        dropdownMenu.appendChild(settingsLi);
+        dropdownMenu.appendChild(runLi);
+        
+        dropdownDiv.appendChild(dropdownButton);
+        dropdownDiv.appendChild(dropdownMenu);
+        
+        headerDiv.appendChild(titleElement);
+        headerDiv.appendChild(dropdownDiv);
+        
+        // Create card body
+        const bodyDiv = document.createElement('div');
+        bodyDiv.className = 'card-body';
+        
+        // Status row
+        const statusRow = document.createElement('div');
+        statusRow.className = 'row text-center mb-3';
+        
+        const statusCol = document.createElement('div');
+        statusCol.className = 'col';
+        
+        const statusLabel = document.createElement('small');
+        statusLabel.className = 'text-muted d-block';
+        statusLabel.textContent = 'Status';
+        
+        const statusBadge = document.createElement('span');
+        statusBadge.className = agent.is_active ? 'badge bg-success' : 'badge bg-secondary';
+        statusBadge.textContent = agent.is_active ? 'Running' : 'Stopped';
+        
+        statusCol.appendChild(statusLabel);
+        statusCol.appendChild(statusBadge);
+        statusRow.appendChild(statusCol);
+        
+        // Stats row
+        const statsRow = document.createElement('div');
+        statsRow.className = 'row text-center small text-muted';
+        
+        // Run count
+        const runCountCol = document.createElement('div');
+        runCountCol.className = 'col-4';
+        const runCountLabel = document.createElement('div');
+        runCountLabel.textContent = 'Runs';
+        const runCountValue = document.createElement('div');
+        runCountValue.className = 'fw-bold text-primary';
+        runCountValue.textContent = String(agent.run_count || 0);
+        runCountCol.appendChild(runCountLabel);
+        runCountCol.appendChild(runCountValue);
+        
+        // Error count
+        const errorCountCol = document.createElement('div');
+        errorCountCol.className = 'col-4';
+        const errorCountLabel = document.createElement('div');
+        errorCountLabel.textContent = 'Errors';
+        const errorCountValue = document.createElement('div');
+        errorCountValue.className = agent.error_count > 0 ? 'fw-bold text-danger' : 'fw-bold text-success';
+        errorCountValue.textContent = String(agent.error_count || 0);
+        errorCountCol.appendChild(errorCountLabel);
+        errorCountCol.appendChild(errorCountValue);
+        
+        // Last run
+        const lastRunCol = document.createElement('div');
+        lastRunCol.className = 'col-4';
+        const lastRunLabel = document.createElement('div');
+        lastRunLabel.textContent = 'Last Run';
+        const lastRunValue = document.createElement('div');
+        lastRunValue.className = 'fw-bold';
+        lastRunValue.textContent = lastRun;
+        lastRunCol.appendChild(lastRunLabel);
+        lastRunCol.appendChild(lastRunValue);
+        
+        statsRow.appendChild(runCountCol);
+        statsRow.appendChild(errorCountCol);
+        statsRow.appendChild(lastRunCol);
+        
+        bodyDiv.appendChild(statusRow);
+        bodyDiv.appendChild(statsRow);
+        
+        // Assemble the card
+        cardDiv.appendChild(headerDiv);
+        cardDiv.appendChild(bodyDiv);
+        colDiv.appendChild(cardDiv);
+        
+        return colDiv;
     }
     
     renderAgentCard(agent) {
@@ -246,8 +461,10 @@ class AgentManager {
         // Show agent info using safe DOM manipulation
         const infoContainer = document.getElementById('agent-info-container');
         
-        // Clear container
-        infoContainer.innerHTML = '';
+        // Clear container safely
+        while (infoContainer.firstChild) {
+            infoContainer.removeChild(infoContainer.firstChild);
+        }
         
         // Create main card structure
         const card = document.createElement('div');
@@ -445,16 +662,27 @@ class AgentManager {
     }
     
     showSuccess(message) {
-        const alertHtml = `
-            <div class="alert alert-success alert-dismissible fade show" role="alert">
-                <i data-feather="check-circle" class="me-2"></i>
-                ${this.escapeHtml(message)}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        `;
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-success alert-dismissible fade show';
+        alertDiv.setAttribute('role', 'alert');
+        
+        const icon = document.createElement('i');
+        icon.setAttribute('data-feather', 'check-circle');
+        icon.className = 'me-2';
+        
+        const messageText = document.createTextNode(message);
+        
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'btn-close';
+        closeButton.setAttribute('data-bs-dismiss', 'alert');
+        
+        alertDiv.appendChild(icon);
+        alertDiv.appendChild(messageText);
+        alertDiv.appendChild(closeButton);
         
         const main = document.querySelector('main');
-        main.insertAdjacentHTML('afterbegin', alertHtml);
+        main.insertBefore(alertDiv, main.firstChild);
         feather.replace();
         
         // Auto dismiss after 3 seconds
@@ -468,16 +696,27 @@ class AgentManager {
     }
     
     showError(message) {
-        const alertHtml = `
-            <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                <i data-feather="alert-circle" class="me-2"></i>
-                ${this.escapeHtml(message)}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        `;
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-danger alert-dismissible fade show';
+        alertDiv.setAttribute('role', 'alert');
+        
+        const icon = document.createElement('i');
+        icon.setAttribute('data-feather', 'alert-circle');
+        icon.className = 'me-2';
+        
+        const messageText = document.createTextNode(message);
+        
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'btn-close';
+        closeButton.setAttribute('data-bs-dismiss', 'alert');
+        
+        alertDiv.appendChild(icon);
+        alertDiv.appendChild(messageText);
+        alertDiv.appendChild(closeButton);
         
         const main = document.querySelector('main');
-        main.insertAdjacentHTML('afterbegin', alertHtml);
+        main.insertBefore(alertDiv, main.firstChild);
         feather.replace();
     }
     
