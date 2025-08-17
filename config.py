@@ -40,7 +40,7 @@ class Config:
                 "threshold": cls.WHALE_WALLET_THRESHOLD,
                 "networks": ["ethereum", "bitcoin"]
             },
-            "ArbitrageFinder Agent": {
+            "ArbitrageFinderAgent": {
                 "interval": 5,
                 "exchanges": ["coinbase", "kraken", "kucoin"],
                 "min_profit": cls.ARBITRAGE_PROFIT_THRESHOLD

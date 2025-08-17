@@ -23,14 +23,13 @@ class ArbitrageFinderAgent(BaseAgent):
         # Initialize exchanges
         self.exchanges = self._initialize_exchanges()
         
-        # Common trading pairs to check
+        # Common trading pairs to check (removed BNB since no Binance)
         self.trading_pairs = [
-            'BTC/USDT',
-            'ETH/USDT', 
-            'BNB/USDT',
-            'ADA/USDT',
-            'SOL/USDT',
-            'MATIC/USDT'
+            'BTC/USD',
+            'ETH/USD', 
+            'ADA/USD',
+            'SOL/USD',
+            'MATIC/USD'
         ]
         
         self.min_profit_threshold = Config.ARBITRAGE_PROFIT_THRESHOLD
@@ -40,17 +39,8 @@ class ArbitrageFinderAgent(BaseAgent):
         exchanges = {}
         
         try:
-            # Coinbase Pro (globally accessible and reliable)
-            exchanges['coinbase'] = ccxt.coinbasepro({
-                'apiKey': Config.COINBASE_API_KEY,
-                'secret': Config.COINBASE_SECRET,
-                'passphrase': Config.COINBASE_PASSPHRASE,
-                'sandbox': False,
-                'enableRateLimit': True,
-            })
-            
             # Public-only exchanges (no API keys needed)
-            exchanges['coinbase'] = ccxt.coinbasepro({
+            exchanges['coinbase'] = ccxt.coinbase({
                 'sandbox': False,
                 'enableRateLimit': True,
             })

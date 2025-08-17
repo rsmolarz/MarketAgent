@@ -20,16 +20,15 @@ class CryptoFundingRateAgent(BaseAgent):
         super().__init__()
         self.coinbase_client = CoinbaseClient()
         
-        # Symbols to monitor
+        # Symbols to monitor (removed BNB since no Binance)
         self.symbols = [
-            'BTCUSDT',
-            'ETHUSDT',
-            'BNBUSDT',
-            'ADAUSDT',
-            'SOLUSDT',
-            'MATICUSDT',
-            'AVAXUSDT',
-            'DOTUSDT'
+            'BTCUSD',
+            'ETHUSD',
+            'ADAUSD',
+            'SOLUSD',
+            'MATICUSD',
+            'AVAXUSD',
+            'DOTUSD'
         ]
         
         # Funding rate thresholds
@@ -47,7 +46,7 @@ class CryptoFundingRateAgent(BaseAgent):
             return findings
         
         # Convert symbols to Coinbase format
-        coinbase_symbols = [symbol.replace('USDT', '/USD') for symbol in self.symbols]
+        coinbase_symbols = [symbol.replace('USD', '/USD') for symbol in self.symbols]
         
         for symbol in coinbase_symbols:
             try:
