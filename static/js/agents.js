@@ -243,31 +243,75 @@ class AgentManager {
         document.getElementById('settings-agent-name').value = agentName;
         document.getElementById('agent-interval').value = agent.schedule_interval;
         
-        // Show agent info
+        // Show agent info using safe DOM manipulation
         const infoContainer = document.getElementById('agent-info-container');
-        infoContainer.innerHTML = `
-            <div class="card bg-light">
-                <div class="card-body">
-                    <h6 class="card-title">${this.escapeHtml(agentName)}</h6>
-                    <div class="row">
-                        <div class="col-6">
-                            <small class="text-muted">Total Runs:</small>
-                            <div>${agent.run_count}</div>
-                        </div>
-                        <div class="col-6">
-                            <small class="text-muted">Error Count:</small>
-                            <div>${agent.error_count}</div>
-                        </div>
-                    </div>
-                    ${agent.last_error ? `
-                    <div class="mt-2">
-                        <small class="text-muted">Last Error:</small>
-                        <div class="text-danger small">${this.escapeHtml(agent.last_error)}</div>
-                    </div>
-                    ` : ''}
-                </div>
-            </div>
-        `;
+        
+        // Clear container
+        infoContainer.innerHTML = '';
+        
+        // Create main card structure
+        const card = document.createElement('div');
+        card.className = 'card bg-light';
+        
+        const cardBody = document.createElement('div');
+        cardBody.className = 'card-body';
+        
+        // Create title
+        const title = document.createElement('h6');
+        title.className = 'card-title';
+        title.textContent = agentName;
+        cardBody.appendChild(title);
+        
+        // Create stats row
+        const row = document.createElement('div');
+        row.className = 'row';
+        
+        // Total runs column
+        const runCol = document.createElement('div');
+        runCol.className = 'col-6';
+        const runLabel = document.createElement('small');
+        runLabel.className = 'text-muted';
+        runLabel.textContent = 'Total Runs:';
+        const runValue = document.createElement('div');
+        runValue.textContent = String(agent.run_count || 0);
+        runCol.appendChild(runLabel);
+        runCol.appendChild(runValue);
+        
+        // Error count column
+        const errorCol = document.createElement('div');
+        errorCol.className = 'col-6';
+        const errorLabel = document.createElement('small');
+        errorLabel.className = 'text-muted';
+        errorLabel.textContent = 'Error Count:';
+        const errorValue = document.createElement('div');
+        errorValue.textContent = String(agent.error_count || 0);
+        errorCol.appendChild(errorLabel);
+        errorCol.appendChild(errorValue);
+        
+        row.appendChild(runCol);
+        row.appendChild(errorCol);
+        cardBody.appendChild(row);
+        
+        // Add last error if exists
+        if (agent.last_error) {
+            const errorSection = document.createElement('div');
+            errorSection.className = 'mt-2';
+            
+            const errorLabelDiv = document.createElement('small');
+            errorLabelDiv.className = 'text-muted';
+            errorLabelDiv.textContent = 'Last Error:';
+            
+            const errorMessageDiv = document.createElement('div');
+            errorMessageDiv.className = 'text-danger small';
+            errorMessageDiv.textContent = agent.last_error;
+            
+            errorSection.appendChild(errorLabelDiv);
+            errorSection.appendChild(errorMessageDiv);
+            cardBody.appendChild(errorSection);
+        }
+        
+        card.appendChild(cardBody);
+        infoContainer.appendChild(card);
         
         this.settingsModal.show();
     }
