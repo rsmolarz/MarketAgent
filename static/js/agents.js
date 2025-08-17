@@ -6,7 +6,7 @@
 class AgentManager {
     constructor() {
         this.agents = [];
-        this.updateInterval = 15000; // 15 seconds
+        this.updateInterval = 5000; // 5 seconds for better responsiveness
         this.updateTimer = null;
         this.settingsModal = null;
         this.confirmationModal = null;
@@ -639,16 +639,23 @@ class AgentManager {
     formatTimestamp(timestamp) {
         if (!timestamp) return 'Never';
         
+        // Handle both ISO strings and raw timestamp strings
         const date = new Date(timestamp);
-        const now = new Date();
-        const diffInMinutes = Math.floor((now - date) / (1000 * 60));
+        if (isNaN(date.getTime())) return 'Invalid date';
         
-        if (diffInMinutes < 1) {
+        const now = new Date();
+        const diffInSeconds = Math.floor((now - date) / 1000);
+        
+        if (diffInSeconds < 30) {
             return 'Just now';
-        } else if (diffInMinutes < 60) {
-            return `${diffInMinutes}m ago`;
-        } else if (diffInMinutes < 1440) {
-            return `${Math.floor(diffInMinutes / 60)}h ago`;
+        } else if (diffInSeconds < 60) {
+            return `${diffInSeconds}s ago`;
+        } else if (diffInSeconds < 3600) {
+            const minutes = Math.floor(diffInSeconds / 60);
+            return `${minutes}m ago`;
+        } else if (diffInSeconds < 86400) {
+            const hours = Math.floor(diffInSeconds / 3600);
+            return `${hours}h ago`;
         } else {
             return date.toLocaleDateString();
         }

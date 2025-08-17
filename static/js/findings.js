@@ -7,7 +7,7 @@ class FindingsManager {
     constructor() {
         this.findings = [];
         this.filters = {};
-        this.updateInterval = 30000; // 30 seconds
+        this.updateInterval = 5000; // 5 seconds for better responsiveness
         this.updateTimer = null;
         this.detailsModal = null;
         
