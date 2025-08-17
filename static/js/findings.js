@@ -24,21 +24,44 @@ class FindingsManager {
     
     setupEventListeners() {
         // Filter form
-        document.getElementById('findings-filter-form').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.applyFilters();
-        });
+        const filterForm = document.getElementById('findings-filter-form');
+        if (filterForm) {
+            filterForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.applyFilters();
+            });
+        }
         
-        document.getElementById('clear-filters').addEventListener('click', () => {
-            this.clearFilters();
-        });
+        const clearBtn = document.getElementById('clear-filters');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                this.clearFilters();
+            });
+        }
         
-        document.getElementById('refresh-findings').addEventListener('click', () => {
-            this.loadFindings();
-        });
+        const refreshBtn = document.getElementById('refresh-findings');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', () => {
+                this.loadFindings();
+            });
+        }
         
-        document.getElementById('export-findings').addEventListener('click', () => {
-            this.exportFindings();
+        const exportBtn = document.getElementById('export-findings');
+        if (exportBtn) {
+            exportBtn.addEventListener('click', () => {
+                this.exportFindings();
+            });
+        }
+        
+        // Add real-time filter listening for immediate feedback
+        const filterInputs = ['agent-filter', 'severity-filter', 'market-filter', 'time-filter', 'symbol-filter', 'limit-filter'];
+        filterInputs.forEach(inputId => {
+            const element = document.getElementById(inputId);
+            if (element) {
+                element.addEventListener('change', () => {
+                    this.applyFilters();
+                });
+            }
         });
     }
     
