@@ -170,12 +170,79 @@
             </div>
             <div class="card-body">
                 <div id="findings-container">
-                    <div class="text-center">
-                        <div class="spinner-border text-secondary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <p class="text-muted mt-2">Loading findings...</p>
+                    {% if error %}
+                    <div class="alert alert-danger">
+                        <strong>Database Error:</strong> {{ error }}
                     </div>
+                    {% endif %}
+                    
+                    {% if embedded_findings %}
+                    <div class="alert alert-success mb-3">
+                        <strong>✅ Live Market Data Loaded:</strong> {{ embedded_findings|length }} findings retrieved directly from database
+                    </div>
+                    
+                    {% for finding in embedded_findings %}
+                    <div class="finding-item mb-3 p-3 border rounded border-start border-{{ 'danger' if finding.severity == 'high' else ('warning' if finding.severity == 'medium' else 'success') }} border-3">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <h6 class="mb-0 fw-bold">{{ finding.title }}</h6>
+                            <div class="d-flex gap-2">
+                                <span class="badge bg-{{ 'danger' if finding.severity == 'high' else ('warning' if finding.severity == 'medium' else 'success') }}">
+                                    {{ finding.severity.title() }}
+                                </span>
+                                {% if finding.symbol %}
+                                <span class="badge bg-secondary">{{ finding.symbol }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-2">
+                            <div class="col-sm-6">
+                                <small class="text-muted">
+                                    🤖 Agent: {{ finding.agent_name }}
+                                </small>
+                            </div>
+                            <div class="col-sm-6 text-sm-end">
+                                <small class="text-muted">
+                                    ⏰ {{ finding.timestamp }}
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <p class="mb-2">{{ finding.description }}</p>
+                        
+                        {% if finding.confidence %}
+                        <div class="d-flex align-items-center gap-2">
+                            <small class="text-muted">Confidence:</small>
+                            <div class="progress flex-grow-1" style="height: 6px;">
+                                <div class="progress-bar" 
+                                     style="width: {{ (finding.confidence * 100)|round }}%"
+                                     aria-valuenow="{{ (finding.confidence * 100)|round }}" 
+                                     aria-valuemin="0" 
+                                     aria-valuemax="100">
+                                </div>
+                            </div>
+                            <small class="text-muted">{{ (finding.confidence * 100)|round }}%</small>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                    
+                    {% else %}
+                    <div class="alert alert-warning">
+                        <strong>No Market Findings Available</strong>
+                        <br>The system is analyzing markets but no inefficiencies have been detected yet.
+                        <br><small class="text-muted">Market analysis agents are continuously monitoring for opportunities...</small>
+                    </div>
+                    
+                    <div class="text-center py-4">
+                        <div class="mb-3">📈</div>
+                        <h5 class="text-muted">Monitoring Markets...</h5>
+                        <p class="text-muted">Our AI agents are scanning for market inefficiencies and trading opportunities.</p>
+                        <button class="btn btn-primary" onclick="location.reload()">
+                            🔄 Check for New Findings
+                        </button>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>

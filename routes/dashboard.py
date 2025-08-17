@@ -64,8 +64,28 @@ def agents():
 
 @dashboard_bp.route('/findings')
 def findings():
-    """Findings page"""
-    return render_template('findings.html')
+    """Findings page with direct server-side data embedding"""
+    try:
+        # Get findings directly from database and embed in template
+        findings = Finding.query.order_by(Finding.timestamp.desc()).limit(50).all()
+        findings_data = []
+        for finding in findings:
+            findings_data.append({
+                'id': finding.id,
+                'title': finding.title,
+                'description': finding.description,
+                'agent_name': finding.agent_name,
+                'symbol': finding.symbol,
+                'severity': finding.severity,
+                'confidence': finding.confidence,
+                'market_type': finding.market_type,
+                'timestamp': finding.timestamp.isoformat() + 'Z',
+                'metadata': finding.metadata or {}
+            })
+        return render_template('findings.html', embedded_findings=findings_data)
+    except Exception as e:
+        logger.error(f"Error loading findings: {e}")
+        return render_template('findings.html', embedded_findings=[], error=str(e))
 
 @dashboard_bp.route('/simple')
 def simple_findings():
