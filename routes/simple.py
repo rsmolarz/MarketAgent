@@ -12,17 +12,19 @@ def simple_findings():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Market Findings - Simple View</title>
+        <title>SIMPLE MARKET FINDINGS</title>
         <style>
-            body { font-family: Arial; margin: 20px; }
-            .finding { border: 1px solid #ccc; margin: 10px 0; padding: 10px; }
-            .success { background: #d4edda; border-color: #c3e6cb; }
-            .warning { background: #fff3cd; border-color: #ffeaa7; }
+            body { font-family: Arial; margin: 20px; background: white; }
+            .finding { border: 2px solid #333; margin: 15px 0; padding: 15px; }
+            .success { background: #90EE90; border-color: #32CD32; color: black; }
+            .warning { background: #FFD700; border-color: #FFA500; color: black; }
+            h1 { color: #000080; font-size: 24px; }
+            h3 { color: #8B0000; }
         </style>
     </head>
     <body>
-        <h1>Market Findings</h1>
-        <p><strong>Status:</strong> {{ findings|length }} findings loaded from database</p>
+        <h1>📊 SIMPLE MARKET FINDINGS PAGE</h1>
+        <p><strong>DATABASE STATUS:</strong> {{ findings|length }} findings loaded successfully</p>
         
         {% if findings %}
             <div class="success">
