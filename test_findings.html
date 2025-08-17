@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Market Data Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .finding { border: 1px solid #ddd; margin: 10px 0; padding: 15px; border-radius: 5px; }
+        .severity-high { border-left: 4px solid #dc3545; }
+        .severity-medium { border-left: 4px solid #ffc107; }
+        .severity-low { border-left: 4px solid #28a745; }
+        .timestamp { color: #666; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <h1>Live Market Data Test</h1>
+    <p id="status">Loading...</p>
+    <div id="findings-container"></div>
+
+    <script>
+        async function loadMarketData() {
+            try {
+                console.log('Testing market data API...');
+                const response = await fetch('/api/findings');
+                const data = await response.json();
+                
+                document.getElementById('status').innerHTML = `✅ ${data.length} findings loaded successfully`;
+                
+                const container = document.getElementById('findings-container');
+                container.innerHTML = '';
+                
+                if (data.length === 0) {
+                    container.innerHTML = '<p>No findings available</p>';
+                    return;
+                }
+                
+                data.slice(0, 10).forEach(finding => {
+                    const div = document.createElement('div');
+                    div.className = `finding severity-${finding.severity}`;
+                    
+                    const timestamp = new Date(finding.timestamp).toLocaleString();
+                    const minutesAgo = Math.floor((Date.now() - new Date(finding.timestamp)) / 60000);
+                    
+                    div.innerHTML = `
+                        <h4>${finding.title}</h4>
+                        <p><strong>Agent:</strong> ${finding.agent_name}</p>
+                        <p><strong>Symbol:</strong> ${finding.symbol || 'N/A'}</p>
+                        <p><strong>Severity:</strong> ${finding.severity}</p>
+                        <p><strong>Description:</strong> ${finding.description}</p>
+                        <p class="timestamp">📅 ${timestamp} (${minutesAgo} minutes ago)</p>
+                    `;
+                    
+                    container.appendChild(div);
+                });
+                
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('status').innerHTML = `❌ Error: ${error.message}`;
+            }
+        }
+        
+        // Load immediately and refresh every 10 seconds
+        loadMarketData();
+        setInterval(loadMarketData, 10000);
+    </script>
+</body>
+</html>
