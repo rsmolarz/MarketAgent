@@ -109,6 +109,7 @@ def findings():
                 'metadata': finding.metadata or {}
             })
         
+        logger.info(f"Returning {len(findings_data)} findings to template")
         return render_template('findings.html', embedded_findings=findings_data)
     except Exception as e:
         logger.error(f"Error loading findings: {e}")
