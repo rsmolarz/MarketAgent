@@ -28,7 +28,7 @@ class AgentScheduler:
             self.load_schedule()
     
     def load_schedule(self):
-        """Load agent schedule from JSON file"""
+        """Load agent schedule from JSON file and auto-start agents"""
         try:
             with open("agent_schedule.json", "r") as f:
                 schedule_data = json.load(f)
@@ -44,9 +44,12 @@ class AgentScheduler:
                     status.schedule_interval = interval_minutes
                     status.is_active = False
                     db.session.add(status)
+                    db.session.commit()
                 
-                db.session.commit()
-                logger.info(f"Loaded schedule for {len(schedule_data)} agents")
+                # Auto-start all agents after loading
+                self.start_agent(agent_name)
+                
+            logger.info(f"Loaded and auto-started {len(schedule_data)} agents")
                 
         except FileNotFoundError:
             logger.warning("agent_schedule.json not found, using default schedule")
@@ -56,7 +59,7 @@ class AgentScheduler:
             self.create_default_schedule()
     
     def create_default_schedule(self):
-        """Create default schedule for all available agents"""
+        """Create default schedule for all available agents and auto-start them"""
         default_agents = {
             "MacroWatcherAgent": 60,
             "WhaleWalletWatcherAgent": 15,
@@ -81,8 +84,12 @@ class AgentScheduler:
                 status.schedule_interval = interval
                 status.is_active = False
                 db.session.add(status)
+                db.session.commit()
+            
+            # Auto-start all default agents
+            self.start_agent(agent_name)
         
-        db.session.commit()
+        logger.info(f"Created default schedule and auto-started {len(default_agents)} agents")
     
     def start_agent(self, agent_name: str) -> bool:
         """Start scheduling an agent"""
