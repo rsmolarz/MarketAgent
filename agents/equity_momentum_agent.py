@@ -131,15 +131,32 @@ class EquityMomentumAgent(BaseAgent):
             
             volume_change = (avg_volume_recent - avg_volume_earlier) / avg_volume_earlier if avg_volume_earlier > 0 else 0
             
-            # Check for divergences
-            if price_change > 0.02 and volume_change < -0.2:  # Price up 2%+, volume down 20%+
+            # Check for divergences with more sensitive thresholds  
+            if price_change > 0.01 and volume_change < -0.1:  # Price up 1%+, volume down 10%+ (more sensitive)
                 findings.append(self.create_finding(
                     title=f"Volume Divergence in {symbol}",
                     description=f"Price increased {price_change*100:.1f}% while volume "
                                f"decreased {abs(volume_change)*100:.1f}%. "
-                               f"This could indicate weak buying interest.",
+                               f"This could indicate weak buying interest or distribution.",
                     severity='medium',
-                    confidence=0.6,
+                    confidence=0.7,
+                    symbol=symbol,
+                    market_type='equity',
+                    metadata={
+                        'price_change': price_change,
+                        'volume_change': volume_change,
+                        'avg_volume_recent': avg_volume_recent,
+                        'avg_volume_earlier': avg_volume_earlier
+                    }
+                ))
+            elif price_change < -0.01 and volume_change > 0.1:  # Price down, volume up 
+                findings.append(self.create_finding(
+                    title=f"Selling Pressure in {symbol}",
+                    description=f"Price decreased {abs(price_change)*100:.1f}% while volume "
+                               f"increased {volume_change*100:.1f}%. "
+                               f"This indicates strong selling pressure or institutional distribution.",
+                    severity='high',
+                    confidence=0.8,
                     symbol=symbol,
                     market_type='equity',
                     metadata={

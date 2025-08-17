@@ -23,13 +23,18 @@ class SentimentDivergenceAgent(BaseAgent):
         self.yahoo_client = YahooFinanceClient()
         self.github_client = GitHubClient()
         
-        # Assets to monitor
+        # Assets to monitor - expanded for more findings
         self.assets = {
             'BTC-USD': {'name': 'Bitcoin', 'type': 'crypto'},
             'ETH-USD': {'name': 'Ethereum', 'type': 'crypto'},
             'SPY': {'name': 'S&P 500', 'type': 'equity'},
             'QQQ': {'name': 'NASDAQ', 'type': 'equity'},
-            'TSLA': {'name': 'Tesla', 'type': 'equity'}
+            'TSLA': {'name': 'Tesla', 'type': 'equity'},
+            'AAPL': {'name': 'Apple', 'type': 'equity'},
+            'MSFT': {'name': 'Microsoft', 'type': 'equity'},
+            'GOOGL': {'name': 'Google', 'type': 'equity'},
+            'NVDA': {'name': 'NVIDIA', 'type': 'equity'},
+            'META': {'name': 'Meta', 'type': 'equity'}
         }
         
         self.divergence_threshold = Config.SENTIMENT_DIVERGENCE_THRESHOLD
