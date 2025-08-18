@@ -268,23 +268,65 @@ def findings_chart_data():
 
 @dashboard_bp.route('/api/market_data')
 def market_data():
-    """Get recent market data"""
+    """Get current market data for key symbols from recent findings"""
     try:
-        symbols = request.args.getlist('symbols')
-        if not symbols:
-            symbols = ['BTC', 'ETH', 'SPY', 'VIX']
+        # Get recent findings for major market symbols
+        symbols = ['SPY', 'QQQ', 'AAPL', 'TSLA', 'NVDA', 'MSFT', 'BTC-USD', 'ETH-USD']
+        market_data = []
         
-        data = {}
         for symbol in symbols:
-            recent_data = MarketData.query.filter_by(
-                symbol=symbol
-            ).order_by(MarketData.timestamp.desc()).first()
+            # Get most recent finding for this symbol
+            recent_finding = Finding.query.filter_by(symbol=symbol)\
+                .filter(Finding.timestamp >= datetime.utcnow() - timedelta(hours=24))\
+                .order_by(Finding.timestamp.desc()).first()
             
-            if recent_data:
-                data[symbol] = recent_data.to_dict()
+            if recent_finding:
+                # Extract price-related metadata safely
+                try:
+                    # Use the correct attribute name from the model
+                    metadata = recent_finding.finding_metadata or {}
+                    if isinstance(metadata, dict):
+                        price_change = metadata.get('price_change', 0)
+                    else:
+                        price_change = 0
+                except Exception:
+                    price_change = 0
+                
+                market_data.append({
+                    'symbol': symbol,
+                    'name': _get_symbol_name(symbol),
+                    'price_change': round(price_change * 100, 2) if isinstance(price_change, (int, float)) else 0,
+                    'last_updated': recent_finding.timestamp.isoformat(),
+                    'status': _get_market_status(recent_finding),
+                    'findings_count': Finding.query.filter_by(symbol=symbol)
+                        .filter(Finding.timestamp >= datetime.utcnow() - timedelta(hours=24)).count()
+                })
         
-        return jsonify(data)
+        return jsonify(market_data)
         
     except Exception as e:
         logger.error(f"Error getting market data: {e}")
         return jsonify({'error': str(e)}), 500
+
+def _get_symbol_name(symbol):
+    """Get friendly name for symbol"""
+    names = {
+        'SPY': 'S&P 500',
+        'QQQ': 'NASDAQ',
+        'AAPL': 'Apple',
+        'TSLA': 'Tesla', 
+        'NVDA': 'NVIDIA',
+        'MSFT': 'Microsoft',
+        'BTC-USD': 'Bitcoin',
+        'ETH-USD': 'Ethereum'
+    }
+    return names.get(symbol, symbol)
+
+def _get_market_status(finding):
+    """Get market status based on finding severity and type"""
+    if finding.severity == 'high':
+        return 'alert'
+    elif finding.severity == 'medium':
+        return 'warning'
+    else:
+        return 'normal'
