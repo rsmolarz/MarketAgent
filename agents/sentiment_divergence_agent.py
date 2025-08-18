@@ -47,10 +47,17 @@ class SentimentDivergenceAgent(BaseAgent):
         
         for symbol, asset_info in self.assets.items():
             try:
-                # Get price data
+                # Get price data with fallback for reliability
                 price_data = self.yahoo_client.get_price_data(symbol, period='7d')
                 if price_data is None or len(price_data) < 5:
-                    continue
+                    self.logger.warning(f"Using fallback data for {symbol}")
+                    fallback_data = self.yahoo_client._fallback_series(symbol, period='7d')
+                    if fallback_data:
+                        import pandas as pd
+                        price_data = pd.DataFrame(fallback_data)
+                        price_data.set_index('Date', inplace=True)
+                    else:
+                        continue
                 
                 # Calculate price momentum
                 price_momentum = self._calculate_price_momentum(price_data)

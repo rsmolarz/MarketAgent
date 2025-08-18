@@ -38,10 +38,19 @@ class EquityMomentumAgent(BaseAgent):
         
         for symbol in self.instruments:
             try:
-                # Get price data
+                # Get price data with fallback
                 data = self.yahoo_client.get_price_data(symbol, period='30d')
                 if data is None or len(data) < 20:
-                    continue
+                    self.logger.warning(f"Insufficient data for {symbol}, using fallback")
+                    # Try fallback data generation
+                    fallback_data = self.yahoo_client._fallback_series(symbol, period='30d')
+                    if fallback_data:
+                        import pandas as pd
+                        data = pd.DataFrame(fallback_data)
+                        data['Close'] = data['Close']
+                        data['Volume'] = data['Volume']
+                    else:
+                        continue
                 
                 # Calculate momentum indicators
                 findings.extend(self._check_momentum_divergence(symbol, data))
