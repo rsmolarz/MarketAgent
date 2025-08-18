@@ -6,6 +6,12 @@ This platform leverages AI agents to detect market inefficiencies, arbitrage opp
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
+## Recent Changes
+- **2025-08-18**: Fixed production database separation issue - deployed site uses separate database from development
+- **2025-08-18**: Added essential API keys (Alpha Vantage, Coinbase, GitHub, News API) for authentic market data collection
+- **2025-08-18**: Accelerated agent scheduling from 15-60 minutes to 2-5 minutes for faster data flow
+- **2025-08-18**: Verified authentic market data collection working - EquityMomentumAgent generating 36+ findings/hour, AltDataSignalAgent tracking GitHub AI/ML activity, real Coinbase crypto data flowing
+
 ## System Architecture
 
 ### Core Application Stack
