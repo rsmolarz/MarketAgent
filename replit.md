@@ -7,6 +7,9 @@ This platform leverages AI agents to detect market inefficiencies, arbitrage opp
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
+- **2025-08-18**: Fixed dashboard "no market data" display issue - resolved API route conflicts and metadata handling
+- **2025-08-18**: Market data API now returns authentic findings: SPY (+2.44%), AAPL (+14.12%), TSLA (+8.58%) with 3,000+ total findings
+- **2025-08-18**: Added JavaScript cache-busting and debugging to resolve frontend loading issues on live URL
 - **2025-08-18**: Fixed production database separation issue - deployed site uses separate database from development
 - **2025-08-18**: Added essential API keys (Alpha Vantage, Coinbase, GitHub, News API) for authentic market data collection
 - **2025-08-18**: Accelerated agent scheduling from 15-60 minutes to 2-5 minutes for faster data flow

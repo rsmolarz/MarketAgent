@@ -150,5 +150,22 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20250818-v2"></script>
+<script>
+// Debug logging for dashboard
+console.log('Dashboard template loaded at', new Date());
+setTimeout(() => {
+    console.log('Market data container:', document.getElementById('market-data-container'));
+    console.log('Recent findings container:', document.getElementById('recent-findings-container'));
+    
+    // Force reload market data if still showing loading
+    const marketContainer = document.getElementById('market-data-container');
+    if (marketContainer && marketContainer.innerHTML.includes('Loading market data')) {
+        console.log('Market data still loading, forcing refresh...');
+        if (window.dashboard) {
+            window.dashboard.loadMarketData();
+        }
+    }
+}, 2000);
+</script>
 {% endblock %}

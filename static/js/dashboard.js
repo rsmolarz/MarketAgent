@@ -76,10 +76,14 @@ class Dashboard {
     
     async loadMarketData() {
         try {
+            console.log('Loading market data...');
             const response = await fetch('/api/market_data');
-            if (!response.ok) throw new Error('Failed to fetch market data');
+            console.log('Market data response status:', response.status);
+            
+            if (!response.ok) throw new Error(`Failed to fetch market data: ${response.status}`);
             
             const marketData = await response.json();
+            console.log('Market data received:', marketData);
             this.renderMarketData(marketData);
             
         } catch (error) {
