@@ -76,8 +76,7 @@ class Dashboard {
     
     async loadMarketData() {
         try {
-            const symbols = ['BTC', 'ETH', 'SPY', 'VIX'];
-            const response = await fetch(`/api/market_data?${symbols.map(s => `symbols=${s}`).join('&')}`);
+            const response = await fetch('/api/market_data');
             if (!response.ok) throw new Error('Failed to fetch market data');
             
             const marketData = await response.json();
@@ -265,7 +264,7 @@ class Dashboard {
             container.removeChild(container.firstChild);
         }
         
-        if (!marketData || Object.keys(marketData).length === 0) {
+        if (!marketData || marketData.length === 0) {
             const emptyDiv = document.createElement('div');
             emptyDiv.className = 'text-center text-muted';
             
@@ -283,55 +282,47 @@ class Dashboard {
             return;
         }
         
-        Object.entries(marketData).forEach(([symbol, data]) => {
-            const marketItem = this.createMarketItemElement(symbol, data);
+        marketData.forEach(data => {
+            const marketItem = this.createMarketItemElement(data);
             container.appendChild(marketItem);
         });
         
         feather.replace();
     }
     
-    createMarketItemElement(symbol, data) {
+    createMarketItemElement(data) {
         const marketItem = document.createElement('div');
-        marketItem.className = 'market-item';
+        marketItem.className = 'market-item d-flex justify-content-between align-items-center py-2 border-bottom';
         
-        // Left side with symbol and source
+        // Left side with symbol and name
         const leftDiv = document.createElement('div');
         
         const symbolDiv = document.createElement('div');
-        symbolDiv.className = 'market-symbol';
-        symbolDiv.textContent = symbol || '';
+        symbolDiv.className = 'fw-bold';
+        symbolDiv.textContent = data.symbol || '';
         
-        const sourceSmall = document.createElement('small');
-        sourceSmall.className = 'text-muted';
-        sourceSmall.textContent = data.data_source || 'Market';
+        const nameSmall = document.createElement('small');
+        nameSmall.className = 'text-muted';
+        nameSmall.textContent = data.name || data.symbol;
         
         leftDiv.appendChild(symbolDiv);
-        leftDiv.appendChild(sourceSmall);
+        leftDiv.appendChild(nameSmall);
         
-        // Right side with price and timestamp
+        // Right side with change and findings count
         const rightDiv = document.createElement('div');
         rightDiv.className = 'text-end';
         
-        const priceDiv = document.createElement('div');
-        priceDiv.className = 'market-price';
-        const price = data.price ? data.price.toFixed(2) : 'N/A';
-        priceDiv.textContent = `$${price}`;
+        const changeDiv = document.createElement('div');
+        changeDiv.className = data.price_change >= 0 ? 'text-success' : 'text-danger';
+        const changeText = data.price_change >= 0 ? `+${data.price_change}%` : `${data.price_change}%`;
+        changeDiv.textContent = changeText;
         
-        const timestampSmall = document.createElement('small');
-        timestampSmall.className = 'text-muted';
+        const findingsSmall = document.createElement('small');
+        findingsSmall.className = 'text-muted';
+        findingsSmall.textContent = `${data.findings_count || 0} findings`;
         
-        const clockIcon = document.createElement('i');
-        clockIcon.setAttribute('data-feather', 'clock');
-        clockIcon.className = 'me-1';
-        
-        const timestampText = document.createTextNode(this.formatTimestamp(data.timestamp));
-        
-        timestampSmall.appendChild(clockIcon);
-        timestampSmall.appendChild(timestampText);
-        
-        rightDiv.appendChild(priceDiv);
-        rightDiv.appendChild(timestampSmall);
+        rightDiv.appendChild(changeDiv);
+        rightDiv.appendChild(findingsSmall);
         
         marketItem.appendChild(leftDiv);
         marketItem.appendChild(rightDiv);
