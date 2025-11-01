@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+
+{% block title %}System Status - Market Inefficiency Platform{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h2 mb-0">
+            <i data-feather="activity" class="me-2"></i>
+            System Status
+        </h1>
+        <p class="text-muted">Real-time system health monitoring and heartbeat logs</p>
+    </div>
+</div>
+
+<!-- System Health Metrics -->
+<div class="row mb-4">
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i data-feather="check-circle" class="text-success" width="32" height="32"></i>
+                    </div>
+                    <div>
+                        <h6 class="card-subtitle mb-1 text-muted">System Status</h6>
+                        <h3 class="card-title mb-0 text-success">Operational</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i data-feather="heart" class="text-danger" width="32" height="32"></i>
+                    </div>
+                    <div>
+                        <h6 class="card-subtitle mb-1 text-muted">Heartbeats (24h)</h6>
+                        <h3 class="card-title mb-0" id="heartbeat-count">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i data-feather="cpu" class="text-info" width="32" height="32"></i>
+                    </div>
+                    <div>
+                        <h6 class="card-subtitle mb-1 text-muted">Active Agents</h6>
+                        <h3 class="card-title mb-0" id="system-active-agents">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6 mb-3">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="me-3">
+                        <i data-feather="clock" class="text-warning" width="32" height="32"></i>
+                    </div>
+                    <div>
+                        <h6 class="card-subtitle mb-1 text-muted">Last Heartbeat</h6>
+                        <h3 class="card-title mb-0" id="last-heartbeat-time" style="font-size: 1rem;">-</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Heartbeat Logs -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i data-feather="list" class="me-2"></i>
+                    System Heartbeat Logs
+                </h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadHeartbeats()">
+                    <i data-feather="refresh-cw" class="me-1"></i>
+                    Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="heartbeat-logs-container">
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-secondary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-2">Loading heartbeat logs...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Load heartbeat data
+async function loadHeartbeats() {
+    try {
+        const response = await fetch('/api/heartbeats');
+        const heartbeats = await response.json();
+        
+        const container = document.getElementById('heartbeat-logs-container');
+        
+        if (!heartbeats || heartbeats.length === 0) {
+            container.innerHTML = `
+                <div class="alert alert-info mb-0">
+                    <i data-feather="info" class="me-2"></i>
+                    No heartbeat logs found. The system will generate heartbeat signals automatically.
+                </div>
+            `;
+            feather.replace();
+            return;
+        }
+        
+        // Update stats
+        document.getElementById('heartbeat-count').textContent = heartbeats.length;
+        
+        // Show last heartbeat time
+        if (heartbeats.length > 0) {
+            const lastTime = new Date(heartbeats[0].timestamp);
+            const now = new Date();
+            const minutesAgo = Math.round((now - lastTime) / 1000 / 60);
+            document.getElementById('last-heartbeat-time').textContent = 
+                minutesAgo === 0 ? 'Just now' : `${minutesAgo}m ago`;
+        }
+        
+        // Build table
+        let html = `
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Status</th>
+                            <th>Description</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        heartbeats.forEach(hb => {
+            const timestamp = new Date(hb.timestamp);
+            const timeAgo = getTimeAgo(timestamp);
+            const metadata = hb.metadata || {};
+            
+            html += `
+                <tr>
+                    <td>
+                        <small class="text-muted">${timestamp.toLocaleString()}</small><br>
+                        <small class="badge bg-secondary">${timeAgo}</small>
+                    </td>
+                    <td>
+                        <span class="badge bg-success">
+                            <i data-feather="check" class="me-1" style="width: 14px; height: 14px;"></i>
+                            Operational
+                        </span>
+                    </td>
+                    <td>${hb.description || 'System heartbeat check'}</td>
+                    <td>
+                        <small class="text-muted">
+                            Agent: <strong>${hb.agent_name}</strong><br>
+                            Confidence: ${(hb.confidence * 100).toFixed(0)}%
+                        </small>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        container.innerHTML = html;
+        feather.replace();
+        
+    } catch (error) {
+        console.error('Error loading heartbeats:', error);
+        document.getElementById('heartbeat-logs-container').innerHTML = `
+            <div class="alert alert-danger mb-0">
+                <i data-feather="alert-triangle" class="me-2"></i>
+                Error loading heartbeat logs: ${error.message}
+            </div>
+        `;
+        feather.replace();
+    }
+}
+
+// Load agent stats
+async function loadAgentStats() {
+    try {
+        const response = await fetch('/api/dashboard/stats');
+        const stats = await response.json();
+        
+        document.getElementById('system-active-agents').textContent = 
+            `${stats.active_agents}/${stats.total_agents}`;
+    } catch (error) {
+        console.error('Error loading stats:', error);
+    }
+}
+
+function getTimeAgo(timestamp) {
+    const now = new Date();
+    const seconds = Math.floor((now - timestamp) / 1000);
+    
+    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+// Initial load
+loadHeartbeats();
+loadAgentStats();
+
+// Auto-refresh every 30 seconds
+setInterval(() => {
+    loadHeartbeats();
+    loadAgentStats();
+}, 30000);
+</script>
+{% endblock %}

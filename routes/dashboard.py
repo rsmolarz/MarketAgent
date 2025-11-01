@@ -62,6 +62,11 @@ def agents():
     """Agent management page"""
     return render_template('agents.html')
 
+@dashboard_bp.route('/system-status')
+def system_status():
+    """System status page showing heartbeat and system health"""
+    return render_template('system_status.html')
+
 @dashboard_bp.route('/findings')
 def findings():
     """Findings page with server-side filtering"""
@@ -168,9 +173,10 @@ def raw_data():
 def dashboard_stats():
     """Get dashboard statistics"""
     try:
-        # Get recent findings count
+        # Get recent findings count (excluding heartbeats)
         recent_findings = Finding.query.filter(
-            Finding.timestamp >= datetime.utcnow() - timedelta(hours=24)
+            Finding.timestamp >= datetime.utcnow() - timedelta(hours=24),
+            Finding.agent_name != 'HeartbeatAgent'
         ).count()
         
         # Get active agents count
@@ -179,10 +185,11 @@ def dashboard_stats():
         # Get total agents count
         total_agents = AgentStatus.query.count()
         
-        # Get high severity findings in last hour
+        # Get high severity findings in last hour (excluding heartbeats)
         critical_findings = Finding.query.filter(
             Finding.timestamp >= datetime.utcnow() - timedelta(hours=1),
-            Finding.severity.in_(['high', 'critical'])
+            Finding.severity.in_(['high', 'critical']),
+            Finding.agent_name != 'HeartbeatAgent'
         ).count()
         
         return jsonify({
@@ -198,11 +205,14 @@ def dashboard_stats():
 
 @dashboard_bp.route('/api/findings/recent')
 def recent_findings():
-    """Get recent findings for dashboard"""
+    """Get recent findings for dashboard (excluding heartbeats)"""
     try:
         limit = request.args.get('limit', 10, type=int)
         
-        findings = Finding.query.order_by(
+        # Exclude HeartbeatAgent findings from main dashboard
+        findings = Finding.query.filter(
+            Finding.agent_name != 'HeartbeatAgent'
+        ).order_by(
             Finding.timestamp.desc()
         ).limit(limit).all()
         
@@ -212,6 +222,28 @@ def recent_findings():
         logger.error(f"Error getting recent findings: {e}")
         return jsonify({'error': str(e)}), 500
 
+@dashboard_bp.route('/api/heartbeats')
+def heartbeats():
+    """Get system heartbeat logs"""
+    try:
+        limit = request.args.get('limit', 100, type=int)
+        hours = request.args.get('hours', 24, type=int)
+        
+        # Get only HeartbeatAgent findings
+        time_threshold = datetime.utcnow() - timedelta(hours=hours)
+        heartbeats = Finding.query.filter(
+            Finding.agent_name == 'HeartbeatAgent',
+            Finding.timestamp >= time_threshold
+        ).order_by(
+            Finding.timestamp.desc()
+        ).limit(limit).all()
+        
+        return jsonify([hb.to_dict() for hb in heartbeats])
+        
+    except Exception as e:
+        logger.error(f"Error getting heartbeats: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @dashboard_bp.route('/api/findings/chart_data')
 def findings_chart_data():
     """Get findings data for charts"""
@@ -219,9 +251,10 @@ def findings_chart_data():
         days = request.args.get('days', 7, type=int)
         start_date = datetime.utcnow() - timedelta(days=days)
         
-        # Get findings by hour for the chart
+        # Get findings by hour for the chart (excluding heartbeats)
         findings = Finding.query.filter(
-            Finding.timestamp >= start_date
+            Finding.timestamp >= start_date,
+            Finding.agent_name != 'HeartbeatAgent'
         ).order_by(Finding.timestamp.asc()).all()
         
         # Group by hour
