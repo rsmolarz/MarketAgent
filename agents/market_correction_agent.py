@@ -95,14 +95,15 @@ class MarketCorrectionAgent(BaseAgent):
             decline_pct = (current_price - high_52w) / high_52w
             
             # Check if approaching correction territory
-            if decline_pct <= -0.07:  # 7% decline - warning
-                severity = 'critical' if decline_pct <= -0.10 else 'high'
+            warning_threshold = -self.correction_threshold * 0.7  # 70% of correction threshold
+            if decline_pct <= warning_threshold:  # Warning level
+                severity = 'critical' if decline_pct <= -self.correction_threshold else 'high'
                 
                 findings.append(self.create_finding(
                     title=f"{info['name']} Approaching Correction",
                     description=f"{info['name']} has declined {abs(decline_pct)*100:.1f}% from its "
                                f"52-week high of ${high_52w:.2f}. Current price: ${current_price:.2f}. "
-                               f"A decline of 10% or more is typically considered a correction.",
+                               f"A decline of {self.correction_threshold*100:.0f}% or more is typically considered a correction.",
                     severity=severity,
                     confidence=0.85,
                     symbol=symbol,
@@ -111,7 +112,7 @@ class MarketCorrectionAgent(BaseAgent):
                         'decline_from_peak': decline_pct,
                         'current_price': float(current_price),
                         'peak_price': float(high_52w),
-                        'correction_threshold': -0.10
+                        'correction_threshold': -self.correction_threshold
                     }
                 ))
                 
@@ -165,8 +166,9 @@ class MarketCorrectionAgent(BaseAgent):
                         }
                     ))
             
-            # Extreme overbought condition (RSI > 75)
-            if current_rsi > 75:
+            # Extreme overbought condition
+            extreme_threshold = self.rsi_overbought + 5  # 5 points above configured threshold
+            if current_rsi > extreme_threshold:
                 findings.append(self.create_finding(
                     title=f"{info['name']} Extremely Overbought",
                     description=f"RSI is at {current_rsi:.1f}, indicating extreme overbought conditions. "
@@ -177,7 +179,7 @@ class MarketCorrectionAgent(BaseAgent):
                     market_type=info['type'],
                     metadata={
                         'rsi': float(current_rsi),
-                        'rsi_threshold': 75,
+                        'rsi_threshold': extreme_threshold,
                         'current_price': float(current_price)
                     }
                 ))
