@@ -45,10 +45,18 @@ class GeopoliticalRiskAgent(BaseAgent):
     def __init__(self):
         super().__init__()
         self.news_api_key = os.getenv("NEWS_API_KEY", "")
-        self.seen_titles = {region: [] for region in self.HOTSPOTS}
-        self.risk_threshold = 50
-        self.max_articles_per_region = 5
+        
+        # Read configuration from Config with fallbacks
+        self.risk_threshold = self.config.get('risk_threshold', 50)
+        self.max_articles_per_region = self.config.get('max_articles_per_region', 5)
         self.cache_size = 100
+        
+        # Use configured hotspots or default
+        configured_hotspots = self.config.get('hotspots', [])
+        if configured_hotspots:
+            self.HOTSPOTS = {region: f"{region} crisis" for region in configured_hotspots}
+        
+        self.seen_titles = {region: [] for region in self.HOTSPOTS}
         
     def analyze(self) -> List[Dict[str, Any]]:
         """
@@ -89,19 +97,21 @@ class GeopoliticalRiskAgent(BaseAgent):
                 if risk_score >= self.risk_threshold:
                     severity = self._determine_severity(risk_score)
                     
-                    findings.append({
-                        'title': f'Geopolitical Risk Alert: {region}',
-                        'description': f'{summary} Risk keywords: {", ".join(keywords)}',
-                        'severity': severity,
-                        'category': 'geopolitical_risk',
-                        'metadata': {
+                    findings.append(self.create_finding(
+                        title=f'Geopolitical Risk Alert: {region}',
+                        description=f'{summary} Risk keywords: {", ".join(keywords)}',
+                        severity=severity,
+                        confidence=min(risk_score / 100.0, 1.0),
+                        symbol=None,
+                        market_type='geopolitical',
+                        metadata={
                             'region': region,
                             'risk_score': risk_score,
                             'keywords': keywords,
                             'article_count': len(new_articles),
                             'query': query
                         }
-                    })
+                    ))
                     
                     self.logger.warning(f"Geopolitical risk alert for {region}: {risk_score}/100")
                     

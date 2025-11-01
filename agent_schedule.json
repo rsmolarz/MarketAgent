@@ -7,5 +7,6 @@
   "EquityMomentumAgent": 5,
   "CryptoFundingRateAgent": 5,
   "BondStressAgent": 5,
+  "GeopoliticalRiskAgent": 5,
   "HeartbeatAgent": 1
 }

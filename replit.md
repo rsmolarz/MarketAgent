@@ -7,6 +7,7 @@ This platform leverages AI agents to detect market inefficiencies, arbitrage opp
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
+- **2025-11-01**: Added GeopoliticalRiskAgent - monitors 6 global hotspots (Taiwan, Ukraine, Middle East, China-US, North Korea, South China Sea) using NLP sentiment analysis and risk keywords
 - **2025-08-18**: Fixed dashboard "no market data" display issue - resolved API route conflicts and metadata handling
 - **2025-08-18**: Market data API now returns authentic findings: SPY (+2.44%), AAPL (+14.12%), TSLA (+8.58%) with 3,000+ total findings
 - **2025-08-18**: Added JavaScript cache-busting and debugging to resolve frontend loading issues on live URL
@@ -26,7 +27,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Agent Architecture
 - **Base Agent Pattern**: Agents inherit from `BaseAgent` for standardized plan/act/reflect operations.
-- **Modular Design**: Over 24 specialized agents in the `agents/` directory for specific market sectors or data sources.
+- **Modular Design**: 10 specialized agents in the `agents/` directory for specific market sectors or data sources.
 - **Registry System**: `AgentRegistry` manages agent lifecycle.
 - **Scheduling System**: JSON-based configuration (`agent_schedule.json`) defines execution intervals.
 
@@ -68,7 +69,8 @@ Preferred communication style: Simple, everyday language.
 - **GitHub API**: Repository metrics.
 - **Patent APIs**: USPTO PatentsView.
 - **Satellite Data**: Specialized providers for maritime and logistics.
-- **News APIs**: For regulatory and geopolitical risk assessment.
+- **News APIs**: NewsAPI and Google News RSS for geopolitical risk assessment.
+- **NLP Processing**: NLTK VADER for sentiment analysis of news articles.
 
 ### Infrastructure Services
 - **SMTP Servers**: For email notifications.
