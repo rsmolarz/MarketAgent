@@ -8,6 +8,8 @@ class Config:
     COINBASE_PASSPHRASE = os.getenv("COINBASE_PASSPHRASE", "")
     ETHERSCAN_API_KEY = os.getenv("ETHERSCAN_API_KEY", "")
     GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+    NEWS_API_KEY = os.getenv("NEWS_API_KEY", "")
+    ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
     
@@ -25,6 +27,7 @@ class Config:
     WHALE_WALLET_THRESHOLD = 1000  # ETH
     ARBITRAGE_PROFIT_THRESHOLD = 0.02  # 2%
     SENTIMENT_DIVERGENCE_THRESHOLD = 0.3
+    GEOPOLITICAL_RISK_THRESHOLD = 50  # 0-100 scale
     
     @classmethod
     def get_agent_config(cls, agent_name: str) -> Dict[str, Any]:
@@ -49,6 +52,12 @@ class Config:
                 "interval": 30,
                 "sources": ["twitter", "reddit", "news"],
                 "threshold": cls.SENTIMENT_DIVERGENCE_THRESHOLD
+            },
+            "GeopoliticalRiskAgent": {
+                "interval": 30,
+                "risk_threshold": cls.GEOPOLITICAL_RISK_THRESHOLD,
+                "max_articles_per_region": 5,
+                "hotspots": ["Taiwan", "Ukraine", "Middle East", "China-US", "North Korea", "South China Sea"]
             }
         }
         return configs.get(agent_name, {"interval": cls.DEFAULT_AGENT_INTERVAL})
