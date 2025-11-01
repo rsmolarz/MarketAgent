@@ -22,6 +22,7 @@ AVAILABLE_AGENTS = [
     'EquityMomentumAgent',
     'CryptoFundingRateAgent',
     'BondStressAgent',
+    'GeopoliticalRiskAgent',
     'HeartbeatAgent'
 ]
 
