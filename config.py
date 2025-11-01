@@ -28,6 +28,10 @@ class Config:
     ARBITRAGE_PROFIT_THRESHOLD = 0.02  # 2%
     SENTIMENT_DIVERGENCE_THRESHOLD = 0.3
     GEOPOLITICAL_RISK_THRESHOLD = 50  # 0-100 scale
+    MARKET_CORRECTION_THRESHOLD = 0.10  # 10% decline
+    RSI_OVERBOUGHT = 70  # RSI threshold
+    VIX_WARNING = 25  # VIX warning level
+    VIX_CRITICAL = 35  # VIX critical level
     
     @classmethod
     def get_agent_config(cls, agent_name: str) -> Dict[str, Any]:
@@ -58,6 +62,13 @@ class Config:
                 "risk_threshold": cls.GEOPOLITICAL_RISK_THRESHOLD,
                 "max_articles_per_region": 5,
                 "hotspots": ["Taiwan", "Ukraine", "Middle East", "China-US", "North Korea", "South China Sea"]
+            },
+            "MarketCorrectionAgent": {
+                "interval": 15,
+                "correction_threshold": cls.MARKET_CORRECTION_THRESHOLD,
+                "rsi_overbought": cls.RSI_OVERBOUGHT,
+                "vix_warning": cls.VIX_WARNING,
+                "vix_critical": cls.VIX_CRITICAL
             }
         }
         return configs.get(agent_name, {"interval": cls.DEFAULT_AGENT_INTERVAL})
