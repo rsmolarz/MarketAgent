@@ -262,11 +262,12 @@ def findings_chart_data():
         for finding in findings:
             hour_key = finding.timestamp.strftime('%Y-%m-%d %H:00')
             if hour_key not in hourly_data:
-                hourly_data[hour_key] = {'high': 0, 'medium': 0, 'low': 0}
+                hourly_data[hour_key] = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0}
             hourly_data[hour_key][finding.severity] += 1
         
         # Convert to chart format
         labels = list(hourly_data.keys())
+        critical_data = [hourly_data[label]['critical'] for label in labels]
         high_data = [hourly_data[label]['high'] for label in labels]
         medium_data = [hourly_data[label]['medium'] for label in labels]
         low_data = [hourly_data[label]['low'] for label in labels]
@@ -274,6 +275,12 @@ def findings_chart_data():
         return jsonify({
             'labels': labels,
             'datasets': [
+                {
+                    'label': 'Critical',
+                    'data': critical_data,
+                    'backgroundColor': 'rgba(139, 0, 0, 0.5)',
+                    'borderColor': 'rgba(139, 0, 0, 1)'
+                },
                 {
                     'label': 'High Severity',
                     'data': high_data,
