@@ -4,12 +4,26 @@
 
 {% block content %}
 <div class="row mb-4">
-    <div class="col-12">
-        <h1 class="h2 mb-0">
-            <i data-feather="trending-up" class="me-2"></i>
-            Market Inefficiency Dashboard
-        </h1>
-        <p class="text-muted">Real-time monitoring of market anomalies and inefficiencies</p>
+    <div class="col-12 d-flex justify-content-between align-items-center flex-wrap">
+        <div>
+            <h1 class="h2 mb-0">
+                <i data-feather="trending-up" class="me-2"></i>
+                Market Inefficiency Dashboard
+            </h1>
+            <p class="text-muted mb-0">Real-time monitoring of market anomalies and inefficiencies</p>
+        </div>
+        <div class="d-flex align-items-center mt-2 mt-md-0">
+            <label for="time-window-select" class="me-2 text-muted mb-0">Time Window:</label>
+            <select id="time-window-select" class="form-select form-select-sm" style="width: auto;">
+                <option value="1">Last 1 Hour</option>
+                <option value="6">Last 6 Hours</option>
+                <option value="12">Last 12 Hours</option>
+                <option value="24" selected>Last 24 Hours</option>
+                <option value="48">Last 48 Hours</option>
+                <option value="72">Last 3 Days</option>
+                <option value="168">Last 7 Days</option>
+            </select>
+        </div>
     </div>
 </div>
 

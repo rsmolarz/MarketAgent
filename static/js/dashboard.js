@@ -8,14 +8,27 @@ class Dashboard {
         this.updateInterval = 30000; // 30 seconds
         this.chart = null;
         this.updateTimer = null;
+        this.timeWindowHours = 24; // Default time window
         
         this.init();
     }
     
     init() {
+        this.loadSavedTimeWindow();
         this.setupEventListeners();
         this.loadInitialData();
         this.startAutoUpdate();
+    }
+    
+    loadSavedTimeWindow() {
+        const saved = localStorage.getItem('dashboardTimeWindow');
+        if (saved) {
+            this.timeWindowHours = parseInt(saved, 10) || 24;
+            const select = document.getElementById('time-window-select');
+            if (select) {
+                select.value = this.timeWindowHours.toString();
+            }
+        }
     }
     
     setupEventListeners() {
@@ -25,6 +38,16 @@ class Dashboard {
                 this.loadInitialData();
             }
         });
+        
+        // Time window selector
+        const timeWindowSelect = document.getElementById('time-window-select');
+        if (timeWindowSelect) {
+            timeWindowSelect.addEventListener('change', (e) => {
+                this.timeWindowHours = parseInt(e.target.value, 10) || 24;
+                localStorage.setItem('dashboardTimeWindow', this.timeWindowHours.toString());
+                this.loadInitialData();
+            });
+        }
     }
     
     async loadInitialData() {
@@ -44,7 +67,7 @@ class Dashboard {
     
     async loadDashboardStats() {
         try {
-            const response = await fetch('/api/dashboard/stats');
+            const response = await fetch(`/api/dashboard/stats?hours=${this.timeWindowHours}`);
             if (!response.ok) throw new Error('Failed to fetch stats');
             
             const stats = await response.json();
@@ -77,7 +100,7 @@ class Dashboard {
     async loadMarketData() {
         try {
             console.log('Loading market data...');
-            const response = await fetch('/api/market_data');
+            const response = await fetch(`/api/market_data?hours=${this.timeWindowHours}`);
             console.log('Market data response status:', response.status);
             
             if (!response.ok) throw new Error(`Failed to fetch market data: ${response.status}`);

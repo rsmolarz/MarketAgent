@@ -173,9 +173,13 @@ def raw_data():
 def dashboard_stats():
     """Get dashboard statistics"""
     try:
+        # Get time window from query parameter (default 24 hours)
+        hours = request.args.get('hours', 24, type=int)
+        hours = max(1, min(hours, 168))  # Clamp between 1 hour and 7 days
+        
         # Get recent findings count (excluding heartbeats)
         recent_findings = Finding.query.filter(
-            Finding.timestamp >= datetime.utcnow() - timedelta(hours=24),
+            Finding.timestamp >= datetime.utcnow() - timedelta(hours=hours),
             Finding.agent_name != 'HeartbeatAgent'
         ).count()
         
@@ -310,6 +314,10 @@ def findings_chart_data():
 def market_data():
     """Get current market data for key symbols from recent findings"""
     try:
+        # Get time window from query parameter (default 24 hours)
+        hours = request.args.get('hours', 24, type=int)
+        hours = max(1, min(hours, 168))  # Clamp between 1 hour and 7 days
+        
         # Get recent findings for major market symbols
         symbols = ['SPY', 'QQQ', 'AAPL', 'TSLA', 'NVDA', 'MSFT', 'BTC-USD', 'ETH-USD']
         market_data = []
@@ -317,7 +325,7 @@ def market_data():
         for symbol in symbols:
             # Get most recent finding for this symbol
             recent_finding = Finding.query.filter_by(symbol=symbol)\
-                .filter(Finding.timestamp >= datetime.utcnow() - timedelta(hours=24))\
+                .filter(Finding.timestamp >= datetime.utcnow() - timedelta(hours=hours))\
                 .order_by(Finding.timestamp.desc()).first()
             
             if recent_finding:
@@ -339,7 +347,7 @@ def market_data():
                     'last_updated': recent_finding.timestamp.isoformat(),
                     'status': _get_market_status(recent_finding),
                     'findings_count': Finding.query.filter_by(symbol=symbol)
-                        .filter(Finding.timestamp >= datetime.utcnow() - timedelta(hours=24)).count()
+                        .filter(Finding.timestamp >= datetime.utcnow() - timedelta(hours=hours)).count()
                 })
         
         return jsonify(market_data)
