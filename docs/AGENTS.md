@@ -1,11 +1,12 @@
 # Market Inefficiency Detection Agents
 
-This document provides a comprehensive overview of all 11 AI agents in the Market Inefficiency Detection Platform.
+This document provides a comprehensive overview of all 12 AI agents in the Market Inefficiency Detection Platform.
 
 ## Agent Architecture
 
 All agents inherit from `BaseAgent` which provides:
-- Standardized `plan()`, `act()`, and `reflect()` workflow
+- Standardized `analyze()` method that returns findings
+- Automatic error handling via `run()` wrapper
 - Configuration loading from `config.yaml`
 - Finding creation via `create_finding()` helper
 - Logging and error handling
@@ -25,6 +26,7 @@ All agents inherit from `BaseAgent` which provides:
 | MacroWatcherAgent | Macro indicator swings | Yahoo Finance | 5 min | VIX, DXY, commodities |
 | MarketCorrectionAgent | Correction early warnings | Yahoo Finance | 5 min | SPY, QQQ, VIX, RSI |
 | GeopoliticalRiskAgent | Global hotspot monitoring | News API, RSS | 5 min | 6 hotspot regions |
+| GreatestTradeAgent | Systemic risk detection | XLRE, CDS models | 5 min | Bubbles, CDS, tranches |
 
 ---
 
@@ -174,6 +176,31 @@ All agents inherit from `BaseAgent` which provides:
 
 ---
 
+### 12. GreatestTradeAgent
+**File:** `agents/greatest_trade_agent.py`  
+**Purpose:** Detects systemic market inefficiencies inspired by "The Greatest Trade Ever" - combining macro bubble detection, CDS pricing analysis, and structured product risk assessment.  
+**Data Sources:** Yahoo Finance (XLRE), Internal CDS models, Structured product models  
+**Schedule:** Every 5 minutes  
+
+**Modular Components:**
+- `agents/analyzers/macro_bubble_detector.py` - Housing/credit bubble detection
+- `agents/analyzers/cds_analyzer.py` - CDS pricing inefficiency analysis
+- `agents/analyzers/structured_product_analyzer.py` - Tranche risk assessment
+
+**Key Analysis:**
+- **Macro Bubbles:** Price-to-income ratios, credit growth thresholds
+- **CDS Pricing:** Compares spreads vs expected loss for AAA through BB ratings
+- **Structured Products:** Analyzes tranche risk under correlated vs independent defaults
+- **Combined Signal:** Triggers "Greatest Trade" alert when multiple systemic conditions align
+
+**Monitored Ratings:** AAA, AA, A, BBB, BB  
+**Key Thresholds:**
+- Price-to-income > 1.25x historical average = bubble warning
+- CDS mispricing > 1% = trading opportunity
+- Tranche risk multiplier > 3x = hidden systemic risk
+
+---
+
 ## Environment Variables Required
 
 | Variable | Used By | Purpose |
@@ -189,10 +216,10 @@ All agents inherit from `BaseAgent` which provides:
 ## Adding a New Agent
 
 1. Create a new file in `agents/` inheriting from `BaseAgent`
-2. Implement `plan()`, `act()`, and `reflect()` methods
-3. Use `create_finding()` to generate findings
-4. Add configuration to `agent_schedule.json`
-5. Register in `agents/__init__.py`
+2. Implement the `analyze()` method that returns a list of findings
+3. Use `create_finding()` helper to generate standardized findings
+4. Add configuration to `agent_schedule.json` with execution interval
+5. Register in `agents/__init__.py` AVAILABLE_AGENTS list
 
 ## Testing
 

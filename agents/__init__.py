@@ -24,7 +24,8 @@ AVAILABLE_AGENTS = [
     'BondStressAgent',
     'GeopoliticalRiskAgent',
     'MarketCorrectionAgent',
-    'HeartbeatAgent'
+    'HeartbeatAgent',
+    'GreatestTradeAgent'
 ]
 
 def get_agent_class(agent_name: str) -> Optional[Type[BaseAgent]]:

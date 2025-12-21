@@ -9,5 +9,6 @@
   "BondStressAgent": 5,
   "GeopoliticalRiskAgent": 5,
   "MarketCorrectionAgent": 5,
-  "HeartbeatAgent": 1
+  "HeartbeatAgent": 1,
+  "GreatestTradeAgent": 5
 }
