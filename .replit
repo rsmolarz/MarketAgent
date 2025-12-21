@@ -34,7 +34,7 @@ localPort = 5001
 externalPort = 3000
 
 [agent]
-integrations = ["styling_replit==1.0.0"]
+integrations = ["styling_replit:1.0.0"]
 
 [deployment]
 deploymentTarget = "cloudrun"
