@@ -3,6 +3,7 @@ from models import Finding, AgentStatus, MarketData
 from app import db
 from datetime import datetime, timedelta
 import logging
+from services.ai_analysis import analyze_alert_with_chatgpt
 
 # Import and register raw data blueprint
 from routes.raw import raw_bp
@@ -378,3 +379,48 @@ def _get_market_status(finding):
         return 'warning'
     else:
         return 'normal'
+
+
+@dashboard_bp.route('/api/analyze_alert', methods=['POST'])
+def analyze_alert():
+    """Analyze an alert using ChatGPT and return trading strategy insights"""
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'success': False, 'error': 'No data provided'}), 400
+        
+        finding_id = data.get('finding_id')
+        
+        if finding_id:
+            finding = Finding.query.get(finding_id)
+            if not finding:
+                return jsonify({'success': False, 'error': 'Finding not found'}), 404
+            
+            finding_data = {
+                'id': finding.id,
+                'title': finding.title,
+                'description': finding.description,
+                'agent_name': finding.agent_name,
+                'symbol': finding.symbol,
+                'severity': finding.severity,
+                'confidence': finding.confidence,
+                'market_type': finding.market_type,
+                'timestamp': finding.timestamp.isoformat() if finding.timestamp else None,
+                'metadata': finding.finding_metadata or {}
+            }
+        else:
+            finding_data = data.get('finding_data', {})
+            if not finding_data:
+                return jsonify({'success': False, 'error': 'No finding data provided'}), 400
+        
+        result = analyze_alert_with_chatgpt(finding_data)
+        
+        if result.get('error') == 'budget_exceeded':
+            return jsonify(result), 402
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error in analyze_alert endpoint: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
