@@ -602,10 +602,11 @@ class Dashboard {
                 feather.replace();
             }
         } catch (error) {
-            console.error('AI Analysis error:', error);
+            console.error('AI Analysis error:', error.message || error);
             loadingDiv.style.display = 'none';
             errorDiv.style.display = 'block';
-            errorMessage.textContent = 'Network error. Please check your connection and try again.';
+            const errMsg = error.message || 'Unknown error';
+            errorMessage.textContent = `Error: ${errMsg}. Please try again.`;
             feather.replace();
         }
     }
@@ -675,15 +676,15 @@ class Dashboard {
 }
 
 // Initialize dashboard when DOM is ready
-let dashboard;
+window.dashboard = null;
 
 document.addEventListener('DOMContentLoaded', function() {
-    dashboard = new Dashboard();
+    window.dashboard = new Dashboard();
 });
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', function() {
-    if (dashboard) {
-        dashboard.destroy();
+    if (window.dashboard) {
+        window.dashboard.destroy();
     }
 });
