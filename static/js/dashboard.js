@@ -9,6 +9,7 @@ class Dashboard {
         this.chart = null;
         this.updateTimer = null;
         this.timeWindowHours = 24; // Default time window
+        this.currentAnalysisFinding = null; // For retry functionality
         
         this.init();
     }
@@ -46,6 +47,16 @@ class Dashboard {
                 this.timeWindowHours = parseInt(e.target.value, 10) || 24;
                 localStorage.setItem('dashboardTimeWindow', this.timeWindowHours.toString());
                 this.loadInitialData();
+            });
+        }
+        
+        // AI Analysis retry button
+        const retryBtn = document.getElementById('ai-analysis-retry-btn');
+        if (retryBtn) {
+            retryBtn.addEventListener('click', () => {
+                if (this.currentAnalysisFinding) {
+                    this.analyzeWithAI(this.currentAnalysisFinding);
+                }
             });
         }
     }
@@ -223,15 +234,37 @@ class Dashboard {
         metaSmall.appendChild(clockIcon);
         metaSmall.appendChild(timestampText);
         
-        // Right side confidence
+        // Right side - confidence and AI button
         const rightDiv = document.createElement('div');
-        rightDiv.className = 'ms-3';
+        rightDiv.className = 'ms-3 text-end';
         
         const confidenceBadge = document.createElement('div');
-        confidenceBadge.className = 'badge bg-secondary';
+        confidenceBadge.className = 'badge bg-secondary mb-2';
         confidenceBadge.textContent = `${Math.round((finding.confidence || 0) * 100)}%`;
         
+        const aiButton = document.createElement('button');
+        aiButton.className = 'btn btn-outline-primary btn-sm btn-ai-analyze d-block w-100';
+        aiButton.setAttribute('data-finding-id', finding.id || '');
+        aiButton.setAttribute('title', 'Get AI trading analysis');
+        
+        const aiIcon = document.createElement('i');
+        aiIcon.setAttribute('data-feather', 'cpu');
+        aiIcon.className = 'me-1';
+        aiIcon.style.width = '12px';
+        aiIcon.style.height = '12px';
+        
+        const aiText = document.createTextNode('Analyze');
+        
+        aiButton.appendChild(aiIcon);
+        aiButton.appendChild(aiText);
+        
+        aiButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.analyzeWithAI(finding);
+        });
+        
         rightDiv.appendChild(confidenceBadge);
+        rightDiv.appendChild(aiButton);
         
         // Assemble the structure
         leftDiv.appendChild(titleH6);
@@ -514,6 +547,123 @@ class Dashboard {
         const errorDiv = this.createErrorElement(message, () => this.loadFindingsChart());
         container.appendChild(errorDiv);
         feather.replace();
+    }
+    
+    async analyzeWithAI(finding) {
+        this.currentAnalysisFinding = finding;
+        
+        const modal = document.getElementById('aiAnalysisModal');
+        const loadingDiv = document.getElementById('ai-analysis-loading');
+        const contentDiv = document.getElementById('ai-analysis-content');
+        const errorDiv = document.getElementById('ai-analysis-error');
+        const alertTitle = document.getElementById('ai-analysis-alert-title');
+        const analysisText = document.getElementById('ai-analysis-text');
+        const errorMessage = document.getElementById('ai-analysis-error-message');
+        
+        loadingDiv.style.display = 'block';
+        contentDiv.style.display = 'none';
+        errorDiv.style.display = 'none';
+        
+        const bsModal = new bootstrap.Modal(modal);
+        bsModal.show();
+        feather.replace();
+        
+        try {
+            const requestBody = finding.id 
+                ? { finding_id: finding.id }
+                : { finding_data: finding };
+            
+            const response = await fetch('/api/analyze_alert', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                loadingDiv.style.display = 'none';
+                contentDiv.style.display = 'block';
+                
+                alertTitle.textContent = finding.title || 'Market Alert';
+                analysisText.innerHTML = this.formatAnalysisText(result.analysis);
+                feather.replace();
+            } else {
+                loadingDiv.style.display = 'none';
+                errorDiv.style.display = 'block';
+                
+                if (result.error === 'budget_exceeded') {
+                    errorMessage.textContent = result.message || 'Cloud budget exceeded. Please upgrade to continue.';
+                } else {
+                    errorMessage.textContent = result.message || 'Failed to analyze alert. Please try again.';
+                }
+                feather.replace();
+            }
+        } catch (error) {
+            console.error('AI Analysis error:', error);
+            loadingDiv.style.display = 'none';
+            errorDiv.style.display = 'block';
+            errorMessage.textContent = 'Network error. Please check your connection and try again.';
+            feather.replace();
+        }
+    }
+    
+    formatAnalysisText(text) {
+        if (!text) return '';
+        
+        let formatted = text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+        
+        formatted = formatted
+            .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.+?)\*/g, '<em>$1</em>');
+        
+        formatted = formatted.replace(/^#{1,3}\s*(.+)$/gm, '<h2>$1</h2>');
+        
+        const lines = formatted.split('\n');
+        let result = [];
+        let inList = false;
+        
+        for (let line of lines) {
+            const trimmed = line.trim();
+            
+            if (trimmed.match(/^[\-\*]\s+/)) {
+                if (!inList) {
+                    result.push('<ul>');
+                    inList = true;
+                }
+                result.push('<li>' + trimmed.replace(/^[\-\*]\s+/, '') + '</li>');
+            } else if (trimmed.match(/^\d+\.\s+/)) {
+                if (!inList) {
+                    result.push('<ol>');
+                    inList = true;
+                }
+                result.push('<li>' + trimmed.replace(/^\d+\.\s+/, '') + '</li>');
+            } else {
+                if (inList) {
+                    result.push(result[result.length - 1].startsWith('<ol>') ? '</ol>' : '</ul>');
+                    inList = false;
+                }
+                if (trimmed) {
+                    if (!trimmed.startsWith('<h2>')) {
+                        result.push('<p>' + trimmed + '</p>');
+                    } else {
+                        result.push(trimmed);
+                    }
+                }
+            }
+        }
+        
+        if (inList) {
+            result.push('</ul>');
+        }
+        
+        return result.join('\n');
     }
     
     destroy() {

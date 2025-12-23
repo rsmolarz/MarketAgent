@@ -164,7 +164,7 @@
 {% endblock %}
 
 {% block extra_scripts %}
-<script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20250818-v2"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20251223-ai"></script>
 <script>
 // Debug logging for dashboard
 console.log('Dashboard template loaded at', new Date());
@@ -182,4 +182,79 @@ setTimeout(() => {
     }
 }, 2000);
 </script>
+{% endblock %}
+
+{% block modals %}
+<!-- AI Analysis Modal -->
+<div class="modal fade" id="aiAnalysisModal" tabindex="-1" aria-labelledby="aiAnalysisModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="aiAnalysisModalLabel">
+                    <i data-feather="cpu" class="me-2"></i>
+                    AI Trading Analysis
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="ai-analysis-loading" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                        <span class="visually-hidden">Analyzing...</span>
+                    </div>
+                    <p class="mt-3 text-muted">ChatGPT is analyzing this alert...</p>
+                    <p class="small text-muted">This may take a few seconds</p>
+                </div>
+                <div id="ai-analysis-content" style="display: none;">
+                    <div class="alert alert-info mb-3" id="ai-analysis-alert-info">
+                        <strong>Alert:</strong> <span id="ai-analysis-alert-title"></span>
+                    </div>
+                    <div id="ai-analysis-text" class="analysis-content"></div>
+                </div>
+                <div id="ai-analysis-error" style="display: none;" class="text-center py-4">
+                    <i data-feather="alert-circle" class="text-danger mb-3" style="width: 48px; height: 48px;"></i>
+                    <p class="text-danger" id="ai-analysis-error-message">An error occurred</p>
+                    <button class="btn btn-outline-primary" id="ai-analysis-retry-btn">
+                        <i data-feather="refresh-cw" class="me-1"></i> Try Again
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.analysis-content h2 {
+    font-size: 1.25rem;
+    color: #0d6efd;
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 2px solid #e9ecef;
+}
+.analysis-content h2:first-child {
+    margin-top: 0;
+}
+.analysis-content strong {
+    color: #212529;
+}
+.analysis-content p {
+    margin-bottom: 0.75rem;
+    line-height: 1.6;
+}
+.analysis-content ul, .analysis-content ol {
+    margin-bottom: 1rem;
+    padding-left: 1.5rem;
+}
+.analysis-content li {
+    margin-bottom: 0.5rem;
+    line-height: 1.5;
+}
+.btn-ai-analyze {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+}
+</style>
 {% endblock %}
