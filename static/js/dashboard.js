@@ -560,9 +560,15 @@ class Dashboard {
         const analysisText = document.getElementById('ai-analysis-text');
         const errorMessage = document.getElementById('ai-analysis-error-message');
         
-        loadingDiv.style.display = 'block';
-        contentDiv.style.display = 'none';
-        errorDiv.style.display = 'none';
+        if (!modal || !loadingDiv || !contentDiv || !errorDiv) {
+            console.error('AI Analysis modal elements not found in DOM');
+            alert('Unable to open AI analysis. Please refresh the page and try again.');
+            return;
+        }
+        
+        if (loadingDiv) loadingDiv.style.display = 'block';
+        if (contentDiv) contentDiv.style.display = 'none';
+        if (errorDiv) errorDiv.style.display = 'none';
         
         const bsModal = new bootstrap.Modal(modal);
         bsModal.show();
@@ -584,29 +590,31 @@ class Dashboard {
             const result = await response.json();
             
             if (result.success) {
-                loadingDiv.style.display = 'none';
-                contentDiv.style.display = 'block';
+                if (loadingDiv) loadingDiv.style.display = 'none';
+                if (contentDiv) contentDiv.style.display = 'block';
                 
-                alertTitle.textContent = finding.title || 'Market Alert';
-                analysisText.innerHTML = this.formatAnalysisText(result.analysis);
+                if (alertTitle) alertTitle.textContent = finding.title || 'Market Alert';
+                if (analysisText) analysisText.innerHTML = this.formatAnalysisText(result.analysis);
                 feather.replace();
             } else {
-                loadingDiv.style.display = 'none';
-                errorDiv.style.display = 'block';
+                if (loadingDiv) loadingDiv.style.display = 'none';
+                if (errorDiv) errorDiv.style.display = 'block';
                 
-                if (result.error === 'budget_exceeded') {
-                    errorMessage.textContent = result.message || 'Cloud budget exceeded. Please upgrade to continue.';
-                } else {
-                    errorMessage.textContent = result.message || 'Failed to analyze alert. Please try again.';
+                if (errorMessage) {
+                    if (result.error === 'budget_exceeded') {
+                        errorMessage.textContent = result.message || 'Cloud budget exceeded. Please upgrade to continue.';
+                    } else {
+                        errorMessage.textContent = result.message || 'Failed to analyze alert. Please try again.';
+                    }
                 }
                 feather.replace();
             }
         } catch (error) {
             console.error('AI Analysis error:', error.message || error);
-            loadingDiv.style.display = 'none';
-            errorDiv.style.display = 'block';
+            if (loadingDiv) loadingDiv.style.display = 'none';
+            if (errorDiv) errorDiv.style.display = 'block';
             const errMsg = error.message || 'Unknown error';
-            errorMessage.textContent = `Error: ${errMsg}. Please try again.`;
+            if (errorMessage) errorMessage.textContent = `Error: ${errMsg}. Please try again.`;
             feather.replace();
         }
     }
