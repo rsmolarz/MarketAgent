@@ -39,3 +39,8 @@ integrations = ["styling_replit:1.0.0", "github:1.0.0", "python_openai_ai_integr
 [deployment]
 deploymentTarget = "cloudrun"
 run = ["sh", "-c", "gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app"]
+
+[userenv]
+
+[userenv.shared]
+ADMIN_EMAILS = "rsmolarz@rsmolarz.com"
