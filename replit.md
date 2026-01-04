@@ -7,6 +7,12 @@ This platform leverages AI agents to detect market inefficiencies, arbitrage opp
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
+- **2026-01-04**: Added DailyPredictionAgent for AI-powered price forecasting. Uses 3 modular analyzers (ForecasterAnalyzer, RegimeDetector, EnsemblePredictor) to generate daily predictions for 18 symbols across equities, indices, futures, and crypto. Features include:
+  - 4-model forecasting ensemble (trend, mean reversion, momentum, volatility)
+  - Market regime detection (bull/bear/range/volatile)
+  - Macro risk gating during high-uncertainty periods
+  - Actionability ratings with entry/exit points
+  - 60-minute execution interval
 - **2026-01-04**: Added whitelist-based authentication using Replit Auth. Only users on the whitelist can access the platform. Features include:
   - User/OAuth/Whitelist database tables for authentication
   - Admin panel at /admin for managing whitelist entries
@@ -35,7 +41,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Agent Architecture
 - **Base Agent Pattern**: Agents inherit from `BaseAgent` for standardized plan/act/reflect operations.
-- **Modular Design**: 12 specialized agents in the `agents/` directory for specific market sectors or data sources.
+- **Modular Design**: 13 specialized agents in the `agents/` directory for specific market sectors or data sources.
 - **Modular Analyzers**: Reusable analysis components in `agents/analyzers/` that can be shared across agents.
 - **Registry System**: `AgentRegistry` manages agent lifecycle.
 - **Scheduling System**: JSON-based configuration (`agent_schedule.json`) defines execution intervals.
