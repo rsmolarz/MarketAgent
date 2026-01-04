@@ -94,6 +94,13 @@ class CryptoPredictionAgent(BaseAgent):
                 'exchange': 'Coinbase',
                 'market_type': 'spot',
                 'description': 'Dogecoin / US Dollar'
+            },
+            {
+                'symbol': 'ADA-USD',
+                'coinbase_symbol': 'ADA/USD',
+                'exchange': 'Coinbase',
+                'market_type': 'spot',
+                'description': 'Cardano / US Dollar'
             }
         ]
         

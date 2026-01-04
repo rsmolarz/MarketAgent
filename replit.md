@@ -7,7 +7,7 @@ This platform leverages AI agents to detect market inefficiencies, arbitrage opp
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
-- **2026-01-04**: Added CryptoPredictionAgent for AI-powered cryptocurrency forecasting. Uses 6 modular analyzers (CryptoTechnicalAnalyzer, CryptoOrderflowAnalyzer, CryptoProfileAnalyzer, CryptoVWAPAnalyzer, CryptoRiskGate, CryptoEnsemblePredictor) to generate daily predictions for BTC, ETH, SOL, AVAX, LINK, DOGE. Features include:
+- **2026-01-04**: Added CryptoPredictionAgent for AI-powered cryptocurrency forecasting. Uses 6 modular analyzers (CryptoTechnicalAnalyzer, CryptoOrderflowAnalyzer, CryptoProfileAnalyzer, CryptoVWAPAnalyzer, CryptoRiskGate, CryptoEnsemblePredictor) to generate daily predictions for BTC, ETH, SOL, AVAX, LINK, DOGE, ADA. Features include:
   - Technical analysis (RSI, MACD, ADX)
   - Orderflow analysis (funding rates, open interest, volume)
   - Market profile analysis (POC, VAH, VAL)
