@@ -19,6 +19,10 @@ class Config:
     EMAIL_USER = os.getenv("EMAIL_USER", "")
     EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
     
+    # SendGrid configuration
+    SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
+    SENDGRID_FROM_EMAIL = os.getenv("SENDGRID_FROM_EMAIL", "alerts@marketinefficiency.ai")
+    
     # Agent configuration
     DEFAULT_AGENT_INTERVAL = 60  # minutes
     MAX_FINDINGS_PER_AGENT = 100

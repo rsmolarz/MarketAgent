@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Dict, Optional
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 from agents import get_agent_class
 from models import AgentStatus, Finding
 
@@ -26,6 +27,7 @@ class AgentScheduler:
         self.app = app
         with app.app_context():
             self.load_schedule()
+            self.schedule_daily_emails()
     
     def load_schedule(self):
         """Load agent schedule from JSON file and auto-start agents"""
@@ -258,4 +260,37 @@ class AgentScheduler:
                 return False
         except Exception as e:
             logger.error(f"Error loading agent {agent_name}: {e}")
+            return False
+    
+    def schedule_daily_emails(self):
+        """Schedule daily email summary to whitelisted users"""
+        try:
+            self.scheduler.add_job(
+                func=self._send_daily_emails,
+                trigger=CronTrigger(hour=7, minute=0),
+                id='daily_email_summary',
+                replace_existing=True
+            )
+            logger.info("Scheduled daily email summary for 7:00 AM UTC")
+        except Exception as e:
+            logger.error(f"Error scheduling daily emails: {e}")
+    
+    def _send_daily_emails(self):
+        """Send daily email summary"""
+        with self.app.app_context():
+            try:
+                from services.daily_email_service import DailyEmailService
+                service = DailyEmailService()
+                service.send_daily_summary()
+                logger.info("Daily email summary sent")
+            except Exception as e:
+                logger.error(f"Error sending daily emails: {e}")
+    
+    def send_daily_email_now(self) -> bool:
+        """Manually trigger daily email send"""
+        try:
+            self._send_daily_emails()
+            return True
+        except Exception as e:
+            logger.error(f"Error sending daily email manually: {e}")
             return False

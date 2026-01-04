@@ -151,5 +151,42 @@
             </div>
         </div>
     </div>
+    
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">
+                        <i data-feather="mail" class="me-2"></i>
+                        Daily Email Notifications
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted mb-3">
+                        Daily summary emails are sent to all whitelisted users at 7:00 AM UTC.
+                        You can test the email configuration or send a summary immediately.
+                    </p>
+                    <div class="row g-3">
+                        <div class="col-auto">
+                            <form action="{{ url_for('admin.send_test_email') }}" method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-outline-info">
+                                    <i data-feather="send" class="me-2"></i>
+                                    Send Test Email to Me
+                                </button>
+                            </form>
+                        </div>
+                        <div class="col-auto">
+                            <form action="{{ url_for('admin.send_daily_summary') }}" method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-info" onclick="return confirm('Send daily summary to all {{ whitelist|length }} whitelisted users?')">
+                                    <i data-feather="users" class="me-2"></i>
+                                    Send Daily Summary Now
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}

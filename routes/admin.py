@@ -85,3 +85,52 @@ def toggle_admin(user_id):
     status = 'granted admin access' if user.is_admin else 'removed from admin'
     flash(f'{user.email} has been {status}.', 'success')
     return redirect(url_for('admin.index'))
+
+
+@admin_bp.route('/send-test-email', methods=['POST'])
+def send_test_email():
+    """Send a test daily summary email"""
+    try:
+        from services.daily_email_service import DailyEmailService
+        service = DailyEmailService()
+        
+        if not service.notifier.is_configured():
+            flash('SendGrid is not configured. Please add SENDGRID_API_KEY.', 'danger')
+            return redirect(url_for('admin.index'))
+        
+        success = service.send_test_email(current_user.email)
+        
+        if success:
+            flash(f'Test email sent to {current_user.email}', 'success')
+        else:
+            flash('Failed to send test email. Check logs for details.', 'danger')
+            
+    except Exception as e:
+        flash(f'Error sending test email: {str(e)}', 'danger')
+    
+    return redirect(url_for('admin.index'))
+
+
+@admin_bp.route('/send-daily-summary', methods=['POST'])
+def send_daily_summary():
+    """Send daily summary to all whitelisted users"""
+    try:
+        from services.daily_email_service import DailyEmailService
+        service = DailyEmailService()
+        
+        if not service.notifier.is_configured():
+            flash('SendGrid is not configured. Please add SENDGRID_API_KEY.', 'danger')
+            return redirect(url_for('admin.index'))
+        
+        success = service.send_daily_summary()
+        
+        if success:
+            emails = service.get_recipient_emails()
+            flash(f'Daily summary sent to {len(emails)} recipients', 'success')
+        else:
+            flash('Failed to send daily summary. Check logs for details.', 'danger')
+            
+    except Exception as e:
+        flash(f'Error sending daily summary: {str(e)}', 'danger')
+    
+    return redirect(url_for('admin.index'))
