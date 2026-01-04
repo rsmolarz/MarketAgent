@@ -10,5 +10,6 @@
   "GeopoliticalRiskAgent": 5,
   "MarketCorrectionAgent": 5,
   "HeartbeatAgent": 1,
-  "GreatestTradeAgent": 5
+  "GreatestTradeAgent": 5,
+  "DailyPredictionAgent": 60
 }
