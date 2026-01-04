@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block title %}Archive - Market Inefficiency Platform{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h2 mb-0">
+            <i data-feather="archive" class="me-2"></i>
+            Findings Archive
+        </h1>
+        <p class="text-muted">Complete historical record of all detected market inefficiencies</p>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i data-feather="filter" class="me-2"></i>
+                    Filters
+                </h6>
+            </div>
+            <div class="card-body">
+                <form id="archive-filter-form" method="get" action="{{ url_for('dashboard.archive') }}">
+                    <div class="row">
+                        <div class="col-md-3 mb-3">
+                            <label for="agent-filter" class="form-label">Agent</label>
+                            <input type="text" class="form-control" id="agent-filter" name="agent_name" 
+                                   value="{{ request.args.get('agent_name', '') }}" placeholder="e.g. EquityMomentum">
+                        </div>
+                        
+                        <div class="col-md-3 mb-3">
+                            <label for="severity-filter" class="form-label">Severity</label>
+                            <select class="form-select" id="severity-filter" name="severity">
+                                <option value="">All Severities</option>
+                                <option value="critical" {% if request.args.get('severity') == 'critical' %}selected{% endif %}>Critical</option>
+                                <option value="high" {% if request.args.get('severity') == 'high' %}selected{% endif %}>High</option>
+                                <option value="medium" {% if request.args.get('severity') == 'medium' %}selected{% endif %}>Medium</option>
+                                <option value="low" {% if request.args.get('severity') == 'low' %}selected{% endif %}>Low</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-3 mb-3">
+                            <label for="market-filter" class="form-label">Market Type</label>
+                            <select class="form-select" id="market-filter" name="market_type">
+                                <option value="">All Markets</option>
+                                <option value="crypto" {% if request.args.get('market_type') == 'crypto' %}selected{% endif %}>Crypto</option>
+                                <option value="equity" {% if request.args.get('market_type') == 'equity' %}selected{% endif %}>Equity</option>
+                                <option value="macro" {% if request.args.get('market_type') == 'macro' %}selected{% endif %}>Macro</option>
+                                <option value="bond" {% if request.args.get('market_type') == 'bond' %}selected{% endif %}>Bond</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-3 mb-3">
+                            <label for="symbol-filter" class="form-label">Symbol</label>
+                            <input type="text" class="form-control" id="symbol-filter" name="symbol" 
+                                   value="{{ request.args.get('symbol', '') }}" placeholder="e.g. BTC, TSLA">
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-primary">
+                                <i data-feather="search" class="me-1"></i>
+                                Apply Filters
+                            </button>
+                            <a href="{{ url_for('dashboard.archive') }}" class="btn btn-secondary">
+                                <i data-feather="x" class="me-1"></i>
+                                Clear
+                            </a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Archive Statistics -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card bg-dark">
+            <div class="card-body py-3">
+                <div class="d-flex justify-content-between align-items-center flex-wrap">
+                    <div>
+                        <i data-feather="database" class="me-2 text-info"></i>
+                        <strong>{{ total_count }}</strong> total findings in archive
+                    </div>
+                    <div>
+                        Showing page <strong>{{ page }}</strong> of <strong>{{ total_pages }}</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Findings List -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i data-feather="list" class="me-2"></i>
+                    Archived Findings
+                </h5>
+                <div class="d-flex align-items-center gap-2">
+                    <label class="mb-0 small text-muted">Per page:</label>
+                    <select class="form-select form-select-sm" style="width: auto;" onchange="updatePerPage(this.value)">
+                        <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+                        <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                        <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                    </select>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if error %}
+                <div class="alert alert-danger">
+                    <strong>Error:</strong> {{ error }}
+                </div>
+                {% endif %}
+                
+                {% if findings %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Title</th>
+                                <th>Agent</th>
+                                <th>Symbol</th>
+                                <th>Severity</th>
+                                <th>Confidence</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for finding in findings %}
+                            <tr class="finding-row" data-finding-id="{{ finding.id }}">
+                                <td class="text-nowrap small">
+                                    {{ finding.timestamp[:16].replace('T', ' ') }}
+                                </td>
+                                <td>
+                                    <strong>{{ finding.title }}</strong>
+                                    <br>
+                                    <small class="text-muted">{{ finding.description[:100] }}{% if finding.description|length > 100 %}...{% endif %}</small>
+                                </td>
+                                <td class="small">{{ finding.agent_name }}</td>
+                                <td>
+                                    {% if finding.symbol %}
+                                    <span class="badge bg-secondary">{{ finding.symbol }}</span>
+                                    {% else %}
+                                    <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-{{ 'danger' if finding.severity in ['high', 'critical'] else ('warning' if finding.severity == 'medium' else 'success') }}">
+                                        {{ finding.severity.title() }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {% if finding.confidence %}
+                                    <div class="progress" style="height: 6px; min-width: 60px;">
+                                        <div class="progress-bar" style="width: {{ (finding.confidence * 100)|round }}%"></div>
+                                    </div>
+                                    <small class="text-muted">{{ (finding.confidence * 100)|round }}%</small>
+                                    {% else %}
+                                    <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Pagination -->
+                {% if total_pages > 1 %}
+                <nav aria-label="Archive pagination" class="mt-4">
+                    <ul class="pagination justify-content-center">
+                        {% if page > 1 %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('dashboard.archive', page=1, per_page=per_page, agent_name=request.args.get('agent_name', ''), symbol=request.args.get('symbol', ''), severity=request.args.get('severity', ''), market_type=request.args.get('market_type', '')) }}">
+                                <i data-feather="chevrons-left" style="width: 14px; height: 14px;"></i>
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('dashboard.archive', page=page-1, per_page=per_page, agent_name=request.args.get('agent_name', ''), symbol=request.args.get('symbol', ''), severity=request.args.get('severity', ''), market_type=request.args.get('market_type', '')) }}">
+                                <i data-feather="chevron-left" style="width: 14px; height: 14px;"></i>
+                            </a>
+                        </li>
+                        {% endif %}
+                        
+                        {% for p in range([1, page-2]|max, [total_pages, page+2]|min + 1) %}
+                        <li class="page-item {% if p == page %}active{% endif %}">
+                            <a class="page-link" href="{{ url_for('dashboard.archive', page=p, per_page=per_page, agent_name=request.args.get('agent_name', ''), symbol=request.args.get('symbol', ''), severity=request.args.get('severity', ''), market_type=request.args.get('market_type', '')) }}">{{ p }}</a>
+                        </li>
+                        {% endfor %}
+                        
+                        {% if page < total_pages %}
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('dashboard.archive', page=page+1, per_page=per_page, agent_name=request.args.get('agent_name', ''), symbol=request.args.get('symbol', ''), severity=request.args.get('severity', ''), market_type=request.args.get('market_type', '')) }}">
+                                <i data-feather="chevron-right" style="width: 14px; height: 14px;"></i>
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="{{ url_for('dashboard.archive', page=total_pages, per_page=per_page, agent_name=request.args.get('agent_name', ''), symbol=request.args.get('symbol', ''), severity=request.args.get('severity', ''), market_type=request.args.get('market_type', '')) }}">
+                                <i data-feather="chevrons-right" style="width: 14px; height: 14px;"></i>
+                            </a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+                {% endif %}
+                
+                {% else %}
+                <div class="text-center py-5">
+                    <i data-feather="inbox" class="text-muted mb-3" style="width: 48px; height: 48px;"></i>
+                    <h5 class="text-muted">No findings in archive</h5>
+                    <p class="text-muted">Findings will appear here as agents detect market inefficiencies.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function updatePerPage(value) {
+    const url = new URL(window.location);
+    url.searchParams.set('per_page', value);
+    url.searchParams.set('page', 1);
+    window.location = url;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    if (typeof feather !== 'undefined') {
+        feather.replace();
+    }
+});
+</script>
+{% endblock %}

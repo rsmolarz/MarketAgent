@@ -128,6 +128,64 @@ def findings():
         logger.error(f"Error loading findings: {e}")
         return render_template('findings.html', embedded_findings=[], error=str(e))
 
+@dashboard_bp.route('/archive')
+@require_login
+def archive():
+    """Archive page showing all historical findings"""
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 50, type=int)
+        per_page = min(per_page, 100)
+        
+        agent_name = request.args.get('agent_name', '')
+        symbol = request.args.get('symbol', '')
+        severity = request.args.get('severity', '')
+        market_type = request.args.get('market_type', '')
+        
+        query = Finding.query.filter(Finding.agent_name != 'HeartbeatAgent')
+        
+        if agent_name:
+            query = query.filter(Finding.agent_name.ilike(f'%{agent_name}%'))
+        if symbol:
+            query = query.filter(Finding.symbol.ilike(f'%{symbol}%'))
+        if severity:
+            query = query.filter(Finding.severity == severity)
+        if market_type:
+            query = query.filter(Finding.market_type == market_type)
+        
+        total_count = query.count()
+        total_pages = (total_count + per_page - 1) // per_page
+        
+        findings = query.order_by(Finding.timestamp.desc())\
+            .offset((page - 1) * per_page)\
+            .limit(per_page).all()
+        
+        findings_data = []
+        for finding in findings:
+            findings_data.append({
+                'id': finding.id,
+                'title': finding.title,
+                'description': finding.description,
+                'agent_name': finding.agent_name,
+                'symbol': finding.symbol,
+                'severity': finding.severity,
+                'confidence': finding.confidence,
+                'market_type': finding.market_type,
+                'timestamp': finding.timestamp.isoformat() + 'Z',
+                'metadata': finding.finding_metadata or {}
+            })
+        
+        return render_template('archive.html', 
+                             findings=findings_data,
+                             page=page,
+                             per_page=per_page,
+                             total_count=total_count,
+                             total_pages=total_pages)
+    except Exception as e:
+        logger.error(f"Error loading archive: {e}")
+        return render_template('archive.html', findings=[], error=str(e), 
+                             page=1, per_page=50, total_count=0, total_pages=0)
+
 @dashboard_bp.route('/simple')
 def simple_findings():
     """Simple findings page with direct server-side rendering"""
