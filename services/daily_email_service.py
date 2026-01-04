@@ -41,7 +41,7 @@ class DailyEmailService:
             yesterday = now - timedelta(hours=24)
             
             all_findings = Finding.query.filter(
-                Finding.created_at >= yesterday
+                Finding.timestamp >= yesterday
             ).all()
             
             total_findings = len(all_findings)
@@ -49,7 +49,7 @@ class DailyEmailService:
             medium_severity = len([f for f in all_findings if f.severity == 'medium'])
             
             active_agents = AgentStatus.query.filter(
-                AgentStatus.status == 'active'
+                AgentStatus.is_active == True
             ).count()
             
             top_findings = sorted(
