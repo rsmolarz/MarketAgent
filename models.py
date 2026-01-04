@@ -1,7 +1,70 @@
 from datetime import datetime
 from app import db
-from sqlalchemy import Integer, String, DateTime, Text, Float, Boolean, JSON
+from sqlalchemy import Integer, String, DateTime, Text, Float, Boolean, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
+from flask_dance.consumer.storage.sqla import OAuthConsumerMixin
+from flask_login import UserMixin
+
+
+# (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
+class User(UserMixin, db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.String, primary_key=True)
+    email = db.Column(db.String, unique=True, nullable=True)
+    first_name = db.Column(db.String, nullable=True)
+    last_name = db.Column(db.String, nullable=True)
+    profile_image_url = db.Column(db.String, nullable=True)
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
+
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime,
+                           default=datetime.now,
+                           onupdate=datetime.now)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'email': self.email,
+            'first_name': self.first_name,
+            'last_name': self.last_name,
+            'profile_image_url': self.profile_image_url,
+            'is_admin': self.is_admin,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+
+
+# (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
+class OAuth(OAuthConsumerMixin, db.Model):
+    user_id = db.Column(db.String, db.ForeignKey(User.id))
+    browser_session_key = db.Column(db.String, nullable=False)
+    user = db.relationship(User)
+
+    __table_args__ = (UniqueConstraint(
+        'user_id',
+        'browser_session_key',
+        'provider',
+        name='uq_user_browser_session_key_provider',
+    ),)
+
+
+class Whitelist(db.Model):
+    """Whitelist table - only users with matching email can access the platform"""
+    __tablename__ = 'whitelist'
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    added_by: Mapped[str] = mapped_column(String(255), nullable=True)
+    added_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'email': self.email,
+            'added_by': self.added_by,
+            'added_at': self.added_at.isoformat() if self.added_at else None,
+            'notes': self.notes
+        }
 
 class Finding(db.Model):
     __tablename__ = 'findings'

@@ -62,11 +62,36 @@
                 
                 <ul class="navbar-nav">
                     <li class="nav-item">
-                        <span class="navbar-text">
+                        <span class="navbar-text me-3">
                             <i data-feather="clock" class="me-1"></i>
                             <span id="current-time"></span>
                         </span>
                     </li>
+                    {% if current_user and current_user.is_authenticated %}
+                    {% if current_user.is_admin %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('admin.index') }}">
+                            <i data-feather="shield" class="me-1"></i>
+                            Admin
+                        </a>
+                    </li>
+                    {% endif %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
+                            {% if current_user.profile_image_url %}
+                            <img src="{{ current_user.profile_image_url }}" alt="" class="rounded-circle me-1" style="width: 24px; height: 24px; object-fit: cover;">
+                            {% else %}
+                            <i data-feather="user" class="me-1"></i>
+                            {% endif %}
+                            {{ current_user.first_name or current_user.email or 'User' }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><span class="dropdown-item-text small text-muted">{{ current_user.email }}</span></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="{{ url_for('replit_auth.logout') }}"><i data-feather="log-out" class="me-2"></i>Sign Out</a></li>
+                        </ul>
+                    </li>
+                    {% endif %}
                 </ul>
             </div>
         </div>

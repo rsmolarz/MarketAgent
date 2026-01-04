@@ -1,9 +1,11 @@
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for
+from flask_login import current_user
 from models import Finding, AgentStatus, MarketData
 from app import db
 from datetime import datetime, timedelta
 import logging
 from services.ai_analysis import analyze_alert_with_chatgpt
+from replit_auth import require_login, is_user_whitelisted
 
 # Import and register raw data blueprint
 from routes.raw import raw_bp
@@ -50,25 +52,30 @@ def index():
         'safari' not in user_agent):
         return 'OK', 200
     
-    # Normal web browser request - return the dashboard
+    # Normal web browser request - check authentication
     try:
-        return render_template('dashboard.html')
+        if current_user.is_authenticated and is_user_whitelisted(current_user.email):
+            return render_template('dashboard.html', user=current_user)
+        else:
+            return redirect(url_for('landing'))
     except Exception as e:
         logger.error(f"Dashboard rendering failed: {e}")
-        # Still return 200 to avoid health check failures
-        return "Application Running", 200
+        return redirect(url_for('landing'))
 
 @dashboard_bp.route('/agents')
+@require_login
 def agents():
     """Agent management page"""
     return render_template('agents.html')
 
 @dashboard_bp.route('/system-status')
+@require_login
 def system_status():
     """System status page showing heartbeat and system health"""
     return render_template('system_status.html')
 
 @dashboard_bp.route('/findings')
+@require_login
 def findings():
     """Findings page with server-side filtering"""
     try:

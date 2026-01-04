@@ -1,7 +1,7 @@
 import os
 import logging
 from datetime import datetime
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, session, render_template
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import DeclarativeBase
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -17,7 +17,7 @@ db = SQLAlchemy(model_class=Base)
 def create_app():
     # Create the app
     app = Flask(__name__)
-    app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret-key-change-in-production")
+    app.secret_key = os.environ.get("SESSION_SECRET")
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
     
     # Configure the database
@@ -41,9 +41,36 @@ def create_app():
             import models
             db.create_all()
             app.logger.info("Database tables created successfully")
+            
+            # Seed admin emails from environment variable
+            admin_emails = os.environ.get('ADMIN_EMAILS', '')
+            if admin_emails:
+                for email in admin_emails.split(','):
+                    email = email.strip().lower()
+                    if email:
+                        existing = models.Whitelist.query.filter_by(email=email).first()
+                        if not existing:
+                            entry = models.Whitelist(email=email, added_by='system', notes='Initial admin')
+                            db.session.add(entry)
+                            app.logger.info(f"Added {email} to whitelist")
+                        
+                        existing_user = models.User.query.filter_by(email=email).first()
+                        if existing_user and not existing_user.is_admin:
+                            existing_user.is_admin = True
+                            app.logger.info(f"Promoted {email} to admin")
+                db.session.commit()
         except Exception as e:
             app.logger.error(f"Database initialization failed: {e}")
             # Continue without database for basic health checks
+        
+        # Initialize Replit Auth
+        try:
+            from replit_auth import init_auth, make_replit_blueprint
+            init_auth(app)
+            app.register_blueprint(make_replit_blueprint(), url_prefix="/auth")
+            app.logger.info("Replit Auth initialized and blueprint registered")
+        except Exception as e:
+            app.logger.error(f"Replit Auth registration failed: {e}")
         
         # Register blueprints
         try:
@@ -61,6 +88,10 @@ def create_app():
             from routes.simple import simple_bp
             app.register_blueprint(simple_bp)
             
+            # Register admin blueprint for whitelist management
+            from routes.admin import admin_bp
+            app.register_blueprint(admin_bp, url_prefix='/admin')
+            
             app.logger.info("Blueprints registered successfully")
         except Exception as e:
             app.logger.error(f"Blueprint registration failed: {e}")
@@ -74,7 +105,11 @@ def create_app():
             app.logger.info("Scheduler initialized successfully")
         except Exception as e:
             app.logger.error(f"Failed to initialize scheduler: {e}")
-            # Continue without scheduler for basic health checks
+    
+    # Make session permanent
+    @app.before_request
+    def make_session_permanent():
+        session.permanent = True
     
     # CRITICAL: Ultra-simple root health check for deployment systems
     @app.route('/', methods=['GET', 'HEAD', 'POST'])
@@ -101,13 +136,18 @@ def create_app():
             if is_health_check:
                 return 'OK', 200
             
-            # Browser request - try dashboard, fallback to health response
+            # Browser request - check authentication
             try:
-                from flask import render_template
-                return render_template('dashboard.html')
+                from flask_login import current_user
+                from replit_auth import is_user_whitelisted
+                
+                if current_user.is_authenticated and is_user_whitelisted(current_user.email):
+                    return render_template('dashboard.html', user=current_user)
+                else:
+                    return render_template('landing.html')
             except Exception:
-                # Always fallback to health response for reliability
-                return 'OK', 200
+                # Fallback to landing page
+                return render_template('landing.html')
                 
         except Exception:
             # Ultimate fallback - always return 200 for deployment reliability
@@ -147,6 +187,11 @@ def create_app():
             'service': 'Market Inefficiency Detection Platform',
             'timestamp': datetime.utcnow().isoformat()
         }), 200
+    
+    @app.route('/landing')
+    def landing():
+        """Landing page for non-authenticated users"""
+        return render_template('landing.html')
     
     # Add no-cache headers to prevent stale UI
     @app.after_request

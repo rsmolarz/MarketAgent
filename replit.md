@@ -7,6 +7,12 @@ This platform leverages AI agents to detect market inefficiencies, arbitrage opp
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
+- **2026-01-04**: Added whitelist-based authentication using Replit Auth. Only users on the whitelist can access the platform. Features include:
+  - User/OAuth/Whitelist database tables for authentication
+  - Admin panel at /admin for managing whitelist entries
+  - Protected dashboard and API routes with login requirements
+  - ADMIN_EMAILS environment variable for seeding initial admin users
+  - ChatGPT analysis enhanced with detailed technical indicators (entry/exit points, stop-losses, profit targets)
 - **2025-12-21**: Added GreatestTradeAgent - modular systemic risk detector inspired by "The Greatest Trade Ever". Uses 3 pluggable analyzers (MacroBubbleDetector, CDSAnalyzer, StructuredProductAnalyzer) to detect housing bubbles, CDS mispricing, and hidden tranche risks. Located in `agents/greatest_trade_agent.py` with modular components in `agents/analyzers/`
 - **2025-11-01**: Added MarketCorrectionAgent - detects early warning signals for 10%+ market corrections using RSI, moving averages, VIX spikes, momentum exhaustion, and yield curve analysis
 - **2025-11-01**: Added GeopoliticalRiskAgent - monitors 6 global hotspots (Taiwan, Ukraine, Middle East, China-US, North Korea, South China Sea) using NLP sentiment analysis and risk keywords
@@ -40,9 +46,18 @@ Preferred communication style: Simple, everyday language.
 - **Error Handling**: Robust error handling and fallback mechanisms for data source failures.
 
 ### Database Schema
+- **Users Table**: Stores authenticated user profiles with admin status.
+- **OAuth Table**: Manages OAuth tokens for Replit Auth sessions.
+- **Whitelist Table**: Controls platform access - only whitelisted emails can log in.
 - **Findings Table**: Stores detected market inefficiencies with metadata.
 - **Agent Status Table**: Tracks agent health, execution, and scheduling.
 - **Market Data Table**: Caches market data for analysis.
+
+### Authentication System
+- **Replit Auth**: OAuth-based authentication using Replit as identity provider.
+- **Whitelist Control**: Only emails in the whitelist table can access the platform.
+- **Admin Management**: Admins can add/remove whitelist entries via /admin panel.
+- **ADMIN_EMAILS**: Environment variable to seed initial admin emails (comma-separated).
 
 ### Notification System
 - **Multi-Channel Support**: Email, Telegram, and SMS.

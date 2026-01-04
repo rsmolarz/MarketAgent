@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}Admin - Whitelist Management{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="/">Dashboard</a></li>
+                    <li class="breadcrumb-item active">Admin</li>
+                </ol>
+            </nav>
+        </div>
+    </div>
+    
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="mb-0">
+                <i data-feather="shield" class="me-2"></i>
+                Access Management
+            </h2>
+            <p class="text-muted">Manage who can access the platform</p>
+        </div>
+    </div>
+    
+    <div class="row">
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i data-feather="list" class="me-2"></i>
+                        Whitelist ({{ whitelist|length }} entries)
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form action="{{ url_for('admin.add_to_whitelist') }}" method="POST" class="mb-4">
+                        <div class="row g-2">
+                            <div class="col-md-5">
+                                <input type="email" class="form-control" name="email" placeholder="Email address" required>
+                            </div>
+                            <div class="col-md-4">
+                                <input type="text" class="form-control" name="notes" placeholder="Notes (optional)">
+                            </div>
+                            <div class="col-md-3">
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i data-feather="plus" class="me-1"></i> Add
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                    
+                    {% if whitelist %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Email</th>
+                                    <th>Added</th>
+                                    <th>Notes</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for entry in whitelist %}
+                                <tr>
+                                    <td>{{ entry.email }}</td>
+                                    <td><small class="text-muted">{{ entry.added_at.strftime('%Y-%m-%d') if entry.added_at else 'N/A' }}</small></td>
+                                    <td><small class="text-muted">{{ entry.notes or '-' }}</small></td>
+                                    <td>
+                                        <form action="{{ url_for('admin.remove_from_whitelist', entry_id=entry.id) }}" method="POST" class="d-inline">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove this email from the whitelist?')">
+                                                <i data-feather="trash-2"></i>
+                                            </button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center text-muted py-4">
+                        <i data-feather="inbox" style="width: 48px; height: 48px;" class="mb-2"></i>
+                        <p>No entries in the whitelist yet.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0">
+                        <i data-feather="users" class="me-2"></i>
+                        Registered Users ({{ users|length }})
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if users %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Email</th>
+                                    <th>Admin</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in users %}
+                                <tr>
+                                    <td>
+                                        {% if user.profile_image_url %}
+                                        <img src="{{ user.profile_image_url }}" alt="" class="rounded-circle me-2" style="width: 24px; height: 24px; object-fit: cover;">
+                                        {% endif %}
+                                        {{ user.first_name or '' }} {{ user.last_name or '' }}
+                                    </td>
+                                    <td>{{ user.email or 'N/A' }}</td>
+                                    <td>
+                                        {% if user.is_admin %}
+                                        <span class="badge bg-success">Admin</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">User</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if user.id != current_user.id %}
+                                        <form action="{{ url_for('admin.toggle_admin', user_id=user.id) }}" method="POST" class="d-inline">
+                                            <button type="submit" class="btn btn-sm btn-outline-warning" onclick="return confirm('Toggle admin status for this user?')">
+                                                <i data-feather="shield"></i>
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center text-muted py-4">
+                        <i data-feather="users" style="width: 48px; height: 48px;" class="mb-2"></i>
+                        <p>No users have registered yet.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,12 +1,24 @@
 from flask import Blueprint, request, jsonify
+from flask_login import current_user
 from models import Finding, AgentStatus, MarketData
 from app import db
 from flask import current_app
 from datetime import datetime, timedelta
 import logging
+from functools import wraps
 
 logger = logging.getLogger(__name__)
 api_bp = Blueprint('api', __name__)
+
+
+def api_login_required(f):
+    """Decorator to require login for API endpoints"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return jsonify({'error': 'Authentication required'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
 
 @api_bp.route('/health')
 def api_health():
@@ -23,6 +35,7 @@ def api_healthz():
     return jsonify({'status': 'ok'}), 200
 
 @api_bp.route('/findings', methods=['GET', 'POST'])
+@api_login_required
 def findings():
     """Get or create findings"""
     if request.method == 'GET':
@@ -93,6 +106,7 @@ def findings():
     return jsonify({'error': 'Method not allowed'}), 405
 
 @api_bp.route('/agents', methods=['GET'])
+@api_login_required
 def get_agents():
     """Get all agent statuses"""
     try:
@@ -104,6 +118,7 @@ def get_agents():
         return jsonify({'error': str(e)}), 500
 
 @api_bp.route('/agents/<agent_name>/start', methods=['POST'])
+@api_login_required
 def start_agent(agent_name):
     """Start an agent"""
     try:
@@ -121,6 +136,7 @@ def start_agent(agent_name):
         return jsonify({'error': str(e)}), 500
 
 @api_bp.route('/agents/<agent_name>/stop', methods=['POST'])
+@api_login_required
 def stop_agent(agent_name):
     """Stop an agent"""
     try:
@@ -138,6 +154,7 @@ def stop_agent(agent_name):
         return jsonify({'error': str(e)}), 500
 
 @api_bp.route('/agents/<agent_name>/interval', methods=['PUT'])
+@api_login_required
 def update_agent_interval(agent_name):
     """Update agent scheduling interval"""
     try:
@@ -163,6 +180,7 @@ def update_agent_interval(agent_name):
 # Removed duplicate endpoints - these are now in dashboard.py only
 
 @api_bp.route('/market_data', methods=['POST'])
+@api_login_required
 def store_market_data():
     """Store market data (POST endpoint)"""
     try:
@@ -188,6 +206,7 @@ def store_market_data():
 
 
 @api_bp.route('/agents/<agent_name>/run', methods=['POST'])
+@api_login_required
 def run_agent_now(agent_name):
     """Manually run an agent immediately"""
     try:

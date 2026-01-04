@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Market Inefficiency Detection Platform{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow-lg border-0">
+                <div class="card-body text-center py-5">
+                    <div class="mb-4">
+                        <i data-feather="trending-up" class="text-primary" style="width: 80px; height: 80px;"></i>
+                    </div>
+                    <h1 class="display-5 fw-bold text-primary mb-3">Market Inefficiency Detection</h1>
+                    <p class="lead text-muted mb-4">
+                        AI-powered platform for detecting market inefficiencies, arbitrage opportunities, 
+                        and systemic risks across global financial markets.
+                    </p>
+                    <div class="row mb-4">
+                        <div class="col-md-4 mb-3">
+                            <div class="p-3">
+                                <i data-feather="activity" class="text-success mb-2" style="width: 32px; height: 32px;"></i>
+                                <h6>12 AI Agents</h6>
+                                <small class="text-muted">Monitoring markets 24/7</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="p-3">
+                                <i data-feather="globe" class="text-info mb-2" style="width: 32px; height: 32px;"></i>
+                                <h6>Global Coverage</h6>
+                                <small class="text-muted">Crypto, equities, bonds & more</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="p-3">
+                                <i data-feather="cpu" class="text-warning mb-2" style="width: 32px; height: 32px;"></i>
+                                <h6>AI Analysis</h6>
+                                <small class="text-muted">ChatGPT-powered insights</small>
+                            </div>
+                        </div>
+                    </div>
+                    <hr class="my-4">
+                    <a href="{{ url_for('replit_auth.login') }}" class="btn btn-primary btn-lg px-5">
+                        <i data-feather="log-in" class="me-2"></i>Sign In to Continue
+                    </a>
+                    <p class="small text-muted mt-3">
+                        Access is restricted to approved users only.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
