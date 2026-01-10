@@ -1,0 +1,8 @@
+{
+  "equity": ["EquityMomentumAgent", "MarketCorrectionAgent", "DailyPredictionAgent"],
+  "crypto": ["CryptoPredictionAgent", "CryptoFundingRateAgent", "WhaleWalletWatcherAgent"],
+  "macro": ["BondStressAgent", "MacroWatcherAgent", "GeopoliticalRiskAgent"],
+  "systemic": ["GreatestTradeAgent", "SentimentDivergenceAgent"],
+  "alt_data": ["AltDataSignalAgent", "PatentSignalAgent"],
+  "arbitrage": ["ArbitrageFinderAgent"]
+}

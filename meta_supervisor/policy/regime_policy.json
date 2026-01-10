@@ -1,0 +1,10 @@
+{
+  "caps": {
+    "RISK_OFF": 0.2,
+    "HIGH_VOL": 0.35,
+    "MIXED": 0.6,
+    "RISK_ON": 1.0
+  },
+  "unknown_cap": 0.5,
+  "min_data_points": 20
+}

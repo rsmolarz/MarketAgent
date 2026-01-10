@@ -1,0 +1,7 @@
+{
+  "MarketCorrectionAgent": ["BondStressAgent", "MacroWatcherAgent"],
+  "GeopoliticalRiskAgent": ["MacroWatcherAgent"],
+  "EquityMomentumAgent": ["ArbitrageFinderAgent"],
+  "SentimentDivergenceAgent": ["MacroWatcherAgent"],
+  "AltDataSignalAgent": ["WhaleWalletWatcherAgent"]
+}

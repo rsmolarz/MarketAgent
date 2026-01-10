@@ -1,0 +1,130 @@
+{
+  "run_id": "20260105_060000",
+  "timestamp": "2026-01-05T06:00:00.121821Z",
+  "report_summary": {
+    "agents_evaluated": 14,
+    "portfolio_pnl_bps": 0,
+    "severity": "low"
+  },
+  "retirements": {
+    "evaluated_at": "2026-01-05T06:00:00.530571Z",
+    "to_kill": [
+      {
+        "agent": "ArbitrageFinderAgent",
+        "score": 85,
+        "label": "RETIRE",
+        "conditions_met": 0,
+        "reason": "No issues"
+      },
+      {
+        "agent": "CryptoFundingRateAgent",
+        "score": 85,
+        "label": "RETIRE",
+        "conditions_met": 0,
+        "reason": "No issues"
+      }
+    ],
+    "to_deprecate": [
+      {
+        "agent": "HeartbeatAgent",
+        "score": 65,
+        "label": "DEPRECATE",
+        "conditions_met": 0,
+        "reason": "No issues"
+      },
+      {
+        "agent": "WhaleWalletWatcherAgent",
+        "score": 65,
+        "label": "DEPRECATE",
+        "conditions_met": 0,
+        "reason": "No issues"
+      },
+      {
+        "agent": "MacroWatcherAgent",
+        "score": 65,
+        "label": "DEPRECATE",
+        "conditions_met": 0,
+        "reason": "No issues"
+      },
+      {
+        "agent": "AltDataSignalAgent",
+        "score": 65,
+        "label": "DEPRECATE",
+        "conditions_met": 0,
+        "reason": "No issues"
+      },
+      {
+        "agent": "SentimentDivergenceAgent",
+        "score": 65,
+        "label": "DEPRECATE",
+        "conditions_met": 0,
+        "reason": "No issues"
+      },
+      {
+        "agent": "EquityMomentumAgent",
+        "score": 65,
+        "label": "DEPRECATE",
+        "conditions_met": 0,
+        "reason": "No issues"
+      },
+      {
+        "agent": "GreatestTradeAgent",
+        "score": 65,
+        "label": "DEPRECATE",
+        "conditions_met": 0,
+        "reason": "No issues"
+      },
+      {
+        "agent": "GeopoliticalRiskAgent",
+        "score": 65,
+        "label": "DEPRECATE",
+        "conditions_met": 0,
+        "reason": "No issues"
+      },
+      {
+        "agent": "BondStressAgent",
+        "score": 65,
+        "label": "DEPRECATE",
+        "conditions_met": 0,
+        "reason": "No issues"
+      },
+      {
+        "agent": "MarketCorrectionAgent",
+        "score": 65,
+        "label": "DEPRECATE",
+        "conditions_met": 0,
+        "reason": "No issues"
+      },
+      {
+        "agent": "DailyPredictionAgent",
+        "score": 40,
+        "label": "WATCH",
+        "conditions_met": 1,
+        "reason": "High error rate: 17.6%"
+      },
+      {
+        "agent": "CryptoPredictionAgent",
+        "score": 60,
+        "label": "DEPRECATE",
+        "conditions_met": 1,
+        "reason": "High error rate: 17.6%"
+      }
+    ],
+    "healthy": [],
+    "summary": {
+      "total": 14,
+      "kill_count": 2,
+      "deprecate_count": 12,
+      "healthy_count": 0
+    }
+  },
+  "promotions": [],
+  "pr_comment": "## \ud83e\udd16 Meta-Agent Review Report\n\n**Overall Severity:** \ud83d\udfe2 LOW  \n**Run ID:** 20260105_060000  \n**Generated:** 2026-01-05T06:00:00.522284Z\n\n---\n\n### \ud83d\udcca Portfolio Summary\n- **PnL (bps):** 0\n- **Hit Rate:** 0\n- **Max Drawdown (bps):** 0\n\n---\n\n### \ud83d\udcc8 Agent Health Summary\n| Agent | Score | Alpha (realized) | Cost | Status |\n|-------|-------|------------------|------|--------|\n| HeartbeatAgent | 65 | 0 bps | $0.0000 | \u23f8\ufe0f HOLD |\n| ArbitrageFinderAgent | 85 | 0 bps | $0.0000 | \u274c KILL |\n| WhaleWalletWatcherAgent | 65 | 0 bps | $0.0000 | \u23f8\ufe0f HOLD |\n| MacroWatcherAgent | 65 | 0 bps | $0.0000 | \u23f8\ufe0f HOLD |\n| AltDataSignalAgent | 65 | 0 bps | $0.0000 | \u23f8\ufe0f HOLD |\n| SentimentDivergenceAgent | 65 | 0 bps | $0.0000 | \u23f8\ufe0f HOLD |\n| EquityMomentumAgent | 65 | 0 bps | $0.0000 | \u23f8\ufe0f HOLD |\n| GreatestTradeAgent | 65 | 0 bps | $0.0000 | \u23f8\ufe0f HOLD |\n| GeopoliticalRiskAgent | 65 | 0 bps | $0.0000 | \u23f8\ufe0f HOLD |\n| BondStressAgent | 65 | 0 bps | $0.0000 | \u23f8\ufe0f HOLD |\n\n---\n\n### \u26a0\ufe0f Top Findings\n- **ArbitrageFinderAgent flagged for retirement**\n  Impact: No issues\n  Evidence: Score 85\n- **CryptoFundingRateAgent flagged for retirement**\n  Impact: No issues\n  Evidence: Score 85\n\n---\n\n### \u2705 Promotion Gate\n- Behavioral score \u2265 80\n- Realized PnL positive\n- No safety violations\n- Confidence decay stable\n\n**Promotable Agents:** None  \n**Result:** \u274c BLOCKED (agents flagged for retirement)\n\n---\n\n### \ud83d\udd27 Recommended Actions\n- Kill ArbitrageFinderAgent: No issues (HIGH)\n- Kill CryptoFundingRateAgent: No issues (HIGH)\n\n---\n\n*Generated automatically by MarketAgents Meta-Supervisor*\n",
+  "divergence": {
+    "divergence_bps": 0,
+    "alert": false,
+    "reason": "no_data"
+  },
+  "tear_sheets": [],
+  "regime_multipliers": {}
+}

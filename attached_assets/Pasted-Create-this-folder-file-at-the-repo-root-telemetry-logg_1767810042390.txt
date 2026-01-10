@@ -1,0 +1,174 @@
+Create this folder + file at the repo root:
+
+telemetry/
+├── logger.py        ← CREATE THIS
+├── summarize.py    ← already referenced earlier
+├── reward.py       ← already referenced earlier
+└── events.jsonl    ← auto-created at runtime
+
+
+If telemetry/ does not exist yet, create it.
+
+Why this file exists (plain truth)
+
+telemetry/logger.py is the single choke point where all agents report:
+
+latency
+
+cost
+
+errors
+
+(soon) reward / signal strength
+
+This is intentional:
+
+No agent writes files directly
+
+No duplication
+
+Retirement, reward shaping, and A/B testing all depend on this
+
+If this file didn’t exist, nothing downstream could work.
+
+Copy-paste: telemetry/logger.py (FINAL)
+import json
+import uuid
+from pathlib import Path
+from datetime import datetime, timezone
+from typing import Optional
+
+LOG_PATH = Path("telemetry/events.jsonl")
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def new_run_id() -> str:
+    return str(uuid.uuid4())
+
+
+def log_event(
+    agent: str,
+    run_id: str,
+    latency_ms: int,
+    cost_usd: Optional[float] = None,
+    tokens_in: Optional[int] = None,
+    tokens_out: Optional[int] = None,
+    error: Optional[str] = None,
+    reward: Optional[float] = None,
+):
+    """
+    Append a single telemetry event as JSONL.
+
+    This is intentionally append-only.
+    No aggregation happens here.
+    """
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    event = {
+        "ts": _now_iso(),
+        "agent": agent,
+        "run_id": run_id,
+        "latency_ms": latency_ms,
+        "cost_usd": cost_usd,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "error": error,
+        "reward": reward,
+    }
+
+    with LOG_PATH.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(event) + "\n")
+
+
+That’s it. No dependencies. No configuration. No side effects.
+
+How it gets used (so you know it’s wired correctly)
+1️⃣ Eval harness (already discussed)
+
+In eval/harness.py, after each case finishes:
+
+from telemetry.logger import log_event, new_run_id
+from telemetry.reward import reward
+
+run_id = new_run_id()
+lat_ms = int((time.time() - t0) * 1000)
+
+r = reward(
+    {
+        "agent": module,
+        "latency_ms": lat_ms,
+        "cost_usd": None,
+    },
+    output,
+)
+
+log_event(
+    agent=module,
+    run_id=run_id,
+    latency_ms=lat_ms,
+    cost_usd=None,
+    error=err,
+    reward=r,
+)
+
+
+This immediately enables:
+
+reward shaping
+
+retirement scoring
+
+cost/latency tradeoffs
+
+2️⃣ Real agents later (production)
+
+When you’re ready, your orchestrator (not individual agents) logs:
+
+run_id = new_run_id()
+start = time.time()
+
+output = agent.analyze()
+
+latency_ms = int((time.time() - start) * 1000)
+
+log_event(
+    agent="macro_watcher",
+    run_id=run_id,
+    latency_ms=latency_ms,
+    cost_usd=llm_cost,
+    tokens_in=tokens_in,
+    tokens_out=tokens_out,
+    reward=reward(event, output),
+)
+
+
+No refactors needed later.
+
+Sanity check (verify it works in 30 seconds)
+
+Run this from repo root:
+
+python - <<'EOF'
+from telemetry.logger import log_event, new_run_id
+
+log_event(
+    agent="test_agent",
+    run_id=new_run_id(),
+    latency_ms=123,
+    cost_usd=0.002,
+    reward=0.42,
+)
+
+print("Wrote telemetry event.")
+EOF
+
+
+You should now see:
+
+telemetry/events.jsonl
+
+
+with one JSON line inside.

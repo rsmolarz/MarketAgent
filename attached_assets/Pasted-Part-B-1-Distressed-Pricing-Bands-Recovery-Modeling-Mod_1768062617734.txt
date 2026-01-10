@@ -1,0 +1,119 @@
+Part B — 1️⃣ Distressed Pricing Bands + Recovery Modeling
+Model Output (stored per Deal)
+class DealValuation(db.Model):
+    __tablename__ = "deal_valuation"
+
+    deal_id = mapped_column(Integer, db.ForeignKey("deals.id"), primary_key=True)
+
+    zestimate = mapped_column(Float)
+    rent_zestimate = mapped_column(Float)
+
+    distressed_price = mapped_column(Float)
+    recovery_value = mapped_column(Float)
+
+    discount_to_zestimate = mapped_column(Float)
+    recovery_multiple = mapped_column(Float)
+
+    confidence = mapped_column(Float)
+
+Pricing Bands Logic
+distressed_price = zestimate * 0.55 – 0.75
+recovery_value = zestimate * 0.90 – 1.05
+
+Recovery Score
+recovery_multiple = recovery_value / distressed_price
+
+
+Displayed on dashboard as:
+
+Zestimate: $420k
+Target Entry: $265k
+Recovery: $395k
+Gross Multiple: 1.49x
+
+Part C — 2️⃣ IC Vote Tracking (Human vs AI)
+
+This is non-optional if you want institutional credibility.
+
+Model
+class ICVote(db.Model):
+    __tablename__ = "ic_votes"
+
+    id = mapped_column(Integer, primary_key=True)
+    deal_id = mapped_column(Integer, index=True)
+
+    voter = mapped_column(String(64))
+    vote = mapped_column(String(16))  # ACT / WATCH / PASS
+    notes = mapped_column(Text)
+
+    is_override = mapped_column(Boolean, default=False)
+    created_at = mapped_column(DateTime, default=datetime.utcnow)
+
+Rules
+
+AI ACT → suggests UNDERWRITING
+
+Human PASS → forces PASSED
+
+Human ACT overrides AI WATCH
+
+Dashboard shows:
+
+AI: ACT (82%)
+IC: ACT (3/4)
+Override: No
+
+Part D — 3️⃣ Portfolio-Level Exposure by Deal Stage
+Query
+SELECT stage, COUNT(*) AS deals
+FROM deals
+GROUP BY stage;
+
+Dashboard Card
+SCREENED: 14
+UNDERWRITING: 6
+LOI: 2
+CLOSED: 1
+PASSED: 9
+
+Capital Exposure Overlay
+exposure = {
+    "UNDERWRITING": 0.3,
+    "LOI": 0.6,
+    "CLOSED": 1.0
+}
+
+
+Used later for drawdown governor.
+
+Part E — 4️⃣ Automated Deal Kill Rules (Critical)
+
+This protects you from zombie deals.
+
+Kill Conditions
+Condition	Action
+No IC activity in 14 days	Auto-PASS
+Underwriting > 30 days	Flag
+LOI unsigned > 21 days	PASS
+Missing docs	PASS
+Market regime flips risk-off	Freeze
+Kill Engine (cron-safe)
+if deal.stage == "UNDERWRITING" and age_days > 30:
+    deal.stage = "PASSED"
+    deal.kill_reason = "timeout"
+
+
+Logged for audit.
+
+How This All Connects (End-to-End)
+Agent → Finding
+Finding → IC Memo
+IC ACT → Deal created
+Zillow → Pricing bands
+TA + LLM → Confidence
+IC Votes → Override logic
+Deal Stage → Exposure
+Kill Rules → Capital discipline
+
+
+You are now building a distressed-asset operating system, not a dashboard.

@@ -25,7 +25,6 @@ class GeopoliticalRiskAgent(BaseAgent):
     """
     Monitors geopolitical risks through news analysis
     """
-    
     RISK_KEYWORDS = [
         "war", "conflict", "attack", "military", "forces", "troops", "invasion",
         "sanction", "missile", "nuclear", "crisis", "tension", "clash", "protest",
@@ -249,3 +248,65 @@ class GeopoliticalRiskAgent(BaseAgent):
             return 'medium'
         else:
             return 'low'
+
+    def analyze_ctx(self, ctx) -> List[Dict[str, Any]]:
+        """
+        Backtest-compatible geopolitical risk analysis.
+        Uses preloaded historical events from ctx.meta["geo_events"].
+        No network calls. Deterministic.
+        
+        Event-impact backtesting approach:
+        - Layer 1: Historical geopolitical event dates with region/severity
+        - Layer 2: Market reaction via SPY/VIX forward returns
+        
+        ctx.meta["geo_events"] format:
+        [
+            {"date": date(2022, 2, 24), "region": "Ukraine", "risk_score": 95, "keywords": ["War", "Invasion"]},
+            ...
+        ]
+        """
+        findings = []
+
+        events = ctx.meta.get("geo_events", [])
+        if not events:
+            return findings
+
+        asof = ctx.asof.date() if hasattr(ctx.asof, 'date') else ctx.asof
+
+        for event in events:
+            event_date = event.get("date")
+            if event_date is None:
+                continue
+            
+            # Handle both datetime and date objects
+            if hasattr(event_date, 'date'):
+                event_date = event_date.date()
+            
+            if event_date != asof:
+                continue
+
+            region = event.get("region", "Unknown")
+            risk_score = event.get("risk_score", 0)
+            keywords = event.get("keywords", [])
+
+            if risk_score < self.risk_threshold:
+                continue
+
+            severity = self._determine_severity(risk_score)
+
+            findings.append(self.create_finding(
+                title=f"Geopolitical Risk Alert: {region}",
+                description=f"Historical geopolitical escalation detected. Keywords: {', '.join(keywords)}",
+                severity=severity,
+                confidence=min(risk_score / 100.0, 1.0),
+                symbol="SPY",
+                market_type="geopolitical",
+                metadata={
+                    "region": region,
+                    "risk_score": risk_score,
+                    "keywords": keywords,
+                    "source": "historical_event"
+                }
+            ))
+
+        return findings

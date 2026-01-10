@@ -1,0 +1,119 @@
+What we are upgrading in allocation.py
+
+Replace binary filters with soft risk penalties
+
+Apply confidence decay correctly (time-aware, bounded)
+
+Add CVaR + drawdown awareness so capital pulls back automatically
+
+This keeps allocation:
+
+Stable
+
+Explainable
+
+LP-safe
+
+✅ FINAL VERSION: meta_supervisor/allocation.py
+
+Drop-in replacement (you can overwrite the file):
+
+import json
+from pathlib import Path
+from math import sqrt
+from meta_supervisor.confidence_decay import get_confidence_multiplier
+from meta_supervisor.strategy_cvar import run as strategy_cvar_run
+
+ALLOCATION_STATE = Path("meta_supervisor/state/allocation.json")
+
+# ---- Tunables (quant defaults) ----
+MAX_WEIGHT = 0.25          # never allow a single agent >25%
+MIN_CONF = 0.50            # confidence decay floor already enforces this
+CVAR_PENALTY_K = 0.015     # how strongly CVaR reduces capital
+DD_PENALTY_K = 0.01        # drawdown sensitivity
+
+def _safe(x, d=0.0):
+    try:
+        return float(x)
+    except Exception:
+        return d
+
+def compute_weights(agent_stats: dict) -> dict:
+    raw = {}
+
+    # Strategy-level CVaR (expected vs realized gap)
+    strategy_cvar = strategy_cvar_run(horizon_hours=24)
+
+    for name, s in agent_stats.items():
+        pnl = _safe(s.get("pnl_sum_bps"))
+        hit = _safe(s.get("hit_rate"))
+        err = _safe(s.get("error_rate"))
+        avg_abs_err = _safe(s.get("avg_abs_error_bps"), 999)
+        strategy = s.get("strategy", "unclassified")
+
+        # --- Hard safety gates ---
+        if err > 0.15:
+            continue
+        if pnl <= 0:
+            continue
+
+        # --- Base alpha quality score ---
+        # concave: rewards consistency over spikes
+        q = sqrt(max(pnl, 0)) * (0.6 + hit)
+
+        # --- Confidence decay (from realized vs expected error) ---
+        conf_mult = get_confidence_multiplier(name)
+        q *= conf_mult
+
+        # --- Simulation integrity penalty ---
+        # penalize if live vs sim error is large
+        sim_penalty = 1.0 / (1.0 + avg_abs_err / 75.0)
+        q *= sim_penalty
+
+        # --- Strategy CVaR penalty ---
+        strat_cvar = _safe(strategy_cvar.get(strategy, {}).get("gap_cvar95_bps", 0))
+        if strat_cvar < 0:
+            q *= max(0.25, 1.0 + strat_cvar * CVAR_PENALTY_K)
+
+        # --- Optional drawdown awareness (if present) ---
+        dd = _safe(s.get("max_drawdown_bps", 0))
+        if dd < 0:
+            q *= max(0.4, 1.0 + dd * DD_PENALTY_K)
+
+        if q > 0:
+            raw[name] = q
+
+    total = sum(raw.values())
+    if total <= 0:
+        return {}
+
+    # Normalize
+    weights = {k: v / total for k, v in raw.items()}
+
+    # Cap max weight & renormalize
+    capped = {}
+    excess = 0.0
+    for k, w in weights.items():
+        if w > MAX_WEIGHT:
+            capped[k] = MAX_WEIGHT
+            excess += w - MAX_WEIGHT
+        else:
+            capped[k] = w
+
+    if excess > 0:
+        free = sum(v for v in capped.values() if v < MAX_WEIGHT)
+        if free > 0:
+            for k in capped:
+                if capped[k] < MAX_WEIGHT:
+                    capped[k] += excess * (capped[k] / free)
+
+    return {k: round(v, 6) for k, v in capped.items()}
+
+def save_weights(weights: dict):
+    ALLOCATION_STATE.parent.mkdir(parents=True, exist_ok=True)
+    ALLOCATION_STATE.write_text(json.dumps(weights, indent=2))
+
+def main(agent_stats: dict):
+    w = compute_weights(agent_stats)
+    save_weights(w)
+    return w

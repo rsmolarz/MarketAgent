@@ -1,0 +1,465 @@
+{% extends "base.html" %}
+
+{% block title %}Deal Pipeline - Market Inefficiency Platform{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center flex-wrap">
+        <div>
+            <h1 class="h2 mb-0">
+                <i data-feather="briefcase" class="me-2"></i>
+                Distressed Property Deal Pipeline
+            </h1>
+            <p class="text-muted mb-0">Track deals from screening to close</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary btn-sm" onclick="refreshPipeline()">
+                <i data-feather="refresh-cw" class="me-1"></i> Refresh
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-lg-2 col-md-4 mb-3">
+        <div class="card border-info">
+            <div class="card-body text-center p-2">
+                <h6 class="card-subtitle mb-1 text-muted small">Screened</h6>
+                <h3 class="mb-0 text-info" id="count-screened">{{ counts.get('screened', 0) }}</h3>
+                <small class="text-muted">0% exposure</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-2 col-md-4 mb-3">
+        <div class="card border-warning">
+            <div class="card-body text-center p-2">
+                <h6 class="card-subtitle mb-1 text-muted small">Underwritten</h6>
+                <h3 class="mb-0 text-warning" id="count-underwritten">{{ counts.get('underwritten', 0) }}</h3>
+                <small class="text-muted">30% exposure</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-2 col-md-4 mb-3">
+        <div class="card border-primary">
+            <div class="card-body text-center p-2">
+                <h6 class="card-subtitle mb-1 text-muted small">LOI Sent</h6>
+                <h3 class="mb-0 text-primary" id="count-loi">{{ counts.get('loi', 0) }}</h3>
+                <small class="text-muted">60% exposure</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-2 col-md-4 mb-3">
+        <div class="card border-success">
+            <div class="card-body text-center p-2">
+                <h6 class="card-subtitle mb-1 text-muted small">Closed</h6>
+                <h3 class="mb-0 text-success" id="count-closed">{{ counts.get('closed', 0) }}</h3>
+                <small class="text-muted">100% exposure</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-2 col-md-4 mb-3">
+        <div class="card border-secondary">
+            <div class="card-body text-center p-2">
+                <h6 class="card-subtitle mb-1 text-muted small">Dead/Passed</h6>
+                <h3 class="mb-0 text-secondary" id="count-dead">{{ counts.get('dead', 0) }}</h3>
+                <small class="text-muted">0% exposure</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-2 col-md-4 mb-3">
+        <div class="card bg-dark">
+            <div class="card-body text-center p-2">
+                <h6 class="card-subtitle mb-1 text-muted small">Total Exposure</h6>
+                <h3 class="mb-0 text-white" id="total-exposure">$0</h3>
+                <small class="text-muted" id="exposure-pct">weighted</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-info bg-opacity-25 d-flex justify-content-between align-items-center">
+                <span><i data-feather="eye" class="me-1"></i> Screened</span>
+                <span class="badge bg-info">{{ pipeline.screened|length }}</span>
+            </div>
+            <div class="card-body p-2" style="max-height: 500px; overflow-y: auto;">
+                {% for deal in pipeline.screened %}
+                <div class="card mb-2 deal-card" data-deal-id="{{ deal.id }}">
+                    <div class="card-body p-2">
+                        <h6 class="card-title mb-1 small">{{ deal.property_address }}</h6>
+                        <p class="card-text small text-muted mb-1">{{ deal.city }}, {{ deal.state }}</p>
+                        {% if deal.asking_price %}
+                        <p class="card-text small mb-1"><strong>${{ '{:,.0f}'.format(deal.asking_price) }}</strong></p>
+                        {% endif %}
+                        <div class="d-flex gap-1 mt-2">
+                            <button class="btn btn-outline-primary btn-sm flex-grow-1" onclick="generateMemo({{ deal.id }})">
+                                <i data-feather="file-text" style="width:12px;height:12px;"></i> Memo
+                            </button>
+                            <button class="btn btn-warning btn-sm flex-grow-1" onclick="progressDeal({{ deal.id }}, 'underwritten')">
+                                <i data-feather="arrow-right" style="width:12px;height:12px;"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-muted small text-center">No deals in screening</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-warning bg-opacity-25 d-flex justify-content-between align-items-center">
+                <span><i data-feather="clipboard" class="me-1"></i> Underwritten</span>
+                <span class="badge bg-warning text-dark">{{ pipeline.underwritten|length }}</span>
+            </div>
+            <div class="card-body p-2" style="max-height: 500px; overflow-y: auto;">
+                {% for deal in pipeline.underwritten %}
+                <div class="card mb-2 deal-card" data-deal-id="{{ deal.id }}">
+                    <div class="card-body p-2">
+                        <h6 class="card-title mb-1 small">{{ deal.property_address }}</h6>
+                        <p class="card-text small text-muted mb-1">{{ deal.city }}, {{ deal.state }}</p>
+                        {% if deal.underwriting_score %}
+                        <span class="badge bg-secondary">Score: {{ '{:.0f}'.format(deal.underwriting_score) }}</span>
+                        {% endif %}
+                        <div class="d-flex gap-1 mt-2">
+                            <button class="btn btn-outline-info btn-sm flex-grow-1" onclick="viewDeal({{ deal.id }})">
+                                <i data-feather="eye" style="width:12px;height:12px;"></i>
+                            </button>
+                            <button class="btn btn-primary btn-sm flex-grow-1" onclick="progressDeal({{ deal.id }}, 'loi')">
+                                <i data-feather="send" style="width:12px;height:12px;"></i> LOI
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-muted small text-center">No deals under review</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-primary bg-opacity-25 d-flex justify-content-between align-items-center">
+                <span><i data-feather="send" class="me-1"></i> LOI Sent</span>
+                <span class="badge bg-primary">{{ pipeline.loi|length }}</span>
+            </div>
+            <div class="card-body p-2" style="max-height: 500px; overflow-y: auto;">
+                {% for deal in pipeline.loi %}
+                <div class="card mb-2 deal-card" data-deal-id="{{ deal.id }}">
+                    <div class="card-body p-2">
+                        <h6 class="card-title mb-1 small">{{ deal.property_address }}</h6>
+                        <p class="card-text small text-muted mb-1">{{ deal.city }}, {{ deal.state }}</p>
+                        {% if deal.offer_price %}
+                        <span class="badge bg-primary">Offer: ${{ '{:,.0f}'.format(deal.offer_price) }}</span>
+                        {% endif %}
+                        <div class="d-flex gap-1 mt-2">
+                            <button class="btn btn-outline-info btn-sm flex-grow-1" onclick="viewDeal({{ deal.id }})">
+                                <i data-feather="eye" style="width:12px;height:12px;"></i>
+                            </button>
+                            <button class="btn btn-success btn-sm flex-grow-1" onclick="progressDeal({{ deal.id }}, 'closed')">
+                                <i data-feather="check-circle" style="width:12px;height:12px;"></i> Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-muted small text-center">No active LOIs</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-success bg-opacity-25 d-flex justify-content-between align-items-center">
+                <span><i data-feather="check-circle" class="me-1"></i> Closed</span>
+                <span class="badge bg-success">{{ pipeline.closed|length }}</span>
+            </div>
+            <div class="card-body p-2" style="max-height: 500px; overflow-y: auto;">
+                {% for deal in pipeline.closed %}
+                <div class="card mb-2 deal-card border-success" data-deal-id="{{ deal.id }}">
+                    <div class="card-body p-2">
+                        <h6 class="card-title mb-1 small">{{ deal.property_address }}</h6>
+                        <p class="card-text small text-muted mb-1">{{ deal.city }}, {{ deal.state }}</p>
+                        {% if deal.final_price %}
+                        <span class="badge bg-success">${{ '{:,.0f}'.format(deal.final_price) }}</span>
+                        {% endif %}
+                        <div class="d-flex gap-1 mt-2">
+                            <button class="btn btn-outline-info btn-sm flex-grow-1" onclick="viewDeal({{ deal.id }})">
+                                <i data-feather="eye" style="width:12px;height:12px;"></i> View
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <p class="text-muted small text-center">No closed deals</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="memoModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i data-feather="file-text" class="me-2"></i> IC Memo</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="memoContent" style="white-space: pre-wrap; font-family: monospace; font-size: 0.9rem;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-success" id="actOnMemoBtn" style="display:none;">
+                    <i data-feather="check" class="me-1"></i> Act on Recommendation
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="dealDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i data-feather="briefcase" class="me-2"></i> Deal Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="dealDetailContent">
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+feather.replace();
+
+async function loadExposure() {
+    try {
+        const resp = await fetch('/deals/api/exposure');
+        const data = await resp.json();
+        if (data.success) {
+            document.getElementById('total-exposure').textContent = 
+                '$' + (data.weighted_exposure || 0).toLocaleString(undefined, {maximumFractionDigits: 0});
+            if (data.total_value > 0) {
+                const pct = ((data.weighted_exposure / data.total_value) * 100).toFixed(1);
+                document.getElementById('exposure-pct').textContent = pct + '% weighted';
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load exposure:', e);
+    }
+}
+loadExposure();
+
+function refreshPipeline() {
+    location.reload();
+}
+
+async function generateMemo(dealId) {
+    const modal = new bootstrap.Modal(document.getElementById('memoModal'));
+    document.getElementById('memoContent').innerHTML = '<div class="text-center"><div class="spinner-border text-primary"></div><p class="mt-2">Generating IC Memo...</p></div>';
+    modal.show();
+    
+    try {
+        const resp = await fetch(`/deals/${dealId}/generate-memo`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({use_llm: true})
+        });
+        const data = await resp.json();
+        
+        if (data.success && data.memo) {
+            document.getElementById('memoContent').textContent = data.memo.content;
+            
+            if (data.memo.recommendation === 'ACT') {
+                document.getElementById('actOnMemoBtn').style.display = 'inline-block';
+                document.getElementById('actOnMemoBtn').onclick = () => progressDeal(dealId, 'underwritten');
+            } else {
+                document.getElementById('actOnMemoBtn').style.display = 'none';
+            }
+        } else {
+            document.getElementById('memoContent').innerHTML = '<div class="alert alert-danger">Failed to generate memo</div>';
+        }
+    } catch (e) {
+        document.getElementById('memoContent').innerHTML = `<div class="alert alert-danger">Error: ${e.message}</div>`;
+    }
+}
+
+async function progressDeal(dealId, stage) {
+    try {
+        const resp = await fetch(`/deals/${dealId}/progress`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({stage: stage})
+        });
+        const data = await resp.json();
+        
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Failed to progress deal: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+async function viewDeal(dealId) {
+    const modal = new bootstrap.Modal(document.getElementById('dealDetailModal'));
+    document.getElementById('dealDetailContent').innerHTML = '<div class="text-center"><div class="spinner-border text-primary"></div></div>';
+    modal.show();
+    
+    try {
+        const resp = await fetch(`/deals/${dealId}`, {
+            headers: {'Accept': 'application/json'}
+        });
+        const deal = await resp.json();
+        
+        let html = `
+            <h5>${deal.property_address}</h5>
+            <p class="text-muted">${deal.city || ''}, ${deal.state || ''} ${deal.zip_code || ''}</p>
+            
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <strong>Stage:</strong> <span class="badge bg-primary">${deal.stage}</span>
+                </div>
+                <div class="col-md-4">
+                    <strong>Type:</strong> ${deal.property_type || 'N/A'}
+                </div>
+                <div class="col-md-4">
+                    <strong>Distress:</strong> ${deal.distress_type || 'N/A'}
+                </div>
+            </div>
+            
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <strong>Asking:</strong> ${deal.asking_price ? '$' + deal.asking_price.toLocaleString() : 'N/A'}
+                </div>
+                <div class="col-md-4">
+                    <strong>Est. Value:</strong> ${deal.estimated_value ? '$' + deal.estimated_value.toLocaleString() : 'N/A'}
+                </div>
+                <div class="col-md-4">
+                    <strong>Offer:</strong> ${deal.offer_price ? '$' + deal.offer_price.toLocaleString() : 'N/A'}
+                </div>
+            </div>
+        `;
+        
+        if (deal.ic_memo) {
+            html += `
+                <hr>
+                <h6>IC Memo</h6>
+                <pre style="white-space: pre-wrap; font-size: 0.85rem; max-height: 300px; overflow-y: auto;">${deal.ic_memo}</pre>
+            `;
+        }
+        
+        if (deal.stage_history && deal.stage_history.length > 0) {
+            html += `
+                <hr>
+                <h6>Stage History</h6>
+                <ul class="small">
+                    ${deal.stage_history.map(h => `<li>${h.from} → ${h.to} (${new Date(h.at).toLocaleDateString()})</li>`).join('')}
+                </ul>
+            `;
+        }
+        
+        if (deal.crm_synced) {
+            html += `<div class="alert alert-success mt-3"><i data-feather="check-circle" class="me-1"></i> Synced to CRM</div>`;
+        }
+        
+        if (deal.deal_room_url) {
+            html += `<a href="${deal.deal_room_url}" class="btn btn-outline-primary btn-sm" target="_blank">Open Deal Room</a>`;
+        }
+        
+        document.getElementById('dealDetailContent').innerHTML = html;
+        feather.replace();
+        
+        // Load IC votes
+        loadVotes(dealId, document.getElementById('dealDetailContent'));
+        loadValuation(dealId, document.getElementById('dealDetailContent'));
+    } catch (e) {
+        document.getElementById('dealDetailContent').innerHTML = `<div class="alert alert-danger">Error loading deal: ${e.message}</div>`;
+    }
+}
+
+async function loadVotes(dealId, container) {
+    try {
+        const resp = await fetch(`/deals/${dealId}/votes`);
+        const data = await resp.json();
+        if (data.success && data.summary) {
+            const s = data.summary;
+            let html = `<hr><h6>IC Voting</h6>
+                <div class="row">
+                    <div class="col-md-6">
+                        <strong>AI:</strong> ${s.ai_recommendation || 'Pending'} 
+                        ${s.ai_confidence ? `(${(s.ai_confidence*100).toFixed(0)}%)` : ''}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>IC:</strong> ACT(${s.human_votes.ACT}) / WATCH(${s.human_votes.WATCH}) / PASS(${s.human_votes.PASS})
+                        ${s.has_override ? '<span class="badge bg-warning">Override</span>' : ''}
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <button class="btn btn-sm btn-success me-1" onclick="castVote(${dealId}, 'ACT')">ACT</button>
+                    <button class="btn btn-sm btn-warning me-1" onclick="castVote(${dealId}, 'WATCH')">WATCH</button>
+                    <button class="btn btn-sm btn-danger" onclick="castVote(${dealId}, 'PASS')">PASS</button>
+                </div>`;
+            container.innerHTML += html;
+        }
+    } catch (e) {
+        console.error('Failed to load votes:', e);
+    }
+}
+
+async function loadValuation(dealId, container) {
+    try {
+        const resp = await fetch(`/deals/${dealId}/valuation`);
+        const data = await resp.json();
+        if (data.success && data.valuation) {
+            const v = data.valuation;
+            let html = `<hr><h6>Pricing Bands</h6>
+                <div class="row small">
+                    <div class="col-md-3"><strong>Zestimate:</strong> $${(v.zestimate || 0).toLocaleString()}</div>
+                    <div class="col-md-3"><strong>Target Entry:</strong> $${(v.distressed_price || 0).toLocaleString()}</div>
+                    <div class="col-md-3"><strong>Recovery:</strong> $${(v.recovery_value || 0).toLocaleString()}</div>
+                    <div class="col-md-3"><strong>Multiple:</strong> ${(v.recovery_multiple || 0).toFixed(2)}x</div>
+                </div>`;
+            container.innerHTML += html;
+        }
+    } catch (e) {
+        console.log('No valuation data');
+    }
+}
+
+async function castVote(dealId, vote) {
+    const voter = prompt('Enter your name:');
+    if (!voter) return;
+    
+    try {
+        const resp = await fetch(`/deals/${dealId}/vote`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({voter: voter, vote: vote, voter_type: 'human'})
+        });
+        const data = await resp.json();
+        if (data.success) {
+            alert(`Vote recorded: ${vote}${data.is_override ? ' (Override)' : ''}`);
+            location.reload();
+        } else {
+            alert('Failed to record vote: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,24 @@
+{
+  "module": "agents.geopolitical_risk_agent",
+  "callable": "GeopoliticalRiskAgent.analyze",
+  "suite": "eval/suites/geopolitical_risk.jsonl",
+  "results": [
+    {
+      "id": "geo_smoke",
+      "ok": true,
+      "latency_s": 0.0,
+      "output": [
+        {
+          "region": "Taiwan",
+          "risk_score": 78,
+          "headline": "Military exercises increase tensions near Taiwan Strait",
+          "sentiment": -0.62,
+          "source": "fixture",
+          "timestamp": "2026-01-07T23:38:07.028266Z"
+        }
+      ],
+      "error": null,
+      "reward": 0.78
+    }
+  ]
+}

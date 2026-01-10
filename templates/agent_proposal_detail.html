@@ -1,0 +1,153 @@
+{% extends "admin_layout.html" %}
+{% block title %}Proposal {{ proposal.id }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <a href="{{ url_for('agent.agent_dashboard') }}" class="btn btn-outline-secondary mb-3">
+        <i data-feather="arrow-left"></i> Back to AI Oversight
+    </a>
+
+    <div class="d-flex justify-content-between align-items-start mb-4">
+        <div>
+            <h1>{{ proposal.title }}</h1>
+            <p class="text-muted mb-0">
+                Branch: <code>{{ proposal.branch }}</code> |
+                Status: <strong>{{ proposal.status }}</strong> |
+                Overall Risk:
+                {% if proposal.overall_risk >= 0.75 %}
+                    <span class="badge bg-danger">{{ "%.2f"|format(proposal.overall_risk) }}</span>
+                {% elif proposal.overall_risk >= 0.5 %}
+                    <span class="badge bg-warning">{{ "%.2f"|format(proposal.overall_risk) }}</span>
+                {% else %}
+                    <span class="badge bg-success">{{ "%.2f"|format(proposal.overall_risk) }}</span>
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0"><i data-feather="info"></i> Why this change</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>Summary:</strong> {{ proposal.summary }}</p>
+                    <p><strong>Rationale:</strong> {{ proposal.rationale }}</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0"><i data-feather="file-text"></i> Per-file risk</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled mb-0">
+                        {% for f, r in proposal.file_risk.items() %}
+                            <li>
+                                <code>{{ f }}</code> —
+                                {% if r >= 0.75 %}
+                                    <span class="badge bg-danger">{{ "%.2f"|format(r) }}</span>
+                                {% elif r >= 0.5 %}
+                                    <span class="badge bg-warning">{{ "%.2f"|format(r) }}</span>
+                                {% else %}
+                                    <span class="badge bg-success">{{ "%.2f"|format(r) }}</span>
+                                {% endif %}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i data-feather="users"></i> Multi-agent votes</h5>
+        </div>
+        <div class="card-body">
+            {% if votes|length == 0 %}
+                <p class="text-muted mb-3">No votes yet.</p>
+            {% else %}
+                <ul class="list-group mb-3">
+                    {% for v in votes %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>{{ v.agent_name }}</strong>:
+                                {% if v.vote == "APPROVE" %}
+                                    <span class="text-success">APPROVE</span>
+                                {% else %}
+                                    <span class="text-danger">REJECT</span>
+                                {% endif %}
+                                <span class="text-muted">({{ "%.2f"|format(v.confidence) }})</span>
+                                — {{ v.notes }}
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+
+            <div class="d-flex gap-2 flex-wrap">
+                <form method="POST" action="{{ url_for('agent.agent_run_votes', pid=proposal.id) }}" class="d-inline">
+                    <button class="btn btn-primary" type="submit">
+                        <i data-feather="play"></i> Run Validator + Compliance
+                    </button>
+                </form>
+
+                <form method="POST" action="{{ url_for('agent.agent_approve_merge', pid=proposal.id) }}" class="d-inline">
+                    <button class="btn btn-success" type="submit">
+                        <i data-feather="check-circle"></i> Approve + Merge (safe)
+                    </button>
+                </form>
+
+                <form method="POST" action="{{ url_for('agent.agent_reject', pid=proposal.id) }}" class="d-inline">
+                    <div class="input-group">
+                        <input name="reason" class="form-control" placeholder="Reject reason (stored in memory)" style="width: 300px;">
+                        <button class="btn btn-danger" type="submit">
+                            <i data-feather="x-circle"></i> Reject
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i data-feather="git-merge"></i> Live Diff (side-by-side)</h5>
+        </div>
+        <div class="card-body">
+            <div style="overflow-x: auto;">
+                {{ diff_html|safe }}
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i data-feather="file-plus"></i> Clause-level PDF heatmap</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted">Provide a server path to an uploaded contract PDF and the clause strings you want highlighted.</p>
+            <form method="POST" action="{{ url_for('agent.agent_heatmap', pid=proposal.id) }}">
+                <div class="mb-3">
+                    <input name="pdf_path" class="form-control" placeholder="uploads/contract.pdf">
+                </div>
+                <div class="mb-3">
+                    <input name="governing_law_text" class="form-control" placeholder="Paste governing law clause text (exact excerpt)">
+                </div>
+                <div class="mb-3">
+                    <input name="venue_text" class="form-control" placeholder="Paste venue/forum clause text">
+                </div>
+                <div class="mb-3">
+                    <input name="guarantee_text" class="form-control" placeholder="Paste guarantee clause text">
+                </div>
+                <button class="btn btn-primary" type="submit">
+                    <i data-feather="download"></i> Generate highlighted PDF
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

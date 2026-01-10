@@ -1,0 +1,207 @@
+1️⃣ Regime-Conditioned Backtesting Report
+
+“Why was this agent on/off?”
+
+Purpose
+
+Explains decisions, not just outcomes:
+
+Regime
+
+Confidence
+
+Historical performance
+
+Rotation + decay impact
+
+Output example (JSON / UI-ready)
+{
+  "agent": "MarketCorrectionAgent",
+  "date": "2020-03-12",
+  "regime": "risk_off",
+  "confidence": 0.87,
+  "mean_return": 0.042,
+  "hit_rate": 0.61,
+  "decay_factor": 0.74,
+  "final_weight": 0.27,
+  "decision": "ACTIVE",
+  "reason": "Positive edge in risk_off with high confidence"
+}
+
+Code — meta/regime_report.py
+def explain_agent_decision(
+    agent,
+    regime,
+    confidence,
+    base_weight,
+    decay_factor,
+    regime_stats
+):
+    stats = regime_stats.get(agent, {}).get(regime)
+
+    if not stats:
+        return {
+            "agent": agent,
+            "decision": "OFF",
+            "reason": "No historical edge in this regime"
+        }
+
+    mean_return = stats["mean_return"]
+    hit_rate = stats["hit_rate"]
+
+    final_weight = base_weight * mean_return * hit_rate * decay_factor * confidence
+
+    return {
+        "agent": agent,
+        "regime": regime,
+        "confidence": confidence,
+        "mean_return": mean_return,
+        "hit_rate": hit_rate,
+        "decay_factor": decay_factor,
+        "final_weight": final_weight,
+        "decision": "ACTIVE" if final_weight > 0.01 else "OFF",
+        "reason": "Positive regime-conditioned edge"
+    }
+
+
+This feeds:
+
+dashboard tooltips
+
+audit logs
+
+investor explainability
+
+2️⃣ Agent Substitution
+
+If Agent A fails → promote Agent B automatically
+
+Rule
+
+Within the same cluster + regime, promote the strongest backup.
+
+Example
+
+MarketCorrectionAgent underperforms in risk_on
+
+EquityMomentumAgent historically dominates in risk_on
+
+Swap happens without disabling anything globally
+
+Code — meta/agent_substitution.py
+def substitute_agents(
+    final_weights: dict,
+    regime: str,
+    regime_stats: dict,
+    clusters: dict
+):
+    adjusted = final_weights.copy()
+
+    for cluster, agents in clusters.items():
+        active = {a: final_weights.get(a, 0) for a in agents}
+        if not active:
+            continue
+
+        # Best performer in this regime
+        scored = []
+        for a in agents:
+            stats = regime_stats.get(a, {}).get(regime)
+            if stats:
+                scored.append((a, stats["mean_return"] * stats["hit_rate"]))
+
+        if not scored:
+            continue
+
+        best_agent, best_score = max(scored, key=lambda x: x[1])
+
+        for agent, weight in active.items():
+            if weight < 0.01 and agent != best_agent:
+                adjusted[best_agent] += weight
+                adjusted[agent] = 0.0
+
+    return adjusted
+
+Effect
+
+No alpha gaps
+
+No hard switches
+
+Capital flows within clusters only
+
+3️⃣ Ensemble Meta-Agent
+
+Votes across agents weighted by regime skill
+
+This is the final layer.
+
+Behavior
+
+Each agent emits a signal (+1 / −1 / 0)
+
+Votes are weighted by:
+
+regime-specific performance
+
+decay factor
+
+regime confidence
+
+Code — meta/ensemble_agent.py
+def ensemble_vote(
+    agent_signals: dict,
+    regime: str,
+    confidence: float,
+    regime_stats: dict,
+    decay_factors: dict
+):
+    vote = 0.0
+
+    for agent, signal in agent_signals.items():
+        stats = regime_stats.get(agent, {}).get(regime)
+        if not stats:
+            continue
+
+        weight = (
+            stats["mean_return"]
+            * stats["hit_rate"]
+            * decay_factors.get(agent, 1.0)
+            * confidence
+        )
+
+        vote += signal * weight
+
+    return {
+        "ensemble_signal": (
+            "BULLISH" if vote > 0.02
+            else "BEARISH" if vote < -0.02
+            else "NEUTRAL"
+        ),
+        "score": vote
+    }
+
+What this replaces
+
+Naive signal stacking
+
+Equal-weight voting
+
+Manual overrides
+
+🧠 What you now have
+
+You’ve crossed the line from signals → adaptive intelligence.
+
+Your system now:
+
+Explains itself
+
+Substitutes intelligently
+
+Votes contextually
+
+Allocates probabilistically
+
+Learns by regime
+
+This is how real multi-strategy desks are built.

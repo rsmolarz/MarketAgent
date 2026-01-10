@@ -1,0 +1,457 @@
+Grafana dashboard JSON (import-ready)
+
+This dashboard assumes Prometheus is scraping your app /metrics and you already expose these metrics:
+
+agent_runs_total{agent=...}
+
+agent_errors_total{agent=...}
+
+agent_latency_ms_bucket{agent=...}
+
+agent_cost_usd_bucket{agent=...}
+
+agent_last_reward{agent=...}
+
+agent_last_cost_usd{agent=...}
+
+agent_last_latency_ms{agent=...}
+
+Create a file: ops/grafana/agents_dashboard.json and import it in Grafana.
+
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum by (agent) (rate(agent_runs_total[5m]))",
+          "legendFormat": "{{agent}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Agent runs / sec (5m rate)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "sum by (agent) (rate(agent_errors_total[5m])) / clamp_min(sum by (agent) (rate(agent_runs_total[5m])), 1e-9)",
+          "legendFormat": "{{agent}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Agent error rate (5m)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "id": 3,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le,agent) (rate(agent_latency_ms_bucket[5m])))",
+          "legendFormat": "{{agent}} p95",
+          "refId": "A"
+        }
+      ],
+      "title": "Latency p95 (ms)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "id": 4,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le,agent) (rate(agent_cost_usd_bucket[15m])))",
+          "legendFormat": "{{agent}} p95",
+          "refId": "A"
+        }
+      ],
+      "title": "Cost p95 ($) [15m]",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 16 },
+      "id": 5,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "agent_last_reward{agent=~\"$agent\"}",
+          "legendFormat": "{{agent}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Last reward (selected agent)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 16 },
+      "id": 6,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "agent_last_cost_usd{agent=~\"$agent\"}",
+          "legendFormat": "{{agent}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Last cost ($) (selected agent)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "fieldConfig": { "defaults": { "unit": "ms" }, "overrides": [] },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 16 },
+      "id": 7,
+      "options": { "legend": { "displayMode": "table", "placement": "bottom" } },
+      "targets": [
+        {
+          "expr": "agent_last_latency_ms{agent=~\"$agent\"}",
+          "legendFormat": "{{agent}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Last latency (ms) (selected agent)",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["agents", "telemetry"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": ".*", "value": ".*" },
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "definition": "label_values(agent_runs_total, agent)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "agent",
+        "options": [],
+        "query": { "query": "label_values(agent_runs_total, agent)", "refId": "StandardVariableQuery" },
+        "refresh": 1,
+        "regex": "",
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Agents: Runs / Errors / Latency / Cost / Reward",
+  "uid": "agents-telemetry",
+  "version": 1
+}
+
+2) Agent-level Sharpe-like metrics (reward Sharpe)
+
+Prometheus can’t reliably compute rolling stddev without extra work. The correct approach: compute Sharpe from telemetry/events.jsonl in-process and export gauges that Prometheus scrapes.
+
+A) Add gauges
+
+Update telemetry/metrics.py (add these):
+
+from prometheus_client import Gauge
+
+AGENT_REWARD_MEAN = Gauge("agent_reward_mean", "Rolling mean reward", ["agent"])
+AGENT_REWARD_STD = Gauge("agent_reward_std", "Rolling stddev reward", ["agent"])
+AGENT_REWARD_SHARPE = Gauge("agent_reward_sharpe", "Rolling Sharpe-like (mean/std)", ["agent"])
+AGENT_DRAWDOWN = Gauge("agent_reward_drawdown", "Rolling drawdown (peak-to-trough) using reward proxy", ["agent"])
+AGENT_QUARANTINED = Gauge("agent_quarantined", "1 if quarantined else 0", ["agent"])
+
+B) Create telemetry/rolling_stats.py (new)
+import json, math
+from pathlib import Path
+from collections import defaultdict, deque
+from datetime import datetime, timezone
+
+from telemetry.metrics import (
+    AGENT_REWARD_MEAN, AGENT_REWARD_STD, AGENT_REWARD_SHARPE,
+    AGENT_DRAWDOWN, AGENT_QUARANTINED
+)
+
+EVENTS = Path("telemetry/events.jsonl")
+
+def _mean(xs):
+    return sum(xs) / len(xs) if xs else 0.0
+
+def _std(xs):
+    if not xs or len(xs) < 2:
+        return 0.0
+    m = _mean(xs)
+    v = sum((x - m) ** 2 for x in xs) / (len(xs) - 1)
+    return math.sqrt(max(v, 0.0))
+
+def _drawdown(xs):
+    # xs: reward series; treat cumulative reward as equity curve proxy
+    if not xs:
+        return 0.0
+    equity = 0.0
+    peak = 0.0
+    dd = 0.0
+    for r in xs:
+        equity += r
+        peak = max(peak, equity)
+        dd = min(dd, equity - peak)  # negative number
+    return dd
+
+def update_prom_metrics(window=500, last_n=5000, quarantine_set=None):
+    quarantine_set = quarantine_set or set()
+
+    if not EVENTS.exists():
+        return
+
+    lines = EVENTS.read_text().splitlines()[-last_n:]
+    by = defaultdict(lambda: deque(maxlen=window))
+
+    for ln in lines:
+        try:
+            e = json.loads(ln)
+        except:
+            continue
+        a = e.get("agent")
+        r = e.get("reward")
+        if a and r is not None:
+            try:
+                by[a].append(float(r))
+            except:
+                pass
+
+    for agent, dq in by.items():
+        xs = list(dq)
+        m = _mean(xs)
+        s = _std(xs)
+        sharpe = (m / s) if s > 1e-9 else 0.0
+        dd = _drawdown(xs)
+
+        AGENT_REWARD_MEAN.labels(agent).set(m)
+        AGENT_REWARD_STD.labels(agent).set(s)
+        AGENT_REWARD_SHARPE.labels(agent).set(sharpe)
+        AGENT_DRAWDOWN.labels(agent).set(dd)
+        AGENT_QUARANTINED.labels(agent).set(1.0 if agent in quarantine_set else 0.0)
+
+C) Add panels to Grafana
+
+Add time-series panels for:
+
+agent_reward_sharpe
+
+agent_reward_drawdown
+
+agent_quarantined
+
+(You can edit the JSON above and add panels 8–10; or import the base and add in the UI.)
+
+3) Automatic strategy quarantine on drawdowns
+
+You already have kill switches:
+
+services.kill_switch.is_killed
+
+meta_supervisor.kill_list.is_killed
+
+meta_supervisor.policy.kill_switch.agent_disabled
+
+We will add a quarantine layer that:
+
+uses reward-drawdown proxy (cumulative reward) per agent
+
+writes state to meta_supervisor/quarantine.json
+
+is checked in policy_agent_disabled so it becomes an enforcement point
+
+A) Create services/quarantine.py (new)
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+QPATH = Path("meta_supervisor/quarantine.json")
+
+def _load():
+    if not QPATH.exists():
+        return {"agents": {}, "updated_at": None}
+    try:
+        return json.loads(QPATH.read_text())
+    except:
+        return {"agents": {}, "updated_at": None}
+
+def _save(doc):
+    QPATH.parent.mkdir(parents=True, exist_ok=True)
+    doc["updated_at"] = datetime.now(timezone.utc).isoformat()
+    QPATH.write_text(json.dumps(doc, indent=2))
+
+def is_quarantined(agent_name: str) -> bool:
+    doc = _load()
+    a = doc["agents"].get(agent_name)
+    if not a:
+        return False
+    return bool(a.get("active", False))
+
+def quarantine(agent_name: str, reason: str):
+    doc = _load()
+    doc["agents"][agent_name] = {
+        "active": True,
+        "reason": reason,
+        "since": datetime.now(timezone.utc).isoformat()
+    }
+    _save(doc)
+
+def clear_quarantine(agent_name: str):
+    doc = _load()
+    if agent_name in doc["agents"]:
+        doc["agents"][agent_name]["active"] = False
+    _save(doc)
+
+def quarantined_agents():
+    doc = _load()
+    return {k: v for k, v in doc.get("agents", {}).items() if v.get("active")}
+
+B) Patch meta_supervisor/policy/kill_switch.py (enforce quarantine)
+
+Add:
+
+from services.quarantine import is_quarantined
+
+
+And inside agent_disabled(agent_name) add:
+
+if is_quarantined(agent_name):
+    return True
+
+
+Now quarantine is enforced via your existing policy_agent_disabled(agent_name) call in _run_agent.
+
+C) Create meta/quarantine_manager.py (new)
+
+This reads telemetry, computes drawdown, and quarantines.
+
+import json
+from pathlib import Path
+from collections import defaultdict, deque
+
+from services.quarantine import quarantine, clear_quarantine, quarantined_agents
+from telemetry.rolling_stats import update_prom_metrics
+
+EVENTS = Path("telemetry/events.jsonl")
+
+def compute_drawdown(rewards):
+    equity = 0.0
+    peak = 0.0
+    dd = 0.0
+    for r in rewards:
+        equity += r
+        peak = max(peak, equity)
+        dd = min(dd, equity - peak)
+    return dd
+
+def run(window=500, last_n=5000, dd_limit=-3.0, sharpe_floor=-0.05):
+    # dd_limit is in "reward units" (proxy). Tune after a week of data.
+    if not EVENTS.exists():
+        return {"ok": True, "quarantined": {}, "cleared": []}
+
+    lines = EVENTS.read_text().splitlines()[-last_n:]
+    by = defaultdict(lambda: deque(maxlen=window))
+
+    for ln in lines:
+        try:
+            e = json.loads(ln)
+        except:
+            continue
+        a = e.get("agent")
+        r = e.get("reward")
+        if a and r is not None:
+            try:
+                by[a].append(float(r))
+            except:
+                pass
+
+    q_before = set(quarantined_agents().keys())
+    q_now = set()
+
+    for agent, dq in by.items():
+        rs = list(dq)
+        dd = compute_drawdown(rs)
+
+        # quarantine rule: big drawdown in rolling window
+        if dd <= dd_limit:
+            quarantine(agent, f"Auto-quarantine: drawdown {dd:.3f} <= limit {dd_limit}")
+            q_now.add(agent)
+        else:
+            # optional: clear only if previously quarantined and recovered (simple rule)
+            if agent in q_before:
+                clear_quarantine(agent)
+
+    # Update Prometheus gauges too (quarantine badge)
+    update_prom_metrics(window=window, last_n=last_n, quarantine_set=q_now)
+
+    return {"ok": True, "quarantined": list(q_now), "cleared": [a for a in q_before if a not in q_now]}
+
+D) Schedule quarantine checks (in your AgentScheduler)
+
+Add imports at top:
+
+from meta.quarantine_manager import run as quarantine_run
+from telemetry.rollup import rollup as telemetry_rollup
+from telemetry.plots import main as telemetry_plots
+
+
+Add a scheduler job during init_app():
+
+self.schedule_telemetry_rollups()
+self.schedule_quarantine()
+
+
+Add methods:
+
+def schedule_telemetry_rollups(self):
+    self.scheduler.add_job(
+        func=self._telemetry_rollups,
+        trigger=IntervalTrigger(minutes=5),
+        id="telemetry_rollups",
+        replace_existing=True
+    )
+
+def _telemetry_rollups(self):
+    with self.app.app_context():
+        telemetry_rollup()
+        # optional: plots are a file output; keep it 1x/hour if desired
+
+def schedule_quarantine(self):
+    self.scheduler.add_job(
+        func=self._run_quarantine_checks,
+        trigger=IntervalTrigger(minutes=5),
+        id="quarantine_checks",
+        replace_existing=True
+    )
+
+def _run_quarantine_checks(self):
+    with self.app.app_context():
+        res = quarantine_run(window=500, last_n=5000, dd_limit=-3.0)
+        logger.info(f"Quarantine check: quarantined={res.get('quarantined')} cleared={res.get('cleared')}")

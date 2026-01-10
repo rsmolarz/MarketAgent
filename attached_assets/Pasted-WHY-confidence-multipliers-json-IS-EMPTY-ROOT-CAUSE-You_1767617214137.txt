@@ -1,0 +1,199 @@
+WHY confidence_multipliers.json IS EMPTY (ROOT CAUSE)
+
+Your confidence system is correctly written, but it has no eligible data yet.
+
+Specifically, update_confidence_multipliers() only computes values when ALL of these are true:
+
+alpha/reconciled.jsonl exists
+
+It contains rows with:
+
+horizon_hours == 24
+
+abs_error_bps populated
+
+At least one agent has such rows
+
+If any of those are missing, the function intentionally writes an empty multipliers dict to avoid poisoning allocations.
+
+In your case, one (or more) of these is true:
+
+alpha/reconciled.jsonl is empty
+
+OR it exists but no 24h rows yet
+
+OR reconciliation ran before the sim fields were added
+
+OR abs_error_bps is missing on older rows
+
+This is expected on first hardening pass.
+
+QUICK VERIFICATION (DO THIS NOW)
+
+Run these in order in Replit:
+
+1️⃣ Check reconciled rows exist
+wc -l alpha/reconciled.jsonl
+
+
+If 0 → reconciliation hasn’t run since your upgrades.
+
+2️⃣ Check fields exist
+python - <<'PY'
+import json
+from pathlib import Path
+p = Path("alpha/reconciled.jsonl")
+rows = [json.loads(x) for x in p.read_text().splitlines()[:5]]
+for r in rows:
+    print(r.keys())
+PY
+
+
+You must see:
+
+abs_error_bps
+
+pnl_error_bps
+
+expected_pnl_bps
+
+If not → old rows, rerun reconciliation.
+
+3️⃣ Force a reconciliation run
+python alpha/reconcile.py
+
+
+Then re-check:
+
+python - <<'PY'
+from meta_supervisor.confidence_decay import update_confidence_multipliers
+import json
+print(json.dumps(update_confidence_multipliers(), indent=2))
+PY
+
+
+At this point, the file should populate.
+
+SAFETY PATCH (RECOMMENDED)
+
+Right now, if there are no valid rows, the file stays empty.
+That’s safe, but confusing during bring-up.
+
+Add a fallback write so you always see agents explicitly:
+
+🔧 Patch confidence_decay.py (small, safe)
+
+Inside update_confidence_multipliers(), replace this block:
+
+if not recon:
+    state = _load_state()
+    if state.get("generated_at") is None:
+        state["generated_at"] = _now()
+        _save_state(state)
+    return state
+
+With this:
+if not recon:
+    # Write explicit neutral state so operators know system is alive
+    state = {
+        "version": 1,
+        "generated_at": _now(),
+        "multipliers": {}
+    }
+    _save_state(state)
+    return state
+
+
+This keeps behavior the same but removes ambiguity.
+
+PROMOTION GATES: YOU’RE MISSING ONE CRITICAL CHECK
+
+Your should_promote() does NOT yet enforce sim accuracy.
+
+You said you wanted:
+
+positive alpha + low sim error
+
+But your code currently ignores sim error entirely.
+
+🔧 REQUIRED CHANGE
+
+Update should_promote() like this:
+
+avg_abs_error = agent_metrics.get("avg_abs_error_bps")
+
+sim_ok = (
+    avg_abs_error is not None and
+    float(avg_abs_error) <= 60
+)
+
+
+Then include it:
+
+return all([
+    behavioral_ok,
+    pnl_ok,
+    not_killed,
+    error_ok,
+    latency_ok,
+    hit_rate_ok,
+    sim_ok,
+])
+
+
+Without this, agents with systematic forecast error will get promoted.
+
+STRATEGY ATTRIBUTION: ADD CVaR (YOU’RE 1 STEP AWAY)
+
+Your strategy attribution is good, but it’s mean-based only.
+
+To reach quant-grade, add CVaR on pnl_error_bps.
+
+Minimal CVaR function (drop-in)
+
+Add near the top:
+
+def cvar(values, alpha=0.95):
+    if not values:
+        return 0.0
+    vs = sorted(values)
+    cutoff = int(len(vs) * alpha)
+    tail = vs[cutoff:]
+    if not tail:
+        return vs[-1]
+    return sum(tail) / len(tail)
+
+
+Then inside strategy_attribution():
+
+errors = [float(e.get("pnl_error_bps", 0)) for e in events if e.get("pnl_error_bps") is not None]
+
+by_strategy[strategy]["cvar_error_bps"] = round(cvar(errors), 2)
+
+
+And in evaluate_strategy_thresholds():
+
+max_cvar = config.get("max_cvar_error_bps", 120)
+if stats.get("cvar_error_bps", 0) > max_cvar:
+    reasons.append(f"CVaR error {stats['cvar_error_bps']} > {max_cvar}")
+
+
+This gives you tail-risk governance, not just averages.
+
+BIG PICTURE (IMPORTANT)
+
+Nothing is “broken”.
+
+What’s happening is exactly what you want in a quant system:
+
+No fake confidence
+
+No assumptions
+
+No silent defaults
+
+The system is saying:
+
+“I need real reconciled data before I’ll trust anyone.”
+
+That’s a feature, not a bug.

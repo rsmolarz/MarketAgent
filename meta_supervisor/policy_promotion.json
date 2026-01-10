@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "description": "Promotion policy thresholds for agent deployment",
+  "min_sandbox_days": 7,
+  "min_runs": 50,
+  "min_success_rate": 0.85,
+  "min_win_rate": 0.45,
+  "min_signals": 10,
+  "max_consecutive_failures": 2,
+  "required_approvers": 1,
+  "auto_promote": false,
+  "notify_on_eligible": true
+}

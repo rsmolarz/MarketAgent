@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from config import Config
+from telemetry.instrumentation import instrument_agent_call
 
 logger = logging.getLogger(__name__)
 
@@ -41,12 +42,13 @@ class BaseAgent(ABC):
     
     def run(self) -> List[Dict[str, Any]]:
         """
-        Execute the agent and handle errors
+        Canonical execution entrypoint for telemetry.
+        Routes through instrumentation for latency, error, and reward logging.
         
         Returns:
             List of findings or empty list if error
         """
-        try:
+        def _execute():
             self.logger.info(f"Starting {self.name} analysis")
             findings = self.analyze()
             
@@ -59,7 +61,12 @@ class BaseAgent(ABC):
                 self.logger.info(f"{self.name} found no anomalies")
                 
             return findings or []
-            
+        
+        try:
+            return instrument_agent_call(
+                agent_name=self.name,
+                fn=_execute
+            )
         except Exception as e:
             self.logger.error(f"Error in {self.name}: {e}", exc_info=True)
             return []

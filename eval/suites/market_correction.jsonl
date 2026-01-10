@@ -1,0 +1,1 @@
+{"id":"mc_smoke","input":{},"schema":{"type":"list","item":{"type":"dict","required_keys":["signal","probability","severity"]}}}

@@ -1,0 +1,24 @@
+{
+  "module": "agents.arbitrage_finder_agent",
+  "callable": "ArbitrageFinderAgent.analyze",
+  "suite": "eval/suites/arbitrage_finder.jsonl",
+  "results": [
+    {
+      "id": "arb_smoke",
+      "ok": true,
+      "latency_s": 0.0,
+      "output": [
+        {
+          "pair": "BTC/USD",
+          "buy_exchange": "coinbase",
+          "sell_exchange": "kraken",
+          "buy_price": 50000.0,
+          "sell_price": 50250.0,
+          "profit_pct": 0.5,
+          "timestamp": "2026-01-07T17:12:45.868203Z"
+        }
+      ],
+      "error": null
+    }
+  ]
+}

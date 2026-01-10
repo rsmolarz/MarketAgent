@@ -1,0 +1,233 @@
+0️⃣ Ground rules (what this guarantees)
+
+After this:
+
+✅ All agent controls live under /admin/…
+
+✅ No agent can write to main
+
+✅ Every change is:
+
+Proposed → Diffed → Risk-scored → Voted → Approved → Merged
+
+✅ Admin sees
+
+Diffs
+
+“Why this change”
+
+Per-file risk
+
+Multi-agent votes
+
+Merge button
+
+✅ Public users never see agents
+
+✅ Rejected ideas are remembered and avoided
+
+1️⃣ Folder structure (unchanged, clarified)
+
+You already have this shape (good):
+
+app/
+├── app.py                (or app/app.py)
+├── agent_routes.py
+├── agent_store.py
+├── agent_runner.py
+├── risk_scoring.py
+├── diff_render.py
+├── pdf_heatmap.py
+├── templates/
+│   ├── agent_dashboard.html
+│   ├── agent_proposal_detail.html
+│   └── admin_layout.html   ← we add this
+
+2️⃣ Admin-only blueprint (single source of truth)
+
+Everything agent-related lives in one blueprint:
+
+agent_bp = Blueprint(
+    "agent",
+    __name__,
+    url_prefix="/admin/agents"
+)
+
+
+So all routes are:
+
+/admin/agents
+/admin/agents/proposals/<id>
+/admin/agents/proposals/<id>/run-votes
+/admin/agents/proposals/<id>/approve-merge
+/admin/agents/proposals/<id>/reject
+
+3️⃣ How to register the blueprint (A / B / C)
+✅ CASE A — app.py at repo root
+# app.py
+from flask import Flask
+from app.agent_routes import agent_bp
+
+app = Flask(__name__)
+app.register_blueprint(agent_bp)
+
+✅ CASE B — app/app.py
+# app/app.py
+from flask import Flask
+from app.agent_routes import agent_bp
+
+app = Flask(__name__)
+app.register_blueprint(agent_bp)
+
+✅ CASE C — application factory (create_app())
+# app/__init__.py
+from flask import Flask
+from app.agent_routes import agent_bp
+
+def create_app():
+    app = Flask(__name__)
+
+    app.register_blueprint(agent_bp)
+
+    return app
+
+
+🔒 This is the safest option long-term — agents stay isolated and testable.
+
+4️⃣ Lock agents behind admin auth (critical)
+
+In agent_routes.py, add one decorator:
+
+from functools import wraps
+from flask import abort
+from flask_login import current_user
+
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if not current_user.is_authenticated or not current_user.is_admin:
+            abort(403)
+        return f(*args, **kwargs)
+    return wrapper
+
+
+Then apply it once:
+
+@agent_bp.before_request
+@admin_required
+def protect_admin_agents():
+    pass
+
+
+✅ This automatically protects every agent route.
+
+5️⃣ Admin UI layout (single dashboard shell)
+
+Create templates/admin_layout.html
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}Admin{% endblock %}</title>
+  <style>
+    body { font-family: system-ui; margin: 0; }
+    nav {
+      background: #2b2e4a;
+      color: #fff;
+      padding: 12px 20px;
+      display: flex;
+      gap: 16px;
+    }
+    nav a {
+      color: #fff;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    main { padding: 24px; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/admin">Admin Home</a>
+    <a href="/admin/agents">AI Oversight</a>
+    <a href="/admin/cases">Cases</a>
+    <a href="/admin/contracts">Contracts</a>
+  </nav>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
+
+
+Then update both:
+
+{% extends "admin_layout.html" %}
+{% block content %}
+...
+{% endblock %}
+
+
+Now the Agent Dashboard is first-class Admin UI, not a bolt-on.
+
+6️⃣ Where the agent actually “builds” code (important)
+
+Right now your UI monitors risk.
+
+To make the agent actively propose improvements, you add one controlled entry point:
+
+/admin/agents/autobuild
+@agent_bp.post("/autobuild")
+def autobuild():
+    """
+    Builder Agent proposes a change.
+    NEVER touches main.
+    """
+    goal = request.form["goal"]
+
+    branch = f"agent/{uuid.uuid4().hex[:8]}"
+    subprocess.run(["git", "checkout", "-b", branch], check=True)
+
+    # Builder agent proposes changes
+    proposal = run_builder_agent(goal)
+
+    # Apply changes → compute diff
+    diff = get_git_diff()
+
+    # Risk scoring
+    file_risk, overall_risk = score_diff(diff)
+
+    # Store proposal
+    pid = uuid.uuid4().hex
+    store_proposal(
+        pid=pid,
+        branch=branch,
+        title=proposal["title"],
+        summary=proposal["summary"],
+        rationale=proposal["rationale"],
+        unified_diff=diff,
+        overall_risk=overall_risk,
+        file_risk=file_risk
+    )
+
+    return redirect(f"/admin/agents/proposals/{pid}")
+
+
+✅ Agent never merges
+✅ Agent never touches main
+✅ Human always decides
+
+7️⃣ Oversight logic (who can approve)
+
+A proposal can only merge if:
+
+Requirement	Enforced
+Validator approves	✅
+Compliance approves	✅
+Risk < threshold	✅
+Tests pass	✅
+Human clicks merge	✅
+
+This is already enforced in the merge route.

@@ -1,0 +1,202 @@
+GitHub PR AUTO-CREATION (PROMOTE / RETIRE)
+What triggers a PR
+
+Any agent with:
+
+decision == "PROMOTE"
+
+decision == "RETIRE" or "KILL"
+
+Strategy-class kill triggers also fire PRs
+
+What the PR does
+
+Updates:
+
+agents/manifest.yaml
+
+allocation/weights.json
+
+meta_supervisor/kill_list.yaml
+
+No direct commits to main
+
+Human review required
+
+File: meta_supervisor/github_pr.py
+import os, json, requests
+from pathlib import Path
+
+GITHUB_API = "https://api.github.com"
+REPO = os.environ.get("GITHUB_REPO")   # e.g. rsmolarz/MarketAgent
+TOKEN = os.environ.get("GITHUB_TOKEN")
+BASE = "main"
+HEAD = "meta/promotions"
+
+def _headers():
+    return {
+        "Authorization": f"Bearer {TOKEN}",
+        "Accept": "application/vnd.github+json"
+    }
+
+def create_pr(title: str, body: str):
+    url = f"{GITHUB_API}/repos/{REPO}/pulls"
+    payload = {
+        "title": title,
+        "head": HEAD,
+        "base": BASE,
+        "body": body
+    }
+    r = requests.post(url, headers=_headers(), json=payload)
+    r.raise_for_status()
+    return r.json()
+
+def maybe_create_pr(report: dict):
+    agents = report.get("agents", {})
+    promote = [a for a,v in agents.items() if v.get("decision") == "PROMOTE"]
+    retire = [a for a,v in agents.items() if v.get("decision") in ("RETIRE","KILL")]
+
+    if not promote and not retire:
+        return None
+
+    body = []
+    if promote:
+        body.append("### PROMOTIONS\n" + "\n".join(f"- {a}" for a in promote))
+    if retire:
+        body.append("### RETIREMENTS\n" + "\n".join(f"- {a}" for a in retire))
+
+    return create_pr(
+        title="Meta-Supervisor: Promotions / Retirements",
+        body="\n\n".join(body)
+    )
+
+
+▶ Call this at the end of meta_supervisor run.
+
+2️⃣ STRATEGY-CLASS ATTRIBUTION + KILL-LISTS
+
+Agents die by class, not just name.
+
+Example strategy classes
+
+arb
+
+funding
+
+macro
+
+sentiment
+
+distressed
+
+alt_data
+
+File: meta_supervisor/strategy_kill_list.yaml
+arb:
+  status: ACTIVE
+  max_drawdown_bps: -250
+  min_hit_rate: 0.42
+
+funding:
+  status: ACTIVE
+  max_drawdown_bps: -200
+
+sentiment:
+  status: DISABLED
+  reason: structural alpha decay
+
+Attribution logic (add to Meta-Supervisor)
+def strategy_attribution(events):
+    by_strategy = {}
+    for e in events:
+        s = e["strategy"]
+        by_strategy.setdefault(s, []).append(e["pnl_bps"])
+    return {
+        s: sum(v) for s,v in by_strategy.items()
+    }
+
+
+If a strategy breaches thresholds → RETIRE ALL AGENTS IN CLASS
+
+3️⃣ PnL-WEIGHTED CAPITAL DEPLOYMENT SIMULATION
+
+This is where it becomes real.
+
+File: allocation/capital_sim.py
+def compute_weights(agent_stats, min_weight=0.02):
+    total_alpha = sum(max(0, a["pnl_sum_bps"]) for a in agent_stats.values())
+    weights = {}
+
+    for name, a in agent_stats.items():
+        alpha = max(0, a["pnl_sum_bps"])
+        w = alpha / total_alpha if total_alpha else 0
+        weights[name] = max(min_weight, round(w, 4))
+
+    # normalize
+    s = sum(weights.values())
+    for k in weights:
+        weights[k] = round(weights[k] / s, 4)
+
+    return weights
+
+
+This feeds:
+
+Meta-Supervisor
+
+LP reports
+
+Promotion logic
+
+4️⃣ LP WEEKLY PDF SUMMARY (SENDGRID ATTACHMENT)
+
+Daily = email
+Weekly = PDF
+
+File: services/lp_weekly_pdf.py
+from reportlab.lib.pagesizes import LETTER
+from reportlab.pdfgen import canvas
+from pathlib import Path
+
+OUT = Path("reports/lp_weekly.pdf")
+
+def build_weekly_pdf(report):
+    OUT.parent.mkdir(exist_ok=True)
+    c = canvas.Canvas(str(OUT), pagesize=LETTER)
+    w, h = LETTER
+
+    y = h - 40
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(40, y, "LP Weekly Performance Summary")
+    y -= 30
+
+    c.setFont("Helvetica", 10)
+    fleet = report["fleet"]
+    c.drawString(40, y, f"PnL (bps): {fleet['portfolio_pnl_bps']}")
+    y -= 14
+    c.drawString(40, y, f"Max DD (bps): {fleet['portfolio_max_drawdown_bps']}")
+    y -= 14
+    c.drawString(40, y, f"Hit Rate: {fleet['portfolio_hit_rate']}")
+
+    y -= 30
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(40, y, "Top Agents")
+    y -= 20
+
+    c.setFont("Helvetica", 9)
+    for name,a in report["agents"].items():
+        c.drawString(40, y, f"{name}: {a['pnl_sum_bps']} bps | {a['decision']}")
+        y -= 12
+        if y < 60:
+            c.showPage()
+            y = h - 40
+
+    c.save()
+    return OUT
+
+
+Attach this PDF inside your existing SendGrid LP email.
+
+ENV VARS YOU NEED (ONCE)
+GITHUB_TOKEN=ghp_xxx
+GITHUB_REPO=rsmolarz/MarketAgent

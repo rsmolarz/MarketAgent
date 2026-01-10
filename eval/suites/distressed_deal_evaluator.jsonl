@@ -1,0 +1,8 @@
+{"id":"distressed_deal_smoke","input":{},"schema":{"type":"list","item":{"type":"dict","required_keys":["deal_id","company_name","distress_level","expected_irr","signal_type","signal_strength","fulcrum_security"]}}}
+{"id":"distressed_deal_valuation","input":{},"schema":{"type":"list","item":{"type":"dict","required_keys":["going_concern_value","liquidation_value","enterprise_value_midpoint"]}}}
+{"id":"distressed_deal_scenarios","input":{},"schema":{"type":"list","item":{"type":"dict","required_keys":["scenarios","weighted_recovery"]}}}
+{"id":"distressed_deal_capital_structure","input":{},"schema":{"type":"list","item":{"type":"dict","required_keys":["total_debt","fulcrum_security","fulcrum_trading_price"]}}}
+{"id":"distressed_deal_risk_metrics","input":{},"schema":{"type":"list","item":{"type":"dict","required_keys":["altman_z_score","probability_of_default","risk_reward_score"]}}}
+{"id":"distressed_deal_signal_valid","input":{},"validators":["signal_strength >= 0","signal_strength <= 100","signal_type in ['buy_debt','buy_equity','short','avoid','hold']"]}
+{"id":"distressed_deal_irr_reasonable","input":{},"validators":["expected_irr >= -1.0","expected_irr <= 5.0"]}
+{"id":"distressed_deal_scenarios_sum","input":{},"validators":["sum(s['probability'] for s in scenarios) > 0.95","sum(s['probability'] for s in scenarios) < 1.05"]}

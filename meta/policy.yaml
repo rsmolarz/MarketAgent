@@ -1,0 +1,48 @@
+auto_patch: true
+patch_mode: prompts_only
+
+protected_paths:
+  - ".github/"
+  - "infra/"
+  - "secrets/"
+  - "trading/"
+  - "allocation/"
+  - "auth/"
+  - "payment/"
+  - "tools/llm_client.py"
+
+allowed_patch_globs:
+  - "agents/prompts/*.md"
+
+max_patch:
+  max_files_changed: 6
+  max_lines_changed: 250
+
+thresholds:
+  min_total_score: 80
+  min_success_rate: 0.80
+  max_schema_violation_rate: 0.02
+
+prompt_tuning:
+  n_candidates: 3
+  max_prompt_delta_lines: 120
+  enforce_no_new_tools: true
+
+rubric:
+  behavioral_correctness:
+    max_score: 50
+    task_success_rate: 25
+    faithfulness: 10
+    constraint_adherence: 10
+    stability: 5
+  reliability:
+    max_score: 20
+    crash_free_rate: 10
+    tool_call_success_rate: 5
+    timeout_rate: 5
+  efficiency:
+    max_score: 15
+    median_latency: 8
+    token_budget_adherence: 7
+  code_health:
+    max_score: 15

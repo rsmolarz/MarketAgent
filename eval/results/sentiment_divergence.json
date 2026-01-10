@@ -1,0 +1,24 @@
+{
+  "module": "agents.sentiment_divergence_agent",
+  "callable": "SentimentDivergenceAgent.analyze",
+  "suite": "eval/suites/sentiment_divergence.jsonl",
+  "results": [
+    {
+      "id": "sent_smoke",
+      "ok": true,
+      "latency_s": 0.0,
+      "output": [
+        {
+          "symbol": "TSLA",
+          "price_sentiment_divergence": 0.32,
+          "news_sentiment": -0.15,
+          "price_trend": "up",
+          "signal": "bearish_divergence",
+          "timestamp": "2026-01-07T23:38:07.034511Z"
+        }
+      ],
+      "error": null,
+      "reward": 0.1
+    }
+  ]
+}

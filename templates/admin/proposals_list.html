@@ -1,0 +1,162 @@
+{% extends "admin_layout.html" %}
+
+{% block title %}Code Proposals - Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="h3 mb-0">Agent Code Proposals</h1>
+            <p class="text-muted">Review and approve agent-generated code changes</p>
+        </div>
+        <div class="col-auto">
+            <div class="dropdown">
+                <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="bi bi-plus-circle"></i> Generate Proposal
+                </button>
+                <ul class="dropdown-menu">
+                    <li>
+                        <form action="{{ url_for('admin_proposals.generate_proposal') }}" method="POST" class="px-2">
+                            <input type="hidden" name="type" value="improvement">
+                            <button type="submit" class="dropdown-item">
+                                <i class="bi bi-wrench"></i> Improve Existing Agent
+                            </button>
+                        </form>
+                    </li>
+                    <li>
+                        <form action="{{ url_for('admin_proposals.generate_proposal') }}" method="POST" class="px-2">
+                            <input type="hidden" name="type" value="fix_agent">
+                            <button type="submit" class="dropdown-item">
+                                <i class="bi bi-bug"></i> Fix Failing Agent
+                            </button>
+                        </form>
+                    </li>
+                    <li>
+                        <form action="{{ url_for('admin_proposals.generate_proposal') }}" method="POST" class="px-2">
+                            <input type="hidden" name="type" value="new_agent">
+                            <button type="submit" class="dropdown-item">
+                                <i class="bi bi-plus-lg"></i> Create New Agent
+                            </button>
+                        </form>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-auto">
+            <div class="btn-group" role="group">
+                <a href="{{ url_for('admin_proposals.list_proposals') }}" 
+                   class="btn btn-outline-secondary {{ 'active' if not status_filter else '' }}">
+                    All
+                </a>
+                <a href="{{ url_for('admin_proposals.list_proposals', status='PROPOSED') }}" 
+                   class="btn btn-outline-warning {{ 'active' if status_filter == 'PROPOSED' else '' }}">
+                    Proposed
+                </a>
+                <a href="{{ url_for('admin_proposals.list_proposals', status='APPROVED') }}" 
+                   class="btn btn-outline-success {{ 'active' if status_filter == 'APPROVED' else '' }}">
+                    Approved
+                </a>
+                <a href="{{ url_for('admin_proposals.list_proposals', status='REJECTED') }}" 
+                   class="btn btn-outline-danger {{ 'active' if status_filter == 'REJECTED' else '' }}">
+                    Rejected
+                </a>
+                <a href="{{ url_for('admin_proposals.list_proposals', status='MERGED') }}" 
+                   class="btn btn-outline-primary {{ 'active' if status_filter == 'MERGED' else '' }}">
+                    Merged
+                </a>
+                <a href="{{ url_for('admin_proposals.list_proposals', status='BLOCKED') }}" 
+                   class="btn btn-outline-dark {{ 'active' if status_filter == 'BLOCKED' else '' }}">
+                    Blocked
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ID</th>
+                            <th>Title</th>
+                            <th>Branch</th>
+                            <th>Status</th>
+                            <th>Risk</th>
+                            <th>Tests</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for proposal in proposals %}
+                        <tr>
+                            <td>
+                                <a href="{{ url_for('admin_proposals.view_proposal', proposal_id=proposal.id) }}">
+                                    {{ proposal.id[:8] }}...
+                                </a>
+                            </td>
+                            <td>
+                                <a href="{{ url_for('admin_proposals.view_proposal', proposal_id=proposal.id) }}">
+                                    {{ proposal.title[:50] }}{{ '...' if proposal.title|length > 50 else '' }}
+                                </a>
+                            </td>
+                            <td><code>{{ proposal.branch_name }}</code></td>
+                            <td>
+                                {% if proposal.status == 'PROPOSED' %}
+                                <span class="badge bg-warning text-dark">Proposed</span>
+                                {% elif proposal.status == 'APPROVED' %}
+                                <span class="badge bg-success">Approved</span>
+                                {% elif proposal.status == 'REJECTED' %}
+                                <span class="badge bg-danger">Rejected</span>
+                                {% elif proposal.status == 'MERGED' %}
+                                <span class="badge bg-primary">Merged</span>
+                                {% elif proposal.status == 'BLOCKED' %}
+                                <span class="badge bg-dark">Blocked</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ proposal.status }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if proposal.risk_tier == 'LOW' %}
+                                <span class="badge bg-success">LOW ({{ proposal.risk_score }})</span>
+                                {% elif proposal.risk_tier == 'MED' %}
+                                <span class="badge bg-warning text-dark">MED ({{ proposal.risk_score }})</span>
+                                {% elif proposal.risk_tier == 'HIGH' %}
+                                <span class="badge bg-danger">HIGH ({{ proposal.risk_score }})</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ proposal.risk_tier }} ({{ proposal.risk_score }})</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if proposal.tests_passed %}
+                                <span class="text-success"><i class="bi bi-check-circle-fill"></i></span>
+                                {% else %}
+                                <span class="text-muted"><i class="bi bi-dash-circle"></i></span>
+                                {% endif %}
+                            </td>
+                            <td>{{ proposal.created_at[:16] if proposal.created_at else 'N/A' }}</td>
+                            <td>
+                                <a href="{{ url_for('admin_proposals.view_proposal', proposal_id=proposal.id) }}" 
+                                   class="btn btn-sm btn-outline-primary">
+                                    View
+                                </a>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="8" class="text-center py-4 text-muted">
+                                No proposals found.
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

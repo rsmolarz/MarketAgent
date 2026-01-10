@@ -1,0 +1,180 @@
+{
+  "agent": {
+    "class_name": "IntradayOrderBookImbalanceAgent",
+    "module_slug": "intraday_order_book_imbalance",
+    "description": "Detects short-term order book imbalances that may indicate impending price moves or liquidity shocks by analyzing real-time bid-ask volume disparities across top levels of the order book for equities and crypto markets.",
+    "category": "cross_asset",
+    "data_sources": [
+      {
+        "name": "order_book_client",
+        "type": "existing_client",
+        "details": "Accesses top 5 levels of order book snapshots with bid and ask volumes for symbols in equities and crypto markets."
+      }
+    ],
+    "detection_logic": [
+      "Fetch order book snapshots at regular intervals (e.g., every 5 minutes) for target symbols.",
+      "Calculate bid volume sum and ask volume sum across top 5 levels.",
+      "Compute order book imbalance ratio = (bid_volume - ask_volume) / (bid_volume + ask_volume).",
+      "Identify significant imbalances where absolute imbalance ratio exceeds a threshold (e.g., 0.6).",
+      "Filter out imbalances that revert quickly by checking if imbalance persists for at least two consecutive intervals.",
+      "Flag persistent, large imbalances as potential signals of short-term directional pressure or liquidity stress.",
+      "Generate findings with symbol, market_type, imbalance ratio, timestamp, and recent price change metadata."
+    ],
+    "parameters": {
+      "thresholds": {
+        "imbalance_ratio_threshold": 0.6,
+        "persistence_intervals": 2,
+        "top_levels": 5
+      },
+      "cadence_minutes_default": 5
+    },
+    "output_examples": [
+      {
+        "title": "Significant Buy-Side Order Book Imbalance Detected",
+        "description": "The order book for symbol XYZ shows a persistent buy-side volume imbalance exceeding 60% across top 5 levels, indicating potential upward price pressure.",
+        "severity": "medium",
+        "confidence": 0.8,
+        "metadata": {
+          "imbalance_ratio": 0.65,
+          "intervals_persisted": 3,
+          "timestamp": "2026-01-07T19:55:00Z"
+        },
+        "symbol": "XYZ",
+        "market_type": "equities"
+      }
+    ]
+  },
+  "eval": {
+    "suite_name": "IntradayOrderBookImbalanceAgent_smoke",
+    "cases": [
+      {
+        "id": "basic_imbalance_detection",
+        "input_fixture": {
+          "order_book_snapshots": [
+            {
+              "symbol": "ABC",
+              "market_type": "crypto",
+              "timestamp": "2026-01-07T19:50:00Z",
+              "bids": [
+                [
+                  100.0,
+                  500
+                ],
+                [
+                  99.9,
+                  300
+                ],
+                [
+                  99.8,
+                  200
+                ],
+                [
+                  99.7,
+                  100
+                ],
+                [
+                  99.6,
+                  50
+                ]
+              ],
+              "asks": [
+                [
+                  100.1,
+                  100
+                ],
+                [
+                  100.2,
+                  80
+                ],
+                [
+                  100.3,
+                  60
+                ],
+                [
+                  100.4,
+                  40
+                ],
+                [
+                  100.5,
+                  20
+                ]
+              ]
+            },
+            {
+              "symbol": "ABC",
+              "market_type": "crypto",
+              "timestamp": "2026-01-07T19:55:00Z",
+              "bids": [
+                [
+                  100.0,
+                  520
+                ],
+                [
+                  99.9,
+                  310
+                ],
+                [
+                  99.8,
+                  210
+                ],
+                [
+                  99.7,
+                  110
+                ],
+                [
+                  99.6,
+                  60
+                ]
+              ],
+              "asks": [
+                [
+                  100.1,
+                  90
+                ],
+                [
+                  100.2,
+                  70
+                ],
+                [
+                  100.3,
+                  50
+                ],
+                [
+                  100.4,
+                  30
+                ],
+                [
+                  100.5,
+                  10
+                ]
+              ]
+            }
+          ]
+        },
+        "expected_schema": {
+          "type": "list",
+          "item_required_keys": [
+            "title",
+            "severity",
+            "confidence",
+            "metadata",
+            "symbol",
+            "market_type"
+          ]
+        }
+      }
+    ],
+    "offline_adapter_plan": "Use recorded order book snapshot fixtures to simulate input; mock order_book_client to return these snapshots; verify analyze() outputs findings matching expected schema and imbalance detection logic."
+  },
+  "safety": {
+    "no_execution": true,
+    "protected_paths": [
+      ".github/",
+      "trading/",
+      "secrets/",
+      "infra/"
+    ],
+    "max_files_changed": 4,
+    "max_lines_changed": 250
+  }
+}

@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+
+{% block title %}Deal: {{ deal.property_address }} - Market Inefficiency Platform{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('deals.deal_list') }}">Deals</a></li>
+                <li class="breadcrumb-item active">{{ deal.property_address }}</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-12 d-flex justify-content-between align-items-center">
+        <div>
+            <h1 class="h2 mb-0">
+                <i data-feather="briefcase" class="me-2"></i>
+                {{ deal.property_address }}
+            </h1>
+            <p class="text-muted mb-0">{{ deal.city }}, {{ deal.state }} {{ deal.zip_code }}</p>
+        </div>
+        <div>
+            <span class="badge fs-5 
+                {% if deal.stage == 'screened' %}bg-info
+                {% elif deal.stage == 'underwritten' %}bg-warning text-dark
+                {% elif deal.stage == 'loi' %}bg-primary
+                {% elif deal.stage == 'closed' %}bg-success
+                {% else %}bg-secondary{% endif %}">
+                {{ deal.stage|upper }}
+            </span>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i data-feather="info" class="me-1"></i> Property Details
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <dl>
+                            <dt>Property Type</dt>
+                            <dd>{{ deal.property_type or 'N/A' }}</dd>
+                            
+                            <dt>Distress Type</dt>
+                            <dd>{{ deal.distress_type or 'N/A' }}</dd>
+                            
+                            <dt>Source Agent</dt>
+                            <dd>{{ deal.source_agent or 'Manual' }}</dd>
+                        </dl>
+                    </div>
+                    <div class="col-md-6">
+                        <dl>
+                            <dt>Asking Price</dt>
+                            <dd>{% if deal.asking_price %}${{ '{:,.0f}'.format(deal.asking_price) }}{% else %}N/A{% endif %}</dd>
+                            
+                            <dt>Estimated Value</dt>
+                            <dd>{% if deal.estimated_value %}${{ '{:,.0f}'.format(deal.estimated_value) }}{% else %}N/A{% endif %}</dd>
+                            
+                            {% if deal.asking_price and deal.estimated_value %}
+                            <dt>Discount</dt>
+                            <dd>{{ '{:.1f}'.format((deal.estimated_value - deal.asking_price) / deal.estimated_value * 100) }}%</dd>
+                            {% endif %}
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% if deal.ic_memo %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <i data-feather="file-text" class="me-1"></i> IC Memo
+                {% if deal.ic_memo_generated_at %}
+                <small class="text-muted ms-2">Generated {{ deal.ic_memo_generated_at.strftime('%Y-%m-%d %H:%M') }}</small>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <pre style="white-space: pre-wrap; font-family: inherit;">{{ deal.ic_memo }}</pre>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if deal.underwriting_notes %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <i data-feather="clipboard" class="me-1"></i> Underwriting Notes
+            </div>
+            <div class="card-body">
+                <p>{{ deal.underwriting_notes }}</p>
+                {% if deal.underwriting_score %}
+                <p><strong>Score:</strong> {{ deal.underwriting_score }}</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i data-feather="git-branch" class="me-1"></i> Pipeline Actions
+            </div>
+            <div class="card-body">
+                {% if deal.stage == 'screened' %}
+                <button class="btn btn-outline-primary w-100 mb-2" onclick="generateMemo()">
+                    <i data-feather="file-text" class="me-1"></i> Generate IC Memo
+                </button>
+                <button class="btn btn-warning w-100" onclick="progressDeal('underwritten')">
+                    <i data-feather="arrow-right" class="me-1"></i> Move to Underwriting
+                </button>
+                {% elif deal.stage == 'underwritten' %}
+                <button class="btn btn-primary w-100 mb-2" onclick="progressDeal('loi')">
+                    <i data-feather="send" class="me-1"></i> Send LOI
+                </button>
+                <button class="btn btn-outline-secondary w-100" onclick="syncCRM()">
+                    <i data-feather="upload-cloud" class="me-1"></i> Sync to CRM
+                </button>
+                {% elif deal.stage == 'loi' %}
+                <button class="btn btn-success w-100 mb-2" onclick="progressDeal('closed')">
+                    <i data-feather="check-circle" class="me-1"></i> Mark Closed
+                </button>
+                <button class="btn btn-outline-secondary w-100" onclick="createDealRoom()">
+                    <i data-feather="folder" class="me-1"></i> Create Deal Room
+                </button>
+                {% elif deal.stage == 'closed' %}
+                <div class="alert alert-success">
+                    <i data-feather="check-circle" class="me-1"></i> Deal Closed
+                    {% if deal.closed_at %}
+                    <br><small>{{ deal.closed_at.strftime('%Y-%m-%d') }}</small>
+                    {% endif %}
+                </div>
+                {% endif %}
+                
+                {% if deal.stage != 'dead' and deal.stage != 'closed' %}
+                <hr>
+                <button class="btn btn-outline-danger btn-sm w-100" onclick="progressDeal('dead')">
+                    <i data-feather="x-circle" class="me-1"></i> Kill Deal
+                </button>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header">
+                <i data-feather="clock" class="me-1"></i> Stage History
+            </div>
+            <div class="card-body">
+                {% if deal.stage_history %}
+                <ul class="list-unstyled mb-0">
+                    {% for h in deal.stage_history %}
+                    <li class="mb-2">
+                        <span class="badge bg-secondary">{{ h.from }}</span>
+                        <i data-feather="arrow-right" style="width:12px;height:12px;"></i>
+                        <span class="badge bg-primary">{{ h.to }}</span>
+                        <br><small class="text-muted">{{ h.at[:10] }}</small>
+                        {% if h.notes %}<br><small>{{ h.notes }}</small>{% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted mb-0">No stage changes yet</p>
+                {% endif %}
+            </div>
+        </div>
+
+        {% if deal.crm_synced %}
+        <div class="card mb-4">
+            <div class="card-header bg-success bg-opacity-25">
+                <i data-feather="check-circle" class="me-1"></i> CRM Integration
+            </div>
+            <div class="card-body">
+                <p class="mb-1"><strong>Status:</strong> Synced</p>
+                {% if deal.crm_sync_at %}
+                <p class="mb-1"><small class="text-muted">{{ deal.crm_sync_at.strftime('%Y-%m-%d %H:%M') }}</small></p>
+                {% endif %}
+                {% if deal.crm_external_id %}
+                <p class="mb-1"><strong>External ID:</strong> {{ deal.crm_external_id }}</p>
+                {% endif %}
+                {% if deal.deal_room_url %}
+                <a href="{{ deal.deal_room_url }}" class="btn btn-outline-primary btn-sm w-100" target="_blank">
+                    <i data-feather="external-link" class="me-1"></i> Open Deal Room
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+feather.replace();
+
+const dealId = {{ deal.id }};
+
+async function generateMemo() {
+    try {
+        const resp = await fetch(`/deals/${dealId}/generate-memo`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({use_llm: true})
+        });
+        const data = await resp.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Failed to generate memo');
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+async function progressDeal(stage) {
+    const notes = prompt('Add notes (optional):');
+    try {
+        const resp = await fetch(`/deals/${dealId}/progress`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({stage: stage, notes: notes})
+        });
+        const data = await resp.json();
+        if (data.success) {
+            location.reload();
+        } else {
+            alert('Failed: ' + (data.error || 'Unknown error'));
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+async function syncCRM() {
+    try {
+        const resp = await fetch(`/deals/${dealId}/sync-crm`, {method: 'POST'});
+        const data = await resp.json();
+        if (data.success) {
+            alert('Synced to CRM successfully');
+            location.reload();
+        } else {
+            alert('CRM sync failed');
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+async function createDealRoom() {
+    try {
+        const resp = await fetch(`/deals/${dealId}/create-deal-room`, {method: 'POST'});
+        const data = await resp.json();
+        if (data.success) {
+            alert('Deal room created');
+            location.reload();
+        } else {
+            alert('Failed to create deal room');
+        }
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+</script>
+{% endblock %}

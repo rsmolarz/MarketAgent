@@ -1,0 +1,547 @@
+A. Folder and file additions
+
+Create these folders at repo root:
+
+discovery_agents/
+meta_supervisor/state/
+meta_supervisor/research/
+
+
+Create these files:
+
+Literature scanner
+
+discovery_agents/literature_scanner.py
+
+data_sources/arxiv_feed.py
+
+data_sources/rss_feed.py
+
+data_sources/github_search.py
+
+Failure-forensics
+
+discovery_agents/failure_forensics.py
+
+Regime-triggered generator
+
+discovery_agents/regime_generator.py
+
+Strategy-class kill list
+
+services/kill_switch.py (update)
+
+meta_supervisor/state/killed_strategies.json (new file, can start empty [])
+
+meta_supervisor/agent_registry.py (new)
+
+B. Strategy class registry (enables kill-list by “strategy class”)
+1) Create meta_supervisor/agent_registry.py
+# Maps agent name -> strategy class label(s)
+# Keep these coarse so you can kill entire classes safely.
+AGENT_STRATEGY_CLASS = {
+    "MacroWatcherAgent": "macro_regime",
+    "WhaleWalletWatcherAgent": "flow_whales",
+    "ArbitrageFinderAgent": "arb_crossvenue",
+    "SentimentDivergenceAgent": "sentiment_divergence",
+    "AltDataSignalAgent": "altdata_signals",
+    "EquityMomentumAgent": "momentum_equities",
+    "CryptoFundingRateAgent": "perp_funding",
+    "BondStressAgent": "rates_stress",
+}
+
+2) Create meta_supervisor/state/killed_strategies.json
+
+Start with:
+
+[]
+
+C. Kill-list for strategy classes (in addition to killed agents)
+Update services/kill_switch.py
+
+Replace with this (keeps your agent kill-switch and adds strategy class kill):
+
+import json
+from pathlib import Path
+from meta_supervisor.agent_registry import AGENT_STRATEGY_CLASS
+
+KILLED_AGENTS = Path("meta_supervisor/state/killed_agents.json")
+KILLED_STRATEGIES = Path("meta_supervisor/state/killed_strategies.json")
+
+def _load_list(p: Path):
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return []
+
+def is_agent_killed(agent_name: str) -> bool:
+    return agent_name in set(_load_list(KILLED_AGENTS))
+
+def is_strategy_killed(agent_name: str) -> bool:
+    cls = AGENT_STRATEGY_CLASS.get(agent_name)
+    if not cls:
+        return False
+    return cls in set(_load_list(KILLED_STRATEGIES))
+
+def is_killed(agent_name: str) -> bool:
+    return is_agent_killed(agent_name) or is_strategy_killed(agent_name)
+
+
+Your scheduler.py already checks is_killed(agent_name) at _run_agent() start; this immediately extends it to strategy classes.
+
+D. LLM-powered literature scanner (arXiv + blogs + GitHub)
+What it does
+
+Pulls new items from:
+
+arXiv (ATOM feed)
+
+RSS feeds (blogs/newsletters you choose)
+
+GitHub Search API (optional; best with token)
+
+Runs an LLM summarizer that extracts:
+
+“new inefficiency ideas”
+
+“new data sources”
+
+“new agent candidates”
+
+Writes outputs to:
+
+meta_supervisor/research/literature_scan.json
+
+1) Create data_sources/arxiv_feed.py
+import requests
+import feedparser
+
+ARXIV_API = "http://export.arxiv.org/api/query"
+
+def fetch_arxiv(query: str, max_results: int = 10):
+    params = {
+        "search_query": query,
+        "start": 0,
+        "max_results": max_results,
+        "sortBy": "submittedDate",
+        "sortOrder": "descending",
+    }
+    r = requests.get(ARXIV_API, params=params, timeout=20)
+    r.raise_for_status()
+    feed = feedparser.parse(r.text)
+    items = []
+    for e in feed.entries:
+        items.append({
+            "source": "arxiv",
+            "title": e.get("title","").strip(),
+            "url": e.get("link",""),
+            "summary": (e.get("summary","") or "").strip(),
+            "published": e.get("published",""),
+            "authors": [a.name for a in e.get("authors", [])] if e.get("authors") else [],
+        })
+    return items
+
+2) Create data_sources/rss_feed.py
+import feedparser
+
+def fetch_rss(url: str, max_items: int = 10):
+    feed = feedparser.parse(url)
+    items = []
+    for e in feed.entries[:max_items]:
+        items.append({
+            "source": "rss",
+            "title": (e.get("title","") or "").strip(),
+            "url": e.get("link",""),
+            "summary": (e.get("summary","") or "").strip(),
+            "published": e.get("published","") or e.get("updated",""),
+        })
+    return items
+
+3) Create data_sources/github_search.py
+import os
+import requests
+
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")  # optional but recommended
+
+def search_github_repos(query: str, max_items: int = 10):
+    headers = {"Accept": "application/vnd.github+json"}
+    if GITHUB_TOKEN:
+        headers["Authorization"] = f"Bearer {GITHUB_TOKEN}"
+
+    r = requests.get(
+        "https://api.github.com/search/repositories",
+        params={"q": query, "sort": "updated", "order": "desc", "per_page": max_items},
+        headers=headers,
+        timeout=20,
+    )
+    r.raise_for_status()
+    data = r.json()
+    out = []
+    for item in data.get("items", [])[:max_items]:
+        out.append({
+            "source": "github",
+            "title": item.get("full_name",""),
+            "url": item.get("html_url",""),
+            "summary": item.get("description","") or "",
+            "stars": item.get("stargazers_count", 0),
+            "updated_at": item.get("updated_at",""),
+        })
+    return out
+
+4) Create discovery_agents/literature_scanner.py
+
+This uses your OpenAI client wrapper path (services/ai_analysis.py). If you don’t have a clean “summarize” function there, add the helper shown inline below.
+
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+from data_sources.arxiv_feed import fetch_arxiv
+from data_sources.rss_feed import fetch_rss
+from data_sources.github_search import search_github_repos
+
+OUT = Path("meta_supervisor/research/literature_scan.json")
+
+# ---- LLM helper (uses your existing OpenAI client in services/ai_analysis.py)
+def llm_extract_insights(items: list[dict]) -> dict:
+    # Minimal, uses OpenAI client already configured in services/ai_analysis.py
+    from services.ai_analysis import openai_client  # this exists in your grep output
+
+    prompt = {
+        "task": "Extract new agent ideas for trades/inefficiencies/distress based on research items.",
+        "items": items[:30],
+        "output_schema": {
+            "high_signal_items": [{"title":"","url":"","why_it_matters":""}],
+            "new_agent_ideas": [{
+                "agent_name":"",
+                "strategy_class":"",
+                "edge_hypothesis":"",
+                "markets":[],
+                "horizon":"",
+                "data_required":[],
+                "test_plan":"",
+                "confidence":0.0
+            }],
+            "new_data_sources": [{"name":"","url":"","use_case":""}]
+        }
+    }
+
+    resp = openai_client.chat.completions.create(
+        model="gpt-5",  # or your configured default
+        messages=[
+            {"role":"system","content":"You are a quant research engineer. Output strict JSON only."},
+            {"role":"user","content":json.dumps(prompt)}
+        ],
+        response_format={"type":"json_object"},
+        temperature=0.2,
+        max_tokens=1800,
+    )
+    return json.loads(resp.choices[0].message.content)
+
+def run():
+    # Tune these over time
+    arxiv_queries = [
+        "cat:q-fin.ST OR cat:q-fin.TR AND (arbitrage OR microstructure OR liquidity OR funding)",
+        "cat:cs.LG AND (market OR trading) AND (forecast OR regime OR volatility)",
+    ]
+    rss_urls = [
+        # Add your preferred sources
+        # "https://example.com/feed.xml",
+    ]
+    github_queries = [
+        "market microstructure python",
+        "crypto funding rate backtest",
+        "orderbook imbalance research",
+    ]
+
+    items = []
+    for q in arxiv_queries:
+        items.extend(fetch_arxiv(q, max_results=8))
+    for url in rss_urls:
+        items.extend(fetch_rss(url, max_items=8))
+    for q in github_queries:
+        try:
+            items.extend(search_github_repos(q, max_items=6))
+        except Exception:
+            # GitHub rate limits without token; safe to ignore
+            pass
+
+    insights = llm_extract_insights(items)
+
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(json.dumps({
+        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00","Z"),
+        "items_count": len(items),
+        "insights": insights
+    }, indent=2))
+
+    return insights
+
+if __name__ == "__main__":
+    run()
+
+
+Dependencies: add feedparser and requests if not already present.
+
+E. Failure-forensics agent (“why did we lose?”)
+What it does
+
+Reads alpha/reconciled.jsonl
+
+Filters worst losses and clusters them by:
+
+agent
+
+regime
+
+direction
+
+risk gate status (if present)
+
+Cross-references telemetry for those run windows
+
+Produces a postmortem + recommended fixes
+
+Writes meta_supervisor/research/failure_forensics.json
+
+Create discovery_agents/failure_forensics.py
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+RECON = Path("alpha/reconciled.jsonl")
+TEL = Path("telemetry/events.jsonl")
+OUT = Path("meta_supervisor/research/failure_forensics.json")
+
+def load_jsonl(p: Path):
+    if not p.exists():
+        return []
+    return [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+
+def run(top_n: int = 30):
+    recon = load_jsonl(RECON)
+    tel = load_jsonl(TEL)
+
+    worst = sorted(recon, key=lambda e: float(e.get("realized_pnl_bps", 0.0)))[:top_n]
+
+    by_agent = {}
+    for e in worst:
+        a = e.get("agent","unknown")
+        by_agent.setdefault(a, []).append(e)
+
+    # crude telemetry joins by agent; if you add run_id later, join by run_id/signal_id
+    tel_by_agent = {}
+    for t in tel:
+        tel_by_agent.setdefault(t.get("agent","unknown"), []).append(t)
+
+    findings = []
+    for agent, losses in by_agent.items():
+        pnls = [float(x.get("realized_pnl_bps",0.0)) for x in losses]
+        avg_loss = sum(pnls)/max(len(pnls),1)
+        med_lat = None
+        ts = tel_by_agent.get(agent, [])
+        if ts:
+            lat = sorted(int(x.get("latency_ms",0)) for x in ts)
+            med_lat = lat[len(lat)//2]
+
+        findings.append({
+            "agent": agent,
+            "loss_count": len(losses),
+            "avg_loss_bps": round(avg_loss, 2),
+            "median_latency_ms": med_lat,
+            "hypotheses": [
+                "Regime mismatch: agent may be trend-following in mean-reversion conditions (or vice versa).",
+                "Risk gate too permissive during stress: tighten macro gate or add volatility filter.",
+                "Signal horizon mismatch: realized PnL evaluated at 24h may not fit this agent’s edge window."
+            ],
+            "recommended_changes": [
+                "Add regime-conditioned thresholds (different triggers in TREND vs MEAN_REVERT).",
+                "Add a volatility/liquidity guardrail before emitting high-confidence signals.",
+                "Store run_id in alpha events and join telemetry precisely to failures."
+            ],
+            "example_losses": losses[:5],
+        })
+
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(json.dumps({
+        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00","Z"),
+        "top_n": top_n,
+        "worst_losses": worst[:10],
+        "by_agent": findings
+    }, indent=2))
+
+    return findings
+
+if __name__ == "__main__":
+    run()
+
+F. Regime-triggered agent generator
+What it does
+
+Reads recent alpha + reconciled results
+
+Detects dominant regime labels you already produce (e.g., TREND, MEAN_REVERT, MIXED, plus macro_risk_level)
+
+Generates agent proposals specifically designed for that regime
+
+Create discovery_agents/regime_generator.py
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+ALPHA = Path("alpha/events.jsonl")
+OUT = Path("meta_supervisor/agent_proposals_regime.json")
+
+def load_jsonl(p: Path):
+    if not p.exists():
+        return []
+    return [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+
+def run(lookback: int = 300):
+    events = load_jsonl(ALPHA)[-lookback:]
+    regimes = [e.get("regime","MIXED") for e in events if e.get("regime")]
+    if not regimes:
+        regimes = ["MIXED"]
+
+    # dominant regime
+    dom = max(set(regimes), key=regimes.count)
+
+    proposals = []
+    if dom.upper().startswith("TREND"):
+        proposals.append({
+            "agent_name": "BreakoutContinuationAgent",
+            "strategy_class": "trend_following",
+            "edge_hypothesis": "Continuation after volatility compression + breakout confirmation",
+            "markets": ["BTC","ETH"],
+            "horizon": "hours",
+            "data_required": ["intraday OHLCV", "ATR", "VWAP bands"],
+            "test_plan": "Walk-forward on 3m/1h; require vol squeeze then close above VWAP+band",
+            "confidence": 0.72
+        })
+    elif "MEAN" in dom.upper():
+        proposals.append({
+            "agent_name": "LiquidityMeanReversionAgent",
+            "strategy_class": "mean_reversion",
+            "edge_hypothesis": "Reversion after funding/OI extremes + value-area re-entry",
+            "markets": ["BTC","ETH","SOL"],
+            "horizon": "hours",
+            "data_required": ["funding", "OI", "market profile levels"],
+            "test_plan": "Enter when price returns to value after spike and funding in extreme percentile",
+            "confidence": 0.74
+        })
+    else:
+        proposals.append({
+            "agent_name": "RegimeClassifierEnhancerAgent",
+            "strategy_class": "meta_regime",
+            "edge_hypothesis": "Improve regime detection to reduce cross-regime losses",
+            "markets": ["crypto","equities","rates"],
+            "horizon": "daily",
+            "data_required": ["volatility", "correlations", "breadth", "rates stress"],
+            "test_plan": "Compare new classifier vs current on failure_forensics windows",
+            "confidence": 0.68
+        })
+
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(json.dumps({
+        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00","Z"),
+        "dominant_regime": dom,
+        "proposals": proposals
+    }, indent=2))
+
+    return proposals
+
+if __name__ == "__main__":
+    run()
+
+G. Wire these discovery agents into your scheduler (safe)
+
+In scheduler.py, add a scheduled job block (daily is fine to start):
+
+1) Add to init_app() after other schedules:
+self.schedule_discovery_agents()
+
+2) Add methods to AgentScheduler:
+def schedule_discovery_agents(self):
+    try:
+        self.scheduler.add_job(
+            func=self._run_discovery_agents,
+            trigger=CronTrigger(hour=8, minute=25),
+            id="discovery_agents_daily",
+            replace_existing=True
+        )
+        logger.info("Scheduled discovery agents for 8:25 AM UTC")
+    except Exception as e:
+        logger.error(f"Error scheduling discovery agents: {e}")
+
+def _run_discovery_agents(self):
+    with self.app.app_context():
+        try:
+            from discovery_agents.literature_scanner import run as lit_run
+            from discovery_agents.failure_forensics import run as forensics_run
+            from discovery_agents.regime_generator import run as regime_run
+
+            lit_run()
+            forensics_run()
+            regime_run()
+
+            logger.info("Discovery agents completed")
+        except Exception as e:
+            logger.error(f"Discovery agents error: {e}")
+
+H. Include discovery outputs in Meta report + email + dashboard
+
+In meta_supervisor/build_meta_report.py, load these if present:
+
+meta_supervisor/research/literature_scan.json
+
+meta_supervisor/research/failure_forensics.json
+
+meta_supervisor/agent_proposals_regime.json
+
+and attach to report:
+
+from pathlib import Path
+import json
+
+def _load_json(path, default=None):
+    p = Path(path)
+    if not p.exists():
+        return default
+    return json.loads(p.read_text())
+
+report["research"] = {
+    "literature_scan": _load_json("meta_supervisor/research/literature_scan.json", {}),
+    "failure_forensics": _load_json("meta_supervisor/research/failure_forensics.json", {}),
+}
+report["regime_proposals"] = _load_json("meta_supervisor/agent_proposals_regime.json", {})
+
+
+Then your existing email summary can include:
+
+top 3 new agent ideas
+
+top 3 failure causes
+
+any strategy classes currently killed
+
+I. Email-only notifications (you requested email instead of WhatsApp/Slack)
+
+You already have the email notifier we added. Extend it so the daily exec email includes:
+
+“New Agent Ideas”
+
+“Failure Forensics”
+
+“Killed Strategies”
+
+No new infrastructure required.
+
+Environment variables
+
+Optional but recommended:
+
+GITHUB_TOKEN (improves GitHub search rate limits)
+
+No other new keys required.

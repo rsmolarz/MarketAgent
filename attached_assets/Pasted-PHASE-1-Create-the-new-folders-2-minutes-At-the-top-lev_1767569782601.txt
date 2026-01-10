@@ -1,0 +1,263 @@
+PHASE 1 — Create the new folders (2 minutes)
+
+At the top level of your repo (same level as agents/, services/, scheduler.py):
+
+Create these folders:
+
+telemetry/
+alpha/
+meta_supervisor/
+
+
+Inside meta_supervisor/, also create:
+
+meta_supervisor/reports/
+meta_supervisor/state/
+
+PHASE 2 — Telemetry (this unlocks everything)
+2.1 Create telemetry/context.py
+from contextvars import ContextVar
+
+_current_run = ContextVar("current_run", default=None)
+
+def set_current_run(run):
+    _current_run.set(run)
+
+def get_current_run():
+    return _current_run.get()
+
+2.2 Create telemetry/collector.py
+import json, time
+from pathlib import Path
+from datetime import datetime, timezone
+
+EVENTS = Path("telemetry/events.jsonl")
+
+def _now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+
+class RunTelemetry:
+    def __init__(self, agent: str, run_id: str):
+        self.agent = agent
+        self.run_id = run_id
+        self.t0 = time.time()
+        self.tokens_in = 0
+        self.tokens_out = 0
+        self.cost_usd = 0.0
+        self.errors = 0
+
+    def add_llm_usage(self, tokens_in: int, tokens_out: int, cost_usd: float = 0.0):
+        self.tokens_in += tokens_in
+        self.tokens_out += tokens_out
+        self.cost_usd += cost_usd
+
+    def add_error(self):
+        self.errors += 1
+
+    def flush(self):
+        EVENTS.parent.mkdir(parents=True, exist_ok=True)
+        dt_ms = int((time.time() - self.t0) * 1000)
+        record = {
+            "ts": _now(),
+            "agent": self.agent,
+            "run_id": self.run_id,
+            "latency_ms": dt_ms,
+            "tokens_in": self.tokens_in,
+            "tokens_out": self.tokens_out,
+            "cost_usd": round(self.cost_usd, 6),
+            "errors": self.errors,
+        }
+        with open(EVENTS, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+
+PHASE 3 — Wire telemetry into your existing LLM calls
+3.1 Edit services/ai_analysis.py
+
+You already identified this file as the OpenAI wrapper.
+Add one import and one block.
+
+Add at top:
+from telemetry.context import get_current_run
+
+After openai_client.chat.completions.create(...):
+run = get_current_run()
+if run and hasattr(response, "usage") and response.usage:
+    run.add_llm_usage(
+        tokens_in=int(response.usage.prompt_tokens or 0),
+        tokens_out=int(response.usage.completion_tokens or 0),
+        cost_usd=0.0
+    )
+
+
+That’s it.
+You now have automatic token + latency accounting for every agent.
+
+PHASE 4 — Wrap agent execution (single choke point)
+4.1 Create services/agent_run_wrapper.py
+import uuid
+from telemetry.collector import RunTelemetry
+from telemetry.context import set_current_run
+
+def run_with_telemetry(agent_name: str, fn, *args, **kwargs):
+    run = RunTelemetry(agent=agent_name, run_id=str(uuid.uuid4()))
+    set_current_run(run)
+    try:
+        return fn(*args, **kwargs)
+    except Exception:
+        run.add_error()
+        raise
+    finally:
+        run.flush()
+        set_current_run(None)
+
+4.2 Edit scheduler.py
+Add imports near top:
+from services.agent_run_wrapper import run_with_telemetry
+
+Modify job scheduling in start_agent()
+
+Replace:
+
+func=self._run_agent,
+args=[agent_name],
+
+
+With:
+
+func=lambda name=agent_name: run_with_telemetry(name, self._run_agent, name),
+
+
+Nothing else changes.
+
+PHASE 5 — Kill-switch (safe, immediate protection)
+5.1 Create services/kill_switch.py
+import json
+from pathlib import Path
+
+KILLED = Path("meta_supervisor/state/killed_agents.json")
+
+def is_killed(agent_name: str) -> bool:
+    if not KILLED.exists():
+        return False
+    return agent_name in json.loads(KILLED.read_text())
+
+5.2 Enforce in _run_agent() (scheduler.py)
+
+At the top of _run_agent:
+
+from services.kill_switch import is_killed
+
+if is_killed(agent_name):
+    logger.warning(f"Agent {agent_name} is disabled by kill-switch")
+    return
+
+
+That’s it.
+Killed agents do not run.
+
+PHASE 6 — Alpha logging (based on your real signal schema)
+6.1 Create alpha/emit.py
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+ALPHA = Path("alpha/events.jsonl")
+
+def emit_alpha_signal(result: dict, agent_name: str):
+    ALPHA.parent.mkdir(parents=True, exist_ok=True)
+    event = {
+        "ts": datetime.now(timezone.utc).isoformat().replace("+00:00","Z"),
+        "agent": agent_name,
+        "symbol": result.get("symbol"),
+        "direction": result.get("direction"),
+        "prob_up": result.get("prob_up"),
+        "confidence": result.get("confidence"),
+        "score_final": result.get("ensemble_score_final"),
+        "regime": result.get("regime"),
+    }
+    with open(ALPHA, "a", encoding="utf-8") as f:
+        f.write(json.dumps(event) + "\n")
+
+6.2 Call alpha emission in _run_agent()
+
+After:
+
+findings = agent.run()
+
+
+Add:
+
+from alpha.emit import emit_alpha_signal
+
+if isinstance(findings, dict) and "ensemble_score_final" in findings:
+    emit_alpha_signal(findings, agent_name)
+
+PHASE 7 — First REAL Meta-Agent report
+7.1 Create meta_supervisor/build_meta_report.py
+import json
+from pathlib import Path
+
+def load_jsonl(path):
+    if not Path(path).exists():
+        return []
+    return [json.loads(x) for x in Path(path).read_text().splitlines() if x.strip()]
+
+def main():
+    telemetry = load_jsonl("telemetry/events.jsonl")
+    alpha = load_jsonl("alpha/events.jsonl")
+
+    by_agent = {}
+
+    for t in telemetry:
+        a = t["agent"]
+        by_agent.setdefault(a, {}).setdefault("telemetry", []).append(t)
+
+    for e in alpha:
+        a = e["agent"]
+        by_agent.setdefault(a, {}).setdefault("alpha", []).append(e)
+
+    report = {"agents": {}}
+
+    for agent, data in by_agent.items():
+        tel = data.get("telemetry", [])
+        alp = data.get("alpha", [])
+
+        report["agents"][agent] = {
+            "runs": len(tel),
+            "avg_latency_ms": round(sum(t["latency_ms"] for t in tel) / max(len(tel),1), 1),
+            "tokens": sum(t["tokens_in"] + t["tokens_out"] for t in tel),
+            "alpha_signals": len(alp),
+        }
+
+    Path("meta_supervisor/reports").mkdir(parents=True, exist_ok=True)
+    Path("meta_supervisor/reports/meta_report.json").write_text(
+        json.dumps(report, indent=2)
+    )
+
+if __name__ == "__main__":
+    main()
+
+7.2 Run it once
+python meta_supervisor/build_meta_report.py
+
+
+If this file appears:
+
+meta_supervisor/reports/meta_report.json
+
+
+🎯 You are successfully implemented.
+
+WHAT YOU NOW HAVE (no hype)
+
+✅ Agent execution fully instrumented
+
+✅ Token + latency accounting
+
+✅ Alpha logging tied to real signals
+
+✅ Kill-switch enforced at scheduler level
+
+✅ First Meta-Agent report generated from real runs
+
+This is the foundation. Everything else (PR comments, promotion, retirement, portfolio attribution) now plugs in cleanly.

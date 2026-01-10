@@ -1,0 +1,144 @@
+Below is the minimal, non-invasive wiring to push LLM disagreement / uncertainty directly into your allocator, without breaking live operation.
+
+This does three things:
+
+Converts LLM disagreement → uncertainty score
+
+Applies a soft decay multiplier to allocator rewards (not hard kills)
+
+Logs uncertainty events for audit / dashboard overlays
+
+No agent code touched.
+Only allocator + one hook in scheduler.
+
+1️⃣ Define uncertainty signal (single source of truth)
+
+Create:
+
+meta/uncertainty.py
+
+from datetime import datetime
+
+def uncertainty_from_consensus(consensus: dict) -> float:
+    """
+    Returns uncertainty ∈ [0, 1]
+    """
+    if consensus.get("disagreement"):
+        return min(1.0, 1.0 - consensus.get("confidence", 0.5))
+    return max(0.0, 0.3 - consensus.get("confidence", 0.0))
+
+
+Interpretation:
+
+High disagreement + low confidence → near 1.0
+
+Full agreement + high confidence → near 0.0
+
+2️⃣ Persist uncertainty events (append-only, cheap)
+
+Create:
+
+telemetry/uncertainty_events.jsonl
+
+
+Then add helper:
+
+telemetry/uncertainty_logger.py
+
+import json
+from pathlib import Path
+from datetime import datetime
+
+LOG = Path("telemetry/uncertainty_events.jsonl")
+
+def log_uncertainty(agent, finding_id, uncertainty):
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    LOG.write_text(
+        (LOG.read_text() if LOG.exists() else "") +
+        json.dumps({
+            "ts": datetime.utcnow().isoformat(),
+            "agent": agent,
+            "finding_id": finding_id,
+            "uncertainty": uncertainty
+        }) + "\n"
+    )
+
+3️⃣ Hook uncertainty into existing critical-finding flow
+
+Inside the critical finding auto-analysis block you already added:
+
+from meta.uncertainty import uncertainty_from_consensus
+from telemetry.uncertainty_logger import log_uncertainty
+
+uncertainty = uncertainty_from_consensus(consensus)
+log_uncertainty(agent_name, finding.id, uncertainty)
+
+
+That’s it.
+No allocator change yet — just signal capture.
+
+4️⃣ Wire uncertainty into allocator (5 lines)
+
+Modify UCBAllocator.score():
+
+def score(self, agent: str, total_pulls: int, uncertainty=0.0) -> float:
+    rs = self.rewards[agent]
+    n = max(self.counts[agent], 1)
+    mean = sum(rs) / len(rs) if rs else 0.0
+    bonus = self.exploration * sqrt(log(max(total_pulls, 2)) / n)
+
+    decay = max(0.2, 1.0 - uncertainty)  # soft floor
+    return (mean + bonus) * decay
+
+5️⃣ Feed uncertainty into allocator automatically
+
+In _rebalance_agent_allocation():
+
+from telemetry.uncertainty_events import load_recent_uncertainty
+
+
+Add helper:
+
+telemetry/uncertainty_events.py
+
+import json
+from pathlib import Path
+from collections import defaultdict
+
+LOG = Path("telemetry/uncertainty_events.jsonl")
+
+def load_recent_uncertainty(last_n=500):
+    if not LOG.exists():
+        return {}
+    acc = defaultdict(list)
+    for ln in LOG.read_text().splitlines()[-last_n:]:
+        e = json.loads(ln)
+        acc[e["agent"]].append(e["uncertainty"])
+    return {k: sum(v)/len(v) for k, v in acc.items()}
+
+
+Then modify allocator call:
+
+uncertainty = load_recent_uncertainty()
+
+scores = {
+    a: self.allocator.score(a, total_pulls, uncertainty.get(a, 0.0))
+    for a in agents
+}
+
+
+No other changes required.
+
+6️⃣ What this gives you immediately
+
+✔ Agents fade, not die
+✔ LLM disagreement reduces capital allocation
+✔ Allocation stabilizes during regime transitions
+✔ Full audit trail for dashboards
+✔ Ready for:
+
+uncertainty bands
+
+regime transition alerts
+
+agent substitution logic

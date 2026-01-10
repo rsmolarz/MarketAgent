@@ -1,0 +1,1563 @@
+"""
+DistressedDealEvaluatorAgent - Enhanced Version
+================================================
+Institutional-grade distressed debt/equity evaluation agent.
+
+Enhanced with frameworks from Moyer's "Distressed Debt Analysis":
+- EBITDA adjustments (normalized, EBITDAR for rent capitalization)
+- Multiple derivation from DCF theory (growth/discount rate tables)
+- Credit capacity & leverage metrics
+- Capital structure arbitrage detection
+- Senior vs junior security analysis
+- Enhanced liquidation valuations by asset class
+- Fulcrum security identification
+- Recovery waterfall with plan vs true value scenarios
+
+Analysis-only. Sandbox-editable. Non-execution-sensitive.
+"""
+
+import os
+import math
+import logging
+from datetime import datetime
+from typing import List, Dict, Any, Optional, Tuple
+from dataclasses import dataclass, asdict, field
+from enum import Enum
+
+logger = logging.getLogger(__name__)
+
+
+class DistressLevel(Enum):
+    """Classification of distress severity."""
+    PERFORMING = "performing"
+    STRESSED = "stressed"
+    DISTRESSED = "distressed"
+    DEFAULT = "default"
+    BANKRUPTCY = "bankruptcy"
+
+
+class ReorgOutcome(Enum):
+    """Potential reorganization outcomes."""
+    GOING_CONCERN = "going_concern"
+    LIQUIDATION = "liquidation"
+    SALE_363 = "section_363_sale"
+    RESTRUCTURE = "out_of_court_restructure"
+    PREPACK = "prepackaged_bankruptcy"
+
+
+@dataclass
+class CapitalStructureLayer:
+    """Single layer in capital structure."""
+    name: str
+    seniority: int  # 1 = most senior
+    claim_type: str  # secured, senior_unsecured, subordinated, mezzanine
+    principal: float
+    accrued_interest: float
+    secured: bool
+    collateral_value: Optional[float] = None
+    coupon: float = 0.0
+    maturity_years: float = 0.0
+    trading_price: float = 100.0  # cents on dollar
+    has_covenants: bool = False
+    pari_passu_with: Optional[str] = None  # Name of pari passu tranche
+
+
+@dataclass
+class EBITDAAdjustments:
+    """EBITDA normalization adjustments per Moyer Ch. 5"""
+    raw_ebitda: float
+    restructuring_charges: float = 0.0
+    one_time_charges: float = 0.0
+    discontinued_ops: float = 0.0
+    non_recurring_revenue: float = 0.0
+    rent_adjustment: float = 0.0  # For EBITDAR
+    normalized_ebitda: float = 0.0
+    ebitdar: float = 0.0
+    maintenance_capex: float = 0.0
+    ebitda_minus_capex: float = 0.0
+
+
+@dataclass
+class ValuationScenario:
+    """Valuation under specific scenario."""
+    scenario_name: str
+    probability: float
+    enterprise_value: float
+    recovery_by_class: Dict[str, float]  # class -> recovery %
+    equity_value: float
+    timeline_months: int
+    plan_vs_true: str = "plan"  # "plan" or "true" valuation
+
+
+@dataclass
+class ArbitrageOpportunity:
+    """Capital structure arbitrage opportunity per Moyer Ch. 10"""
+    trade_type: str  # "senior_vs_junior", "pari_passu", "maturity_arb"
+    long_security: str
+    short_security: str
+    long_price: float
+    short_price: float
+    expected_return_bull: float
+    expected_return_bear: float
+    probability_weighted_return: float
+    net_investment: float
+    coupon_carry: float
+    thesis: str
+
+
+@dataclass 
+class DealEvaluation:
+    """Complete evaluation output for a distressed deal."""
+    deal_id: str
+    company_name: str
+    industry: str
+    
+    # Distress Assessment
+    distress_level: str
+    altman_z_score: float
+    probability_of_default: float
+    credit_rating_implied: str
+    
+    # EBITDA Analysis (Moyer Ch. 5)
+    raw_ebitda: float
+    normalized_ebitda: float
+    ebitdar: float  # With rent add-back
+    ebitda_margin: float
+    ebitda_minus_capex: float
+    
+    # Valuation (Moyer Ch. 5-6)
+    going_concern_value: float
+    liquidation_value: float
+    enterprise_value_midpoint: float
+    ev_ebitda_multiple: float
+    implied_multiple_range: str  # e.g. "5.5x - 7.0x"
+    
+    # Leverage & Credit Capacity (Moyer Ch. 6)
+    total_debt: float
+    net_debt: float
+    leverage_through_senior: float
+    leverage_through_sub: float
+    interest_coverage: float
+    debt_to_ev: float
+    credit_capacity_utilized: float  # % of theoretical max
+    
+    # Capital Structure (Moyer Ch. 7)
+    fulcrum_security: str
+    fulcrum_trading_price: float
+    implied_ev_from_fulcrum: float
+    capital_structure_layers: int
+    secured_debt_pct: float
+    
+    # Recovery Analysis (Moyer Ch. 10)
+    scenarios: List[Dict[str, Any]]
+    plan_value_recovery: float  # Conservative
+    true_value_recovery: float  # Optimistic
+    weighted_recovery: float
+    expected_irr: float
+    
+    # Arbitrage Opportunities (Moyer Ch. 10)
+    arbitrage_opportunities: List[Dict[str, Any]]
+    
+    # Recommendation
+    signal_type: str  # "buy_debt" | "buy_equity" | "short" | "avoid" | "arb_trade"
+    signal_strength: float  # 0-100
+    risk_reward_score: float
+    thesis: str
+    key_risks: List[str]
+    
+    # Metadata
+    source: str
+    timestamp: str
+
+
+class DistressedDealEvaluatorAgent:
+    """
+    Agent that performs comprehensive distressed deal analysis.
+    
+    Implements Moyer's institutional-grade frameworks:
+    1. Altman Z-Score & default probability
+    2. EBITDA normalization (Ch. 5) - adjustments, EBITDAR, maintenance capex
+    3. Multiple derivation from DCF theory (Ch. 5)
+    4. Enterprise valuation (DCF, comps, liquidation)
+    5. Credit capacity analysis (Ch. 6)
+    6. Capital structure & fulcrum analysis (Ch. 7)
+    7. Recovery waterfall modeling - plan vs true value
+    8. Capital structure arbitrage (Ch. 10)
+    9. Scenario-weighted returns
+    10. Risk-adjusted signal generation
+    """
+
+    # Configurable thresholds (Meta-Agent tunable)
+    MIN_IRR_THRESHOLD = 0.20          # 20% minimum IRR
+    MIN_SIGNAL_STRENGTH = 50          # Minimum score to emit
+    RISK_FREE_RATE = 0.045            # 4.5% risk-free rate
+    
+    # Moyer Table 5-4: Multiple for Various Growth and Discount Rates
+    # Used to derive appropriate EBITDA multiples
+    MULTIPLE_TABLE = {
+        # discount_rate: {growth_rate: multiple}
+        0.10: {0.00: 9.1, 0.02: 10.6, 0.04: 12.6, 0.06: 15.1, 0.08: 18.4},
+        0.12: {0.00: 7.8, 0.02: 9.0, 0.04: 10.5, 0.06: 12.4, 0.08: 14.9},
+        0.15: {0.00: 6.5, 0.02: 7.3, 0.04: 8.3, 0.06: 9.7, 0.08: 11.3},
+        0.18: {0.00: 5.5, 0.02: 6.1, 0.04: 6.8, 0.06: 7.8, 0.08: 8.9},
+        0.20: {0.00: 4.9, 0.02: 5.5, 0.04: 6.1, 0.06: 6.8, 0.08: 7.7},
+        0.25: {0.00: 4.0, 0.02: 4.3, 0.04: 4.7, 0.06: 5.2, 0.08: 5.7},
+        0.30: {0.00: 3.3, 0.02: 3.6, 0.04: 3.8, 0.06: 4.1, 0.08: 4.5},
+    }
+    
+    # Moyer: Distressed investors typically require 15-25% returns
+    # and assume 0-4% growth, implying 4.0x - 8.3x multiple range
+    DISTRESSED_MULTIPLE_RANGE = (4.0, 8.3)
+    
+    # Altman Z-Score thresholds
+    Z_SCORE_SAFE = 2.99
+    Z_SCORE_GREY = 1.81
+    Z_SCORE_DISTRESS = 1.23
+    
+    # Liquidation recovery rates by asset class (Moyer Ch. 5)
+    LIQUIDATION_RATES = {
+        "cash": 1.00,
+        "accounts_receivable": 0.75,  # 70-80%
+        "inventory_retail": 0.50,     # 50% for retail/apparel
+        "inventory_other": 0.65,      # 65% otherwise
+        "ppe": 0.40,                   # 30-50%
+        "real_estate": 0.80,          # 70-90%
+        "intangibles": 0.10,          # 0-20%
+        "goodwill": 0.00,             # Usually zero
+        "other_assets": 0.30,
+    }
+    
+    # Rent capitalization multiple (Moyer: 7x-11x, midpoint 9x)
+    RENT_CAP_MULTIPLE = 9.0
+    
+    # Moyer Table 6-3: Debt Repayment Ability by Leverage and Growth Rate
+    # Shows % of loan that can be repaid in 5 years
+    DEBT_REPAYMENT_TABLE = {
+        # leverage: {growth_rate: % repayment}
+        2.0: {0.00: 0.92, 0.02: 1.00, 0.04: 1.00, 0.06: 1.00, 0.08: 1.00},
+        2.5: {0.00: 0.61, 0.02: 0.70, 0.04: 0.79, 0.06: 0.89, 0.08: 0.99},
+        3.0: {0.00: 0.41, 0.02: 0.48, 0.04: 0.56, 0.06: 0.64, 0.08: 0.73},
+        3.5: {0.00: 0.26, 0.02: 0.33, 0.04: 0.39, 0.06: 0.46, 0.08: 0.53},
+        4.0: {0.00: 0.15, 0.02: 0.21, 0.04: 0.27, 0.06: 0.33, 0.08: 0.39},
+        4.5: {0.00: 0.07, 0.02: 0.12, 0.04: 0.17, 0.06: 0.22, 0.08: 0.28},
+        5.0: {0.00: 0.00, 0.02: 0.05, 0.04: 0.09, 0.06: 0.14, 0.08: 0.19},
+    }
+    
+    # Moyer Ch. 6: Interest coverage thresholds
+    MIN_INTEREST_COVERAGE_SAFE = 3.0      # Safe threshold
+    MIN_INTEREST_COVERAGE_STRESSED = 2.0  # Below this = stressed
+    MIN_INTEREST_COVERAGE_DISTRESSED = 1.5  # Below this = distressed
+    
+    # Moyer Figure 7-1: Capital Structure Continuum (risk hierarchy)
+    CAPITAL_STRUCTURE_HIERARCHY = [
+        ("Secured/Recourse", 1),
+        ("Secured/Non-Recourse", 2),
+        ("Secured 2nd Lien", 3),
+        ("Senior Unsecured", 4),
+        ("Senior Discount", 5),
+        ("Senior Subordinated", 6),
+        ("Subordinated", 7),
+        ("Junior Subordinated", 8),
+        ("Senior Preferred", 9),
+        ("Junior Preferred", 10),
+        ("Common Stock", 11),
+    ]
+    
+    # Legal risk factors (Moyer Ch. 11)
+    LEGAL_RISK_FACTORS = [
+        "voidable_preferences",      # Payments made within 90 days pre-filing
+        "fraudulent_conveyance",     # Transfers without fair consideration
+        "substantive_consolidation", # Risk of combining entities
+        "equitable_subordination",   # Risk of subordinating claims
+        "lien_validity",             # Security interest perfection
+        "guaranty_enforceability",   # Inter-company guarantees
+    ]
+
+    def __init__(self):
+        self.deal_sources = self._load_deal_sources()
+
+    def _load_deal_sources(self) -> List[Dict[str, Any]]:
+        """Load deal data sources from environment."""
+        sources = []
+        i = 1
+        while True:
+            url = os.getenv(f"DISTRESSED_DEAL_API_{i}_URL")
+            if not url:
+                break
+            sources.append({
+                "name": os.getenv(f"DISTRESSED_DEAL_API_{i}_NAME", f"DealSource_{i}"),
+                "url": url,
+                "key": os.getenv(f"DISTRESSED_DEAL_API_{i}_KEY"),
+            })
+            i += 1
+        return sources
+
+    def analyze(self) -> List[Dict[str, Any]]:
+        """
+        Main entry point. Evaluates deals and returns actionable signals.
+        
+        Returns:
+            List of DealEvaluation dicts matching canonical output shape.
+        """
+        signals = []
+        deals = self._fetch_deals()
+        
+        for deal in deals:
+            try:
+                evaluation = self.evaluate_deal(deal)
+                if evaluation and evaluation.signal_strength >= self.MIN_SIGNAL_STRENGTH:
+                    signals.append(asdict(evaluation))
+            except Exception as e:
+                logger.error(f"[DistressedDealEvaluator] Failed to evaluate deal: {e}")
+                continue
+
+        signals.sort(key=lambda x: x["signal_strength"], reverse=True)
+        logger.info(f"[DistressedDealEvaluator] Emitting {len(signals)} deal signals")
+        return signals
+
+    def evaluate_deal(self, deal: Dict[str, Any]) -> Optional[DealEvaluation]:
+        """
+        Perform comprehensive evaluation of a single distressed deal.
+        """
+        company = deal.get("company_name", "Unknown")
+        deal_id = deal.get("deal_id", f"deal-{hash(company) % 10000}")
+        industry = deal.get("industry", "unknown")
+        
+        # 1. Calculate Altman Z-Score
+        z_score = self._calculate_altman_z(deal)
+        distress_level = self._classify_distress(z_score, deal)
+        prob_default = self._probability_of_default(z_score)
+        credit_rating = self._implied_credit_rating(z_score)
+        
+        # 2. EBITDA Analysis (Moyer Ch. 5)
+        ebitda_analysis = self._analyze_ebitda(deal)
+        
+        # 3. Build capital structure
+        cap_structure = self._build_capital_structure(deal)
+        total_debt = sum(layer.principal + layer.accrued_interest for layer in cap_structure)
+        net_debt = total_debt - deal.get("cash", 0)
+        
+        # 4. Leverage metrics (Moyer Ch. 6)
+        leverage_metrics = self._calculate_leverage_metrics(
+            deal, cap_structure, ebitda_analysis.normalized_ebitda
+        )
+        
+        # 5. Valuation analysis
+        appropriate_multiple = self._derive_appropriate_multiple(deal, distress_level)
+        going_concern = self._going_concern_value(deal, ebitda_analysis, appropriate_multiple)
+        liquidation = self._liquidation_value(deal)
+        ev_midpoint = (going_concern + liquidation) / 2
+        
+        # 6. Fulcrum security analysis
+        fulcrum, fulcrum_price, implied_ev = self._find_fulcrum_security(
+            cap_structure, going_concern, liquidation
+        )
+        
+        # 7. Scenario analysis - plan vs true value (Moyer Ch. 10)
+        scenarios = self._run_scenario_analysis(
+            deal, cap_structure, going_concern, liquidation
+        )
+        
+        # 8. Calculate weighted returns
+        plan_recovery, true_recovery, weighted_recovery, expected_irr = \
+            self._calculate_weighted_returns(scenarios, fulcrum_price)
+        
+        # 9. Capital structure arbitrage opportunities (Moyer Ch. 10)
+        arb_opportunities = self._find_arbitrage_opportunities(cap_structure, scenarios)
+        
+        # 10. Generate signal
+        signal_type, signal_strength, risk_reward = self._generate_signal(
+            distress_level, expected_irr, weighted_recovery,
+            fulcrum_price, prob_default, scenarios, arb_opportunities
+        )
+        
+        # 11. Generate thesis and key risks
+        thesis = self._generate_thesis(
+            company, distress_level, fulcrum, expected_irr,
+            weighted_recovery, scenarios, leverage_metrics
+        )
+        key_risks = self._identify_key_risks(deal, leverage_metrics, distress_level)
+        
+        # Calculate additional metrics
+        ev_multiple = going_concern / ebitda_analysis.normalized_ebitda if ebitda_analysis.normalized_ebitda > 0 else 0
+        ebitda_margin = ebitda_analysis.normalized_ebitda / deal.get("revenue", 1) if deal.get("revenue") else 0
+        
+        return DealEvaluation(
+            deal_id=deal_id,
+            company_name=company,
+            industry=industry,
+            distress_level=distress_level.value,
+            altman_z_score=round(z_score, 2),
+            probability_of_default=round(prob_default, 3),
+            credit_rating_implied=credit_rating,
+            raw_ebitda=round(ebitda_analysis.raw_ebitda, 0),
+            normalized_ebitda=round(ebitda_analysis.normalized_ebitda, 0),
+            ebitdar=round(ebitda_analysis.ebitdar, 0),
+            ebitda_margin=round(ebitda_margin, 3),
+            ebitda_minus_capex=round(ebitda_analysis.ebitda_minus_capex, 0),
+            going_concern_value=round(going_concern, 0),
+            liquidation_value=round(liquidation, 0),
+            enterprise_value_midpoint=round(ev_midpoint, 0),
+            ev_ebitda_multiple=round(ev_multiple, 1),
+            implied_multiple_range=f"{self.DISTRESSED_MULTIPLE_RANGE[0]}x - {self.DISTRESSED_MULTIPLE_RANGE[1]}x",
+            total_debt=round(total_debt, 0),
+            net_debt=round(net_debt, 0),
+            leverage_through_senior=round(leverage_metrics["leverage_senior"], 1),
+            leverage_through_sub=round(leverage_metrics["leverage_sub"], 1),
+            interest_coverage=round(leverage_metrics["interest_coverage"], 2),
+            debt_to_ev=round(leverage_metrics["debt_to_ev"], 2),
+            credit_capacity_utilized=round(leverage_metrics["capacity_utilized"], 2),
+            fulcrum_security=fulcrum,
+            fulcrum_trading_price=round(fulcrum_price, 1),
+            implied_ev_from_fulcrum=round(implied_ev, 0),
+            capital_structure_layers=len(cap_structure),
+            secured_debt_pct=round(leverage_metrics["secured_pct"], 2),
+            scenarios=[s if isinstance(s, dict) else asdict(s) for s in scenarios],
+            plan_value_recovery=round(plan_recovery, 1),
+            true_value_recovery=round(true_recovery, 1),
+            weighted_recovery=round(weighted_recovery, 1),
+            expected_irr=round(expected_irr, 3),
+            arbitrage_opportunities=[asdict(a) if hasattr(a, '__dataclass_fields__') else a for a in arb_opportunities],
+            signal_type=signal_type,
+            signal_strength=round(signal_strength, 1),
+            risk_reward_score=round(risk_reward, 2),
+            thesis=thesis,
+            key_risks=key_risks,
+            source=deal.get("source", "direct"),
+            timestamp=datetime.utcnow().isoformat() + "Z"
+        )
+
+    def _calculate_altman_z(self, deal: Dict[str, Any]) -> float:
+        """
+        Calculate Altman Z-Score for bankruptcy prediction.
+        
+        Z = 1.2*X1 + 1.4*X2 + 3.3*X3 + 0.6*X4 + 1.0*X5
+        """
+        total_assets = deal.get("total_assets", 1)
+        if total_assets <= 0:
+            return 0.0
+            
+        working_capital = deal.get("current_assets", 0) - deal.get("current_liabilities", 0)
+        retained_earnings = deal.get("retained_earnings", 0)
+        ebit = deal.get("ebit", deal.get("operating_income", 0))
+        market_cap = deal.get("market_cap", deal.get("equity_value", 0))
+        total_liabilities = deal.get("total_liabilities", deal.get("total_debt", 0))
+        revenue = deal.get("revenue", deal.get("sales", 0))
+        
+        x1 = working_capital / total_assets
+        x2 = retained_earnings / total_assets
+        x3 = ebit / total_assets
+        x4 = market_cap / max(total_liabilities, 1)
+        x5 = revenue / total_assets
+        
+        return 1.2*x1 + 1.4*x2 + 3.3*x3 + 0.6*x4 + 1.0*x5
+
+    def _classify_distress(self, z_score: float, deal: Dict[str, Any]) -> DistressLevel:
+        """Classify distress level based on Z-Score and other indicators."""
+        if deal.get("in_bankruptcy") or deal.get("chapter_11"):
+            return DistressLevel.BANKRUPTCY
+        if deal.get("in_default") or deal.get("missed_payment"):
+            return DistressLevel.DEFAULT
+        
+        if z_score >= self.Z_SCORE_SAFE:
+            return DistressLevel.PERFORMING
+        elif z_score >= self.Z_SCORE_GREY:
+            return DistressLevel.STRESSED
+        elif z_score >= self.Z_SCORE_DISTRESS:
+            return DistressLevel.DISTRESSED
+        else:
+            return DistressLevel.DEFAULT
+
+    def _probability_of_default(self, z_score: float) -> float:
+        """Convert Z-Score to probability of default."""
+        try:
+            prob = 1 / (1 + math.exp(z_score - 1.81))
+            return min(max(prob, 0.01), 0.99)
+        except OverflowError:
+            return 0.01 if z_score > 0 else 0.99
+
+    def _implied_credit_rating(self, z_score: float) -> str:
+        """Map Z-Score to implied credit rating."""
+        if z_score >= 3.0:
+            return "BBB or higher"
+        elif z_score >= 2.7:
+            return "BB+"
+        elif z_score >= 2.4:
+            return "BB"
+        elif z_score >= 2.0:
+            return "BB-"
+        elif z_score >= 1.8:
+            return "B+"
+        elif z_score >= 1.5:
+            return "B"
+        elif z_score >= 1.2:
+            return "B-"
+        elif z_score >= 0.8:
+            return "CCC"
+        else:
+            return "CC/D"
+
+    def _analyze_ebitda(self, deal: Dict[str, Any]) -> EBITDAAdjustments:
+        """
+        Perform EBITDA analysis per Moyer Ch. 5.
+        Includes adjustments, EBITDAR, and maintenance capex.
+        """
+        # Raw EBITDA calculation
+        net_income = deal.get("net_income", 0)
+        taxes = deal.get("taxes", deal.get("income_taxes", 0))
+        interest = deal.get("interest_expense", 0)
+        depreciation = deal.get("depreciation", 0)
+        amortization = deal.get("amortization", 0)
+        
+        raw_ebitda = deal.get("ebitda", net_income + taxes + interest + depreciation + amortization)
+        
+        # Adjustments (Moyer: normalize for one-time items)
+        restructuring = deal.get("restructuring_charges", 0)
+        one_time = deal.get("one_time_charges", 0)
+        discontinued = deal.get("discontinued_ops", 0)
+        non_recurring_rev = deal.get("non_recurring_revenue", 0)
+        
+        normalized_ebitda = raw_ebitda + restructuring + one_time + discontinued - non_recurring_rev
+        
+        # EBITDAR - add back rent for comparability (Moyer Ch. 5)
+        # Particularly important for retail, restaurants, airlines
+        rent_expense = deal.get("rent_expense", deal.get("operating_lease_expense", 0))
+        ebitdar = normalized_ebitda + rent_expense
+        
+        # EBITDA - Capex (Moyer: better measure of free cash flow)
+        maintenance_capex = deal.get("maintenance_capex", deal.get("capex", depreciation * 0.8))
+        ebitda_minus_capex = normalized_ebitda - maintenance_capex
+        
+        return EBITDAAdjustments(
+            raw_ebitda=raw_ebitda,
+            restructuring_charges=restructuring,
+            one_time_charges=one_time,
+            discontinued_ops=discontinued,
+            non_recurring_revenue=non_recurring_rev,
+            rent_adjustment=rent_expense,
+            normalized_ebitda=normalized_ebitda,
+            ebitdar=ebitdar,
+            maintenance_capex=maintenance_capex,
+            ebitda_minus_capex=ebitda_minus_capex
+        )
+
+    def _derive_appropriate_multiple(self, deal: Dict[str, Any], distress_level: DistressLevel) -> float:
+        """
+        Derive appropriate EBITDA multiple using Moyer's DCF-to-multiple framework.
+        
+        From Moyer Table 5-4:
+        - Distressed investors require 15-25% returns
+        - Assume 0-4% growth (conservative)
+        - Implies 4.0x - 8.3x multiple range
+        """
+        industry = deal.get("industry", "unknown")
+        
+        # Base multiple by industry
+        industry_multiples = {
+            "technology": 8.0,
+            "software": 10.0,
+            "healthcare": 7.5,
+            "retail": 5.0,
+            "manufacturing": 5.5,
+            "energy": 4.5,
+            "real_estate": 8.0,
+            "financial": 6.0,
+            "telecom": 5.5,
+            "media": 6.5,
+            "restaurants": 5.0,
+            "airlines": 4.0,
+        }
+        
+        base_multiple = industry_multiples.get(industry, 6.0)
+        
+        # Adjust for distress level (higher distress = lower multiple)
+        distress_adjustments = {
+            DistressLevel.PERFORMING: 1.0,
+            DistressLevel.STRESSED: 0.85,
+            DistressLevel.DISTRESSED: 0.70,
+            DistressLevel.DEFAULT: 0.55,
+            DistressLevel.BANKRUPTCY: 0.50,
+        }
+        
+        adjustment = distress_adjustments.get(distress_level, 0.70)
+        
+        # Apply distressed investor required return adjustment
+        # Moyer: 15-25% required returns with 0-4% growth = 4.0x-8.3x
+        multiple = base_multiple * adjustment
+        return max(self.DISTRESSED_MULTIPLE_RANGE[0], 
+                   min(self.DISTRESSED_MULTIPLE_RANGE[1], multiple))
+
+    def _build_capital_structure(self, deal: Dict[str, Any]) -> List[CapitalStructureLayer]:
+        """Build detailed capital structure from deal data."""
+        layers = []
+        seniority = 1
+        
+        if "capital_structure" in deal:
+            for item in deal["capital_structure"]:
+                layers.append(CapitalStructureLayer(
+                    name=item.get("name", f"Tranche_{seniority}"),
+                    seniority=seniority,
+                    claim_type=item.get("claim_type", "senior_unsecured"),
+                    principal=item.get("principal", 0),
+                    accrued_interest=item.get("accrued", 0),
+                    secured=item.get("secured", False),
+                    collateral_value=item.get("collateral_value"),
+                    coupon=item.get("coupon", 0),
+                    maturity_years=item.get("maturity_years", 3),
+                    trading_price=item.get("trading_price", 100),
+                    has_covenants=item.get("has_covenants", False),
+                    pari_passu_with=item.get("pari_passu_with")
+                ))
+                seniority += 1
+        else:
+            # Build from summary data
+            if deal.get("bank_debt", 0) > 0 or deal.get("revolver", 0) > 0:
+                bank = deal.get("bank_debt", 0) + deal.get("revolver", 0)
+                layers.append(CapitalStructureLayer(
+                    name="Bank Facility",
+                    seniority=seniority,
+                    claim_type="secured",
+                    principal=bank,
+                    accrued_interest=0,
+                    secured=True,
+                    has_covenants=True,
+                    trading_price=deal.get("bank_price", 98)
+                ))
+                seniority += 1
+            
+            if deal.get("secured_debt", 0) > 0:
+                layers.append(CapitalStructureLayer(
+                    name="Senior Secured Notes",
+                    seniority=seniority,
+                    claim_type="secured",
+                    principal=deal["secured_debt"],
+                    accrued_interest=deal.get("secured_accrued", 0),
+                    secured=True,
+                    collateral_value=deal.get("collateral_value"),
+                    trading_price=deal.get("secured_price", 95)
+                ))
+                seniority += 1
+            
+            if deal.get("senior_unsecured", 0) > 0:
+                layers.append(CapitalStructureLayer(
+                    name="Senior Unsecured Notes",
+                    seniority=seniority,
+                    claim_type="senior_unsecured",
+                    principal=deal["senior_unsecured"],
+                    accrued_interest=deal.get("unsecured_accrued", 0),
+                    secured=False,
+                    trading_price=deal.get("unsecured_price", 60)
+                ))
+                seniority += 1
+            
+            if deal.get("subordinated_debt", 0) > 0:
+                layers.append(CapitalStructureLayer(
+                    name="Subordinated Notes",
+                    seniority=seniority,
+                    claim_type="subordinated",
+                    principal=deal["subordinated_debt"],
+                    accrued_interest=0,
+                    secured=False,
+                    trading_price=deal.get("sub_price", 30)
+                ))
+                seniority += 1
+            
+            if deal.get("convertible_debt", 0) > 0:
+                layers.append(CapitalStructureLayer(
+                    name="Convertible Notes",
+                    seniority=seniority,
+                    claim_type="subordinated",
+                    principal=deal["convertible_debt"],
+                    accrued_interest=0,
+                    secured=False,
+                    trading_price=deal.get("convert_price", 25)
+                ))
+                seniority += 1
+            
+            # Fallback
+            if not layers and deal.get("total_debt", 0) > 0:
+                layers.append(CapitalStructureLayer(
+                    name="Total Debt",
+                    seniority=1,
+                    claim_type="senior_unsecured",
+                    principal=deal["total_debt"],
+                    accrued_interest=0,
+                    secured=False,
+                    trading_price=deal.get("debt_price", 70)
+                ))
+        
+        return layers
+
+    def _calculate_leverage_metrics(
+        self, 
+        deal: Dict[str, Any], 
+        cap_structure: List[CapitalStructureLayer],
+        normalized_ebitda: float
+    ) -> Dict[str, float]:
+        """
+        Calculate leverage metrics per Moyer Ch. 6.
+        Includes credit capacity assessment using Table 6-3.
+        """
+        if normalized_ebitda <= 0:
+            normalized_ebitda = 1  # Prevent division by zero
+        
+        # Debt through various levels
+        secured_debt = sum(l.principal for l in cap_structure if l.secured)
+        senior_debt = sum(l.principal for l in cap_structure if l.claim_type in ["secured", "senior_unsecured"])
+        total_debt = sum(l.principal for l in cap_structure)
+        
+        # Interest coverage (Moyer Ch. 6: critical metric)
+        interest_expense = deal.get("interest_expense", total_debt * 0.08)
+        interest_coverage = normalized_ebitda / interest_expense if interest_expense > 0 else 99
+        
+        # EBITDA - CAPX coverage (Moyer: better measure)
+        capex = deal.get("capex", deal.get("maintenance_capex", normalized_ebitda * 0.3))
+        ebitda_minus_capx = normalized_ebitda - capex
+        ebitda_capx_coverage = ebitda_minus_capx / interest_expense if interest_expense > 0 else 99
+        
+        # EV estimate for debt/EV
+        ev_estimate = normalized_ebitda * 6  # Conservative multiple
+        
+        # Credit capacity analysis (Moyer Table 6-3)
+        leverage = total_debt / normalized_ebitda
+        growth_rate = deal.get("ebitda_growth_rate", 0.02)  # Default 2%
+        debt_repayment_pct = self._lookup_debt_repayment_ability(leverage, growth_rate)
+        
+        # Credit capacity utilized (Moyer: 4x-6x is typical capacity)
+        max_capacity = normalized_ebitda * 6
+        capacity_utilized = total_debt / max_capacity if max_capacity > 0 else 1
+        
+        # Assess credit quality based on interest coverage
+        if interest_coverage >= self.MIN_INTEREST_COVERAGE_SAFE:
+            credit_quality = "adequate"
+        elif interest_coverage >= self.MIN_INTEREST_COVERAGE_STRESSED:
+            credit_quality = "stressed"
+        elif interest_coverage >= self.MIN_INTEREST_COVERAGE_DISTRESSED:
+            credit_quality = "distressed"
+        else:
+            credit_quality = "critical"
+        
+        return {
+            "leverage_senior": senior_debt / normalized_ebitda,
+            "leverage_sub": total_debt / normalized_ebitda,
+            "interest_coverage": interest_coverage,
+            "ebitda_capx_coverage": ebitda_capx_coverage,
+            "debt_to_ev": total_debt / ev_estimate if ev_estimate > 0 else 1,
+            "capacity_utilized": capacity_utilized,
+            "secured_pct": secured_debt / total_debt if total_debt > 0 else 0,
+            "debt_repayment_ability": debt_repayment_pct,
+            "credit_quality": credit_quality,
+        }
+
+    def _lookup_debt_repayment_ability(self, leverage: float, growth_rate: float) -> float:
+        """
+        Lookup debt repayment ability from Moyer Table 6-3.
+        Returns % of debt that can be repaid in 5 years.
+        """
+        # Find closest leverage bucket
+        leverage_buckets = sorted(self.DEBT_REPAYMENT_TABLE.keys())
+        closest_lev = min(leverage_buckets, key=lambda x: abs(x - leverage))
+        
+        # Find closest growth rate
+        growth_buckets = sorted(self.DEBT_REPAYMENT_TABLE[closest_lev].keys())
+        closest_growth = min(growth_buckets, key=lambda x: abs(x - growth_rate))
+        
+        return self.DEBT_REPAYMENT_TABLE[closest_lev][closest_growth]
+
+    def _assess_legal_risks(self, deal: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Assess legal/bankruptcy risks per Moyer Ch. 11.
+        Returns risk scores and specific concerns.
+        """
+        risks = {}
+        concerns = []
+        
+        # Voidable preferences (Moyer: payments within 90 days)
+        recent_payments = deal.get("recent_debt_payments", 0)
+        if recent_payments > 0:
+            risks["voidable_preferences"] = "high"
+            concerns.append(f"${recent_payments:,.0f} in recent payments may be voidable")
+        else:
+            risks["voidable_preferences"] = "low"
+        
+        # Substantive consolidation risk (multiple entities)
+        entity_count = deal.get("subsidiary_count", 1)
+        intercompany_debt = deal.get("intercompany_debt", 0)
+        if entity_count > 3 or intercompany_debt > 0:
+            risks["substantive_consolidation"] = "medium"
+            concerns.append("Complex corporate structure may face consolidation challenge")
+        else:
+            risks["substantive_consolidation"] = "low"
+        
+        # Fraudulent conveyance (asset transfers, LBOs)
+        if deal.get("recent_lbo") or deal.get("recent_asset_transfers"):
+            risks["fraudulent_conveyance"] = "high"
+            concerns.append("Recent transactions may be challenged as fraudulent")
+        else:
+            risks["fraudulent_conveyance"] = "low"
+        
+        # Equitable subordination (insider claims)
+        insider_claims = deal.get("insider_claims", 0)
+        if insider_claims > 0:
+            risks["equitable_subordination"] = "medium"
+            concerns.append("Insider claims may be equitably subordinated")
+        else:
+            risks["equitable_subordination"] = "low"
+        
+        # Lien validity
+        if deal.get("secured_debt", 0) > 0 and not deal.get("liens_perfected", True):
+            risks["lien_validity"] = "high"
+            concerns.append("Security interests may not be properly perfected")
+        else:
+            risks["lien_validity"] = "low"
+        
+        # Overall legal risk score
+        high_risks = sum(1 for v in risks.values() if v == "high")
+        medium_risks = sum(1 for v in risks.values() if v == "medium")
+        
+        if high_risks >= 2:
+            overall = "high"
+        elif high_risks >= 1 or medium_risks >= 2:
+            overall = "medium"
+        else:
+            overall = "low"
+        
+        return {
+            "individual_risks": risks,
+            "concerns": concerns,
+            "overall_legal_risk": overall,
+        }
+
+    def _assess_cash_flow_volatility(self, deal: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Assess cash flow volatility impact on credit capacity per Moyer Ch. 6.
+        Stable vs volatile scenarios significantly affect debt capacity.
+        """
+        # Get historical EBITDA if available
+        historical_ebitda = deal.get("historical_ebitda", [])
+        current_ebitda = deal.get("ebitda", deal.get("normalized_ebitda", 0))
+        
+        if len(historical_ebitda) >= 3:
+            # Calculate volatility metrics
+            avg_ebitda = sum(historical_ebitda) / len(historical_ebitda)
+            variance = sum((x - avg_ebitda) ** 2 for x in historical_ebitda) / len(historical_ebitda)
+            std_dev = variance ** 0.5
+            cv = std_dev / avg_ebitda if avg_ebitda > 0 else 0  # Coefficient of variation
+            
+            # Identify cyclicality (Moyer Table 6-4 pattern)
+            is_cyclical = cv > 0.15  # 15% CV threshold
+            
+            # Calculate trough EBITDA (Moyer: worst case in cycle)
+            trough_ebitda = min(historical_ebitda)
+            peak_ebitda = max(historical_ebitda)
+            
+        else:
+            # Estimate from industry
+            industry = deal.get("industry", "unknown")
+            cyclical_industries = ["manufacturing", "retail", "energy", "airlines", "hospitality"]
+            
+            is_cyclical = industry in cyclical_industries
+            cv = 0.25 if is_cyclical else 0.10
+            trough_ebitda = current_ebitda * (0.7 if is_cyclical else 0.9)
+            peak_ebitda = current_ebitda * (1.2 if is_cyclical else 1.05)
+            avg_ebitda = current_ebitda
+        
+        # Moyer: Cyclical businesses need lower leverage
+        # Table 6-5 shows volatile scenarios repay less debt
+        if is_cyclical:
+            recommended_max_leverage = 2.5
+            debt_capacity_adjustment = 0.70  # 30% reduction
+        else:
+            recommended_max_leverage = 4.0
+            debt_capacity_adjustment = 1.00
+        
+        return {
+            "is_cyclical": is_cyclical,
+            "coefficient_of_variation": round(cv, 3),
+            "trough_ebitda": round(trough_ebitda, 0),
+            "peak_ebitda": round(peak_ebitda, 0),
+            "avg_ebitda": round(avg_ebitda, 0),
+            "recommended_max_leverage": recommended_max_leverage,
+            "debt_capacity_adjustment": debt_capacity_adjustment,
+            "volatility_classification": "high" if cv > 0.20 else ("medium" if cv > 0.10 else "low"),
+        }
+
+    def _generate_due_diligence_checklist(self, deal: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Generate due diligence checklist per Moyer Ch. 11.
+        Prioritizes issues based on deal characteristics.
+        """
+        checklist = []
+        
+        # 1. Capital Structure Analysis (always high priority)
+        checklist.append({
+            "category": "Capital Structure",
+            "priority": "high",
+            "items": [
+                "Verify total debt amounts and accrued interest",
+                "Confirm security interests and lien priorities",
+                "Review subordination provisions",
+                "Analyze covenant packages (bank vs bond)",
+                "Identify structural subordination issues",
+            ],
+            "status": "pending"
+        })
+        
+        # 2. Valuation Analysis
+        checklist.append({
+            "category": "Valuation",
+            "priority": "high",
+            "items": [
+                "Calculate normalized EBITDA with adjustments",
+                "Derive appropriate valuation multiple",
+                "Perform comparable company analysis",
+                "Estimate liquidation value by asset class",
+                "Assess going concern vs liquidation scenarios",
+            ],
+            "status": "pending"
+        })
+        
+        # 3. Legal/Bankruptcy Issues
+        legal_risks = self._assess_legal_risks(deal)
+        priority = "high" if legal_risks["overall_legal_risk"] == "high" else "medium"
+        checklist.append({
+            "category": "Legal/Bankruptcy",
+            "priority": priority,
+            "items": [
+                "Review voidable preference exposure",
+                "Assess substantive consolidation risk",
+                "Analyze fraudulent conveyance risk",
+                "Evaluate equitable subordination risk",
+                "Verify lien perfection and validity",
+            ],
+            "status": "pending"
+        })
+        
+        # 4. Operational Due Diligence
+        checklist.append({
+            "category": "Operational",
+            "priority": "medium",
+            "items": [
+                "Analyze revenue trends and sustainability",
+                "Review cost structure and margin trends",
+                "Assess working capital requirements",
+                "Evaluate capital expenditure needs",
+                "Identify key customer/supplier concentration",
+            ],
+            "status": "pending"
+        })
+        
+        # 5. Industry/Market Analysis
+        checklist.append({
+            "category": "Industry/Market",
+            "priority": "medium",
+            "items": [
+                "Assess industry cyclicality and trends",
+                "Evaluate competitive positioning",
+                "Review comparable transaction values",
+                "Analyze market liquidity for exit",
+            ],
+            "status": "pending"
+        })
+        
+        # 6. Recovery Analysis
+        if deal.get("in_bankruptcy") or deal.get("distress_level") in ["distressed", "default"]:
+            checklist.append({
+                "category": "Recovery Analysis",
+                "priority": "high",
+                "items": [
+                    "Model plan vs true value scenarios",
+                    "Calculate waterfall recoveries by class",
+                    "Identify fulcrum security",
+                    "Assess plan valuation negotiation dynamics",
+                    "Evaluate postreorganization capital structure",
+                ],
+                "status": "pending"
+            })
+        
+        return checklist
+
+    def _going_concern_value(
+        self, 
+        deal: Dict[str, Any], 
+        ebitda_analysis: EBITDAAdjustments,
+        multiple: float
+    ) -> float:
+        """Calculate going concern enterprise value."""
+        values = []
+        
+        # Primary: EBITDA multiple
+        if ebitda_analysis.normalized_ebitda > 0:
+            values.append(ebitda_analysis.normalized_ebitda * multiple)
+        
+        # Alternative: Revenue multiple for negative EBITDA
+        revenue = deal.get("revenue", 0)
+        if revenue > 0 and ebitda_analysis.normalized_ebitda <= 0:
+            rev_multiple = deal.get("revenue_multiple", 0.5)
+            values.append(revenue * rev_multiple)
+        
+        # DCF if projections available
+        if deal.get("fcf_projections"):
+            dcf_value = self._simple_dcf(deal["fcf_projections"])
+            values.append(dcf_value)
+        
+        if not values:
+            return deal.get("enterprise_value", 0)
+        
+        return sum(values) / len(values)
+
+    def _liquidation_value(self, deal: Dict[str, Any]) -> float:
+        """
+        Calculate orderly liquidation value per Moyer Ch. 5.
+        Uses asset-class-specific recovery rates.
+        """
+        liq_value = 0.0
+        industry = deal.get("industry", "other")
+        
+        # Cash - 100%
+        liq_value += deal.get("cash", 0) * self.LIQUIDATION_RATES["cash"]
+        
+        # Accounts Receivable - 75%
+        liq_value += deal.get("accounts_receivable", 0) * self.LIQUIDATION_RATES["accounts_receivable"]
+        
+        # Inventory - varies by industry (50% retail, 65% other)
+        inv_rate = self.LIQUIDATION_RATES["inventory_retail"] if industry in ["retail", "apparel"] else self.LIQUIDATION_RATES["inventory_other"]
+        liq_value += deal.get("inventory", 0) * inv_rate
+        
+        # PP&E - 40%
+        liq_value += deal.get("ppe", deal.get("fixed_assets", 0)) * self.LIQUIDATION_RATES["ppe"]
+        
+        # Real Estate - 80%
+        liq_value += deal.get("real_estate", 0) * self.LIQUIDATION_RATES["real_estate"]
+        
+        # Intangibles - 10%
+        liq_value += deal.get("intangibles", 0) * self.LIQUIDATION_RATES["intangibles"]
+        
+        # Other assets - 30%
+        liq_value += deal.get("other_assets", 0) * self.LIQUIDATION_RATES["other_assets"]
+        
+        # Fallback
+        if liq_value == 0 and deal.get("total_assets", 0) > 0:
+            liq_value = deal["total_assets"] * 0.35  # Conservative 35% overall
+        
+        return liq_value
+
+    def _find_fulcrum_security(
+        self, 
+        cap_structure: List[CapitalStructureLayer],
+        going_concern: float,
+        liquidation: float
+    ) -> Tuple[str, float, float]:
+        """Identify fulcrum security per Moyer Ch. 10."""
+        if not cap_structure:
+            return ("Equity", 0, going_concern)
+        
+        ev_midpoint = (going_concern + liquidation) / 2
+        cumulative_claims = 0.0
+        
+        for layer in sorted(cap_structure, key=lambda x: x.seniority):
+            claim = layer.principal + layer.accrued_interest
+            
+            if cumulative_claims + claim >= ev_midpoint:
+                recovery_implied = layer.trading_price / 100
+                implied_ev = cumulative_claims + (claim * recovery_implied)
+                return (layer.name, layer.trading_price, implied_ev)
+            
+            cumulative_claims += claim
+        
+        return ("Equity", 0, ev_midpoint)
+
+    def _run_scenario_analysis(
+        self,
+        deal: Dict[str, Any],
+        cap_structure: List[CapitalStructureLayer],
+        going_concern: float,
+        liquidation: float
+    ) -> List[Dict[str, Any]]:
+        """
+        Run scenario analysis with plan vs true value per Moyer Ch. 10.
+        
+        From Moyer Table 10-12: Plan value may differ from true value
+        - Plan value: Conservative (management's view)
+        - True value: What market believes (often higher)
+        """
+        scenarios = []
+        
+        # PLAN VALUE SCENARIOS (Conservative)
+        
+        # 1. Going Concern Restructure - Plan Value
+        plan_gc = going_concern * 0.90  # Plan typically conservative
+        gc_recovery = self._waterfall_recovery(cap_structure, plan_gc)
+        scenarios.append({
+            "scenario_name": "going_concern_plan",
+            "probability": 0.20,
+            "enterprise_value": plan_gc,
+            "recovery_by_class": gc_recovery,
+            "equity_value": max(0, plan_gc - sum(l.principal for l in cap_structure)),
+            "timeline_months": 12,
+            "plan_vs_true": "plan"
+        })
+        
+        # 2. 363 Sale - Plan Value
+        sale_plan = going_concern * 0.70
+        sale_recovery = self._waterfall_recovery(cap_structure, sale_plan)
+        scenarios.append({
+            "scenario_name": "section_363_sale_plan",
+            "probability": 0.15,
+            "enterprise_value": sale_plan,
+            "recovery_by_class": sale_recovery,
+            "equity_value": 0,
+            "timeline_months": 9,
+            "plan_vs_true": "plan"
+        })
+        
+        # TRUE VALUE SCENARIOS (Market's View)
+        
+        # 3. Going Concern - True Value (Moyer: often 10-20% higher than plan)
+        true_gc = going_concern * 1.10
+        true_gc_recovery = self._waterfall_recovery(cap_structure, true_gc)
+        scenarios.append({
+            "scenario_name": "going_concern_true",
+            "probability": 0.25,
+            "enterprise_value": true_gc,
+            "recovery_by_class": true_gc_recovery,
+            "equity_value": max(0, true_gc - sum(l.principal for l in cap_structure)),
+            "timeline_months": 12,
+            "plan_vs_true": "true"
+        })
+        
+        # 4. 363 Sale - True Value
+        sale_true = going_concern * 0.85
+        sale_true_recovery = self._waterfall_recovery(cap_structure, sale_true)
+        scenarios.append({
+            "scenario_name": "section_363_sale_true",
+            "probability": 0.20,
+            "enterprise_value": sale_true,
+            "recovery_by_class": sale_true_recovery,
+            "equity_value": 0,
+            "timeline_months": 9,
+            "plan_vs_true": "true"
+        })
+        
+        # 5. Contested Chapter 11
+        contested = (going_concern + liquidation) / 2
+        contested_recovery = self._waterfall_recovery(cap_structure, contested)
+        scenarios.append({
+            "scenario_name": "contested_chapter_11",
+            "probability": 0.10,
+            "enterprise_value": contested,
+            "recovery_by_class": contested_recovery,
+            "equity_value": 0,
+            "timeline_months": 24,
+            "plan_vs_true": "plan"
+        })
+        
+        # 6. Liquidation
+        liq_recovery = self._waterfall_recovery(cap_structure, liquidation)
+        scenarios.append({
+            "scenario_name": "chapter_7_liquidation",
+            "probability": 0.10,
+            "enterprise_value": liquidation,
+            "recovery_by_class": liq_recovery,
+            "equity_value": 0,
+            "timeline_months": 18,
+            "plan_vs_true": "liquidation"
+        })
+        
+        return scenarios
+
+    def _waterfall_recovery(
+        self,
+        cap_structure: List[CapitalStructureLayer],
+        available_value: float
+    ) -> Dict[str, float]:
+        """Calculate recovery waterfall per Moyer absolute priority rule."""
+        recovery = {}
+        remaining = available_value
+        
+        for layer in sorted(cap_structure, key=lambda x: x.seniority):
+            claim = layer.principal + layer.accrued_interest
+            
+            if remaining >= claim:
+                recovery[layer.name] = 100.0
+                remaining -= claim
+            elif remaining > 0:
+                recovery[layer.name] = (remaining / claim) * 100
+                remaining = 0
+            else:
+                recovery[layer.name] = 0.0
+        
+        recovery["Equity"] = remaining if remaining > 0 else 0
+        return recovery
+
+    def _calculate_weighted_returns(
+        self,
+        scenarios: List[Dict[str, Any]],
+        entry_price: float
+    ) -> Tuple[float, float, float, float]:
+        """
+        Calculate returns with plan vs true value breakdown.
+        
+        Returns:
+            (plan_recovery, true_recovery, weighted_recovery, expected_irr)
+        """
+        if entry_price <= 0:
+            entry_price = 1
+        
+        plan_recovery = 0.0
+        true_recovery = 0.0
+        weighted_recovery = 0.0
+        weighted_irr = 0.0
+        
+        plan_weight = 0.0
+        true_weight = 0.0
+        
+        for scenario in scenarios:
+            prob = scenario["probability"]
+            plan_vs_true = scenario.get("plan_vs_true", "plan")
+            
+            # Get fulcrum recovery
+            recoveries = scenario.get("recovery_by_class", {})
+            fulcrum_recovery = 0
+            for name, recovery in recoveries.items():
+                if name == "Equity":
+                    continue
+                if 0 < recovery < 100:
+                    fulcrum_recovery = recovery
+                    break
+            if fulcrum_recovery == 0 and recoveries:
+                non_equity = {k: v for k, v in recoveries.items() if k != "Equity"}
+                if non_equity:
+                    fulcrum_recovery = list(non_equity.values())[-1]
+            
+            # Track plan vs true separately
+            if plan_vs_true == "plan":
+                plan_recovery += prob * fulcrum_recovery
+                plan_weight += prob
+            elif plan_vs_true == "true":
+                true_recovery += prob * fulcrum_recovery
+                true_weight += prob
+            
+            weighted_recovery += prob * fulcrum_recovery
+            
+            # IRR calculation
+            timeline_years = scenario.get("timeline_months", 18) / 12
+            if entry_price > 0 and timeline_years > 0 and fulcrum_recovery > 0:
+                irr = (fulcrum_recovery / entry_price) ** (1 / timeline_years) - 1
+                irr = max(-0.99, min(5.0, irr))
+                weighted_irr += prob * irr
+        
+        # Normalize plan/true recoveries
+        if plan_weight > 0:
+            plan_recovery /= plan_weight
+        if true_weight > 0:
+            true_recovery /= true_weight
+        
+        return plan_recovery, true_recovery, weighted_recovery, weighted_irr
+
+    def _find_arbitrage_opportunities(
+        self,
+        cap_structure: List[CapitalStructureLayer],
+        scenarios: List[Dict[str, Any]]
+    ) -> List[ArbitrageOpportunity]:
+        """
+        Identify capital structure arbitrage opportunities per Moyer Ch. 10.
+        """
+        opportunities = []
+        
+        if len(cap_structure) < 2:
+            return opportunities
+        
+        # Sort by seniority
+        sorted_layers = sorted(cap_structure, key=lambda x: x.seniority)
+        
+        # Look for senior vs junior mispricing
+        for i, senior in enumerate(sorted_layers[:-1]):
+            for junior in sorted_layers[i+1:]:
+                price_diff = senior.trading_price - junior.trading_price
+                
+                # Calculate expected returns in bull/bear scenarios
+                bull_recovery_senior = 100  # Full recovery in bull
+                bull_recovery_junior = min(100, junior.trading_price * 1.5)  # Appreciate
+                bear_recovery_senior = max(50, senior.trading_price * 0.8)
+                bear_recovery_junior = max(10, junior.trading_price * 0.4)
+                
+                # Long junior / short senior trade
+                bull_return = (bull_recovery_junior - junior.trading_price) - (bull_recovery_senior - senior.trading_price)
+                bear_return = (bear_recovery_junior - junior.trading_price) - (bear_recovery_senior - senior.trading_price)
+                
+                expected_return = (bull_return + bear_return) / 2
+                
+                if abs(expected_return) > 5:  # Meaningful opportunity
+                    opportunities.append(ArbitrageOpportunity(
+                        trade_type="senior_vs_junior",
+                        long_security=junior.name if expected_return > 0 else senior.name,
+                        short_security=senior.name if expected_return > 0 else junior.name,
+                        long_price=junior.trading_price if expected_return > 0 else senior.trading_price,
+                        short_price=senior.trading_price if expected_return > 0 else junior.trading_price,
+                        expected_return_bull=bull_return,
+                        expected_return_bear=bear_return,
+                        probability_weighted_return=expected_return,
+                        net_investment=abs(senior.trading_price - junior.trading_price),
+                        coupon_carry=(junior.coupon - senior.coupon) / 2,
+                        thesis=f"{'Long' if expected_return > 0 else 'Short'} {junior.name} vs {senior.name} arbitrage"
+                    ))
+        
+        return opportunities[:3]  # Top 3 opportunities
+
+    def _generate_signal(
+        self,
+        distress_level: DistressLevel,
+        expected_irr: float,
+        weighted_recovery: float,
+        entry_price: float,
+        prob_default: float,
+        scenarios: List[Dict[str, Any]],
+        arb_opportunities: List[ArbitrageOpportunity]
+    ) -> Tuple[str, float, float]:
+        """Generate investment signal with risk-reward score."""
+        
+        # Calculate risk-reward
+        upside = weighted_recovery - entry_price
+        worst_case = min(s.get("recovery_by_class", {}).get("Senior Secured", 0) 
+                        for s in scenarios if s.get("recovery_by_class"))
+        downside = max(entry_price - worst_case, entry_price * 0.5)
+        risk_reward = upside / downside if downside > 0 else 0
+        
+        # Determine signal type
+        if expected_irr >= self.MIN_IRR_THRESHOLD and risk_reward >= 2.0:
+            signal_type = "buy_debt"
+            base_strength = 70
+        elif expected_irr >= self.MIN_IRR_THRESHOLD and risk_reward >= 1.5:
+            signal_type = "buy_debt"
+            base_strength = 60
+        elif expected_irr >= self.MIN_IRR_THRESHOLD * 0.5 and risk_reward >= 1.0:
+            signal_type = "buy_debt"
+            base_strength = 50
+        elif expected_irr < 0 or risk_reward < 0.5:
+            signal_type = "avoid"
+            base_strength = 30
+        elif len(arb_opportunities) > 0 and arb_opportunities[0].probability_weighted_return > 10:
+            signal_type = "arb_trade"
+            base_strength = 65
+        elif weighted_recovery > 120 and entry_price < 70:
+            signal_type = "buy_equity"
+            base_strength = 55
+        else:
+            signal_type = "hold"
+            base_strength = 40
+        
+        # Adjustments
+        signal_strength = base_strength
+        
+        if expected_irr > 0.40:
+            signal_strength += 20
+        elif expected_irr > 0.30:
+            signal_strength += 15
+        elif expected_irr > 0.25:
+            signal_strength += 10
+        
+        if risk_reward > 3.0:
+            signal_strength += 15
+        elif risk_reward > 2.0:
+            signal_strength += 10
+        
+        if entry_price < 40:
+            signal_strength += 10
+        elif entry_price < 60:
+            signal_strength += 5
+        
+        if distress_level == DistressLevel.BANKRUPTCY:
+            signal_strength -= 5
+        
+        signal_strength = min(100, max(0, signal_strength))
+        
+        return signal_type, signal_strength, risk_reward
+
+    def _generate_thesis(
+        self,
+        company: str,
+        distress_level: DistressLevel,
+        fulcrum: str,
+        expected_irr: float,
+        weighted_recovery: float,
+        scenarios: List[Dict[str, Any]],
+        leverage_metrics: Dict[str, float]
+    ) -> str:
+        """Generate investment thesis."""
+        best = max(scenarios, key=lambda x: x["enterprise_value"])
+        worst = min(scenarios, key=lambda x: x["enterprise_value"])
+        
+        return (
+            f"{company} is {distress_level.value} with leverage of "
+            f"{leverage_metrics['leverage_sub']:.1f}x through sub debt. "
+            f"Fulcrum: {fulcrum}. "
+            f"Expected IRR: {expected_irr:.1%}, weighted recovery: {weighted_recovery:.0f}%. "
+            f"Best case: {best['scenario_name']} ({best['probability']:.0%}). "
+            f"Worst case: {worst['scenario_name']} ({worst['probability']:.0%})."
+        )
+
+    def _identify_key_risks(
+        self,
+        deal: Dict[str, Any],
+        leverage_metrics: Dict[str, float],
+        distress_level: DistressLevel
+    ) -> List[str]:
+        """Identify key investment risks."""
+        risks = []
+        
+        if leverage_metrics["leverage_sub"] > 6:
+            risks.append("High leverage (>6x EBITDA)")
+        
+        if leverage_metrics["interest_coverage"] < 2:
+            risks.append("Weak interest coverage (<2x)")
+        
+        if leverage_metrics["secured_pct"] > 0.7:
+            risks.append("High secured debt ratio limits junior recovery")
+        
+        if distress_level == DistressLevel.BANKRUPTCY:
+            risks.append("Already in Chapter 11 - process risk")
+        
+        if deal.get("in_default"):
+            risks.append("Currently in default")
+        
+        if deal.get("industry") in ["retail", "energy"]:
+            risks.append(f"Challenging industry: {deal.get('industry')}")
+        
+        if leverage_metrics["capacity_utilized"] > 1:
+            risks.append("Exceeds theoretical debt capacity")
+        
+        return risks[:5]
+
+    def _simple_dcf(self, fcf_projections: List[float], discount_rate: float = 0.15) -> float:
+        """Simple DCF valuation."""
+        pv = 0
+        for i, fcf in enumerate(fcf_projections, 1):
+            pv += fcf / ((1 + discount_rate) ** i)
+        
+        if fcf_projections:
+            terminal = fcf_projections[-1] * 5
+            pv += terminal / ((1 + discount_rate) ** len(fcf_projections))
+        
+        return pv
+
+    def _fetch_deals(self) -> List[Dict[str, Any]]:
+        """Fetch deals from configured sources or use samples."""
+        deals = []
+        
+        for source in self.deal_sources:
+            try:
+                import requests
+                headers = {}
+                if source.get("key"):
+                    headers["Authorization"] = f"Bearer {source['key']}"
+                
+                response = requests.get(source["url"], headers=headers, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+                
+                if isinstance(data, list):
+                    deals.extend(data)
+                elif "deals" in data:
+                    deals.extend(data["deals"])
+                elif "data" in data:
+                    deals.extend(data["data"])
+            except Exception as e:
+                logger.warning(f"Failed to fetch from {source.get('name')}: {e}")
+        
+        if not deals:
+            deals = self._get_sample_deals()
+        
+        return deals
+
+    def _get_sample_deals(self) -> List[Dict[str, Any]]:
+        """Sample deals for testing."""
+        return [
+            {
+                "deal_id": "deal-001",
+                "company_name": "Acme Manufacturing Corp",
+                "industry": "manufacturing",
+                "total_assets": 500_000_000,
+                "current_assets": 150_000_000,
+                "current_liabilities": 100_000_000,
+                "retained_earnings": -50_000_000,
+                "ebit": 20_000_000,
+                "ebitda": 45_000_000,
+                "revenue": 300_000_000,
+                "interest_expense": 28_000_000,
+                "depreciation": 20_000_000,
+                "market_cap": 50_000_000,
+                "total_liabilities": 400_000_000,
+                "total_debt": 350_000_000,
+                "secured_debt": 200_000_000,
+                "senior_unsecured": 100_000_000,
+                "subordinated_debt": 50_000_000,
+                "secured_price": 92,
+                "unsecured_price": 55,
+                "sub_price": 25,
+                "cash": 30_000_000,
+                "accounts_receivable": 60_000_000,
+                "inventory": 40_000_000,
+                "ppe": 200_000_000,
+                "restructuring_charges": 5_000_000,
+                "maintenance_capex": 15_000_000,
+                "source": "internal"
+            },
+            {
+                "deal_id": "deal-002",
+                "company_name": "RetailCo Holdings",
+                "industry": "retail",
+                "total_assets": 800_000_000,
+                "current_assets": 200_000_000,
+                "current_liabilities": 250_000_000,
+                "retained_earnings": -200_000_000,
+                "ebit": -30_000_000,
+                "ebitda": 10_000_000,
+                "revenue": 1_200_000_000,
+                "interest_expense": 48_000_000,
+                "depreciation": 40_000_000,
+                "market_cap": 20_000_000,
+                "total_liabilities": 700_000_000,
+                "total_debt": 600_000_000,
+                "bank_debt": 100_000_000,
+                "secured_debt": 300_000_000,
+                "senior_unsecured": 150_000_000,
+                "subordinated_debt": 50_000_000,
+                "secured_price": 78,
+                "unsecured_price": 25,
+                "sub_price": 5,
+                "cash": 50_000_000,
+                "accounts_receivable": 40_000_000,
+                "inventory": 100_000_000,
+                "ppe": 300_000_000,
+                "real_estate": 150_000_000,
+                "rent_expense": 80_000_000,
+                "in_bankruptcy": True,
+                "chapter_11": True,
+                "source": "internal"
+            },
+            {
+                "deal_id": "deal-003",
+                "company_name": "TechGrowth Inc",
+                "industry": "technology",
+                "total_assets": 200_000_000,
+                "current_assets": 80_000_000,
+                "current_liabilities": 40_000_000,
+                "retained_earnings": 10_000_000,
+                "ebit": 25_000_000,
+                "ebitda": 35_000_000,
+                "revenue": 150_000_000,
+                "interest_expense": 8_000_000,
+                "depreciation": 10_000_000,
+                "market_cap": 100_000_000,
+                "total_liabilities": 100_000_000,
+                "total_debt": 80_000_000,
+                "senior_unsecured": 80_000_000,
+                "unsecured_price": 75,
+                "cash": 40_000_000,
+                "accounts_receivable": 30_000_000,
+                "ppe": 50_000_000,
+                "intangibles": 60_000_000,
+                "source": "internal"
+            }
+        ]

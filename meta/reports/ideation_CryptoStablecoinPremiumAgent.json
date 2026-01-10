@@ -1,0 +1,119 @@
+{
+  "agent": {
+    "class_name": "CryptoStablecoinPremiumAgent",
+    "module_slug": "crypto_stablecoin_premium_agent",
+    "description": "Detects temporary premium or discount inefficiencies in major crypto stablecoins relative to their pegged fiat value by analyzing on-chain transfer volumes and exchange price deviations.",
+    "category": "crypto",
+    "data_sources": [
+      {
+        "name": "CoinGecko API",
+        "type": "public_api",
+        "details": "Fetches real-time stablecoin prices across multiple exchanges to detect price deviations from peg."
+      },
+      {
+        "name": "On-chain Transfer Data",
+        "type": "existing_client",
+        "details": "Aggregated on-chain transfer volumes and counts for stablecoins from blockchain clients to identify unusual activity."
+      }
+    ],
+    "detection_logic": [
+      "Fetch current stablecoin prices from CoinGecko across major exchanges.",
+      "Calculate deviation percentage from the stablecoin's peg (e.g., $1 USD).",
+      "Retrieve recent on-chain transfer volume and transaction count for each stablecoin.",
+      "Identify stablecoins with price deviation exceeding threshold (e.g., \u00b10.5%) and elevated on-chain transfer volume above historical average.",
+      "Flag these as potential premium or discount inefficiencies indicating arbitrage or market stress opportunities.",
+      "Generate findings with severity based on deviation magnitude and confidence based on volume spike intensity."
+    ],
+    "parameters": {
+      "thresholds": {
+        "price_deviation_percent": 0.5,
+        "volume_spike_multiplier": 1.5
+      },
+      "cadence_minutes_default": 60
+    },
+    "output_examples": [
+      {
+        "title": "USDT trading at 0.97 USD with elevated on-chain transfers",
+        "description": "USDT is trading at a 3% discount relative to its $1 peg, accompanied by a 2x spike in on-chain transfer volume, indicating a potential arbitrage opportunity or market stress.",
+        "severity": "high",
+        "confidence": 0.9,
+        "metadata": {
+          "price_deviation_percent": -3.0,
+          "volume_spike_multiplier": 2.0,
+          "stablecoin": "USDT"
+        },
+        "symbol": "USDT",
+        "market_type": "crypto"
+      }
+    ]
+  },
+  "eval": {
+    "suite_name": "CryptoStablecoinPremiumAgent_smoke",
+    "cases": [
+      {
+        "id": "stablecoin_premium_detected",
+        "input_fixture": {
+          "prices": {
+            "USDT": 0.97,
+            "USDC": 1.0
+          },
+          "on_chain_volumes": {
+            "USDT": 2000000,
+            "USDC": 1000000,
+            "historical_avg": {
+              "USDT": 1000000,
+              "USDC": 1000000
+            }
+          }
+        },
+        "expected_schema": {
+          "type": "list",
+          "item_required_keys": [
+            "title",
+            "severity",
+            "confidence",
+            "metadata"
+          ]
+        }
+      },
+      {
+        "id": "no_premium_no_alert",
+        "input_fixture": {
+          "prices": {
+            "USDT": 1.0,
+            "USDC": 1.0
+          },
+          "on_chain_volumes": {
+            "USDT": 900000,
+            "USDC": 950000,
+            "historical_avg": {
+              "USDT": 1000000,
+              "USDC": 1000000
+            }
+          }
+        },
+        "expected_schema": {
+          "type": "list",
+          "item_required_keys": [
+            "title",
+            "severity",
+            "confidence",
+            "metadata"
+          ]
+        }
+      }
+    ],
+    "offline_adapter_plan": "Use recorded JSON fixtures of CoinGecko price responses and on-chain volume snapshots to simulate agent input. Mock existing client calls to return these fixtures for deterministic testing."
+  },
+  "safety": {
+    "no_execution": true,
+    "protected_paths": [
+      ".github/",
+      "trading/",
+      "secrets/",
+      "infra/"
+    ],
+    "max_files_changed": 4,
+    "max_lines_changed": 250
+  }
+}

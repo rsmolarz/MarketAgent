@@ -1,0 +1,1 @@
+{"id":"dp_smoke","input":{},"schema":{"type":"list","item":{"type":"dict","required_keys":["symbol","direction","confidence"]}}}

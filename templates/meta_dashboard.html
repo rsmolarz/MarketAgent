@@ -1,0 +1,212 @@
+{% extends "admin_layout.html" %}
+{% block title %}Meta Supervisor Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>Meta Supervisor Dashboard</h2>
+        <span class="badge bg-{{ 'danger' if report.get('meta', {}).get('severity') == 'high' else 'success' }}">
+            {{ report.get('meta', {}).get('severity', 'unknown') | upper }}
+        </span>
+    </div>
+    
+    <p class="text-muted">Generated: {{ report.get('meta', {}).get('generated_at', 'N/A') }}</p>
+
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-dark text-white">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Portfolio PnL (bps)</h6>
+                    <h3 class="{{ 'text-danger' if (report.get('fleet', {}).get('portfolio_pnl_bps', 0) or 0) < 0 else 'text-success' }}">
+                        {{ report.get('fleet', {}).get('portfolio_pnl_bps', 0) | round(2) }}
+                    </h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-dark text-white">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Hit Rate</h6>
+                    <h3>{{ (report.get('fleet', {}).get('portfolio_hit_rate', 0) * 100) | round(1) }}%</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-dark text-white">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Max Drawdown (bps)</h6>
+                    <h3 class="text-warning">{{ report.get('fleet', {}).get('portfolio_max_drawdown_bps', 0) | round(2) }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-dark text-white">
+                <div class="card-body">
+                    <h6 class="card-title text-muted">Total Signals</h6>
+                    <h3>{{ report.get('fleet', {}).get('total_signals', 0) }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="card bg-dark">
+                <div class="card-header">
+                    <h5 class="mb-0">Agent Performance</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Agent</th>
+                                    <th>Decision</th>
+                                    <th>PnL (bps)</th>
+                                    <th>Hit Rate</th>
+                                    <th>Error Rate</th>
+                                    <th>Latency (ms)</th>
+                                    <th>Runs</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for name, agent in report.get('agents', {}).items() | sort(attribute='1.pnl_sum_bps', reverse=True) %}
+                                <tr>
+                                    <td>{{ name }}</td>
+                                    <td>
+                                        <span class="badge bg-{{ 'success' if agent.decision == 'PROMOTE' else ('danger' if agent.decision == 'KILL' else 'secondary') }}">
+                                            {{ agent.decision }}
+                                        </span>
+                                    </td>
+                                    <td class="{{ 'text-success' if (agent.pnl_sum_bps or 0) > 0 else 'text-danger' }}">
+                                        {{ agent.pnl_sum_bps | round(2) if agent.pnl_sum_bps else 0 }}
+                                    </td>
+                                    <td>{{ ((agent.hit_rate or 0) * 100) | round(1) }}%</td>
+                                    <td class="{{ 'text-danger' if (agent.error_rate or 0) > 0.05 else '' }}">
+                                        {{ ((agent.error_rate or 0) * 100) | round(1) }}%
+                                    </td>
+                                    <td>{{ agent.avg_latency_ms | int if agent.avg_latency_ms else '-' }}</td>
+                                    <td>{{ agent.runs }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card bg-dark mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Capital Allocation</h5>
+                </div>
+                <div class="card-body">
+                    {% set weights = report.get('allocation', {}).get('weights', {}) %}
+                    {% if weights %}
+                        <ul class="list-group list-group-flush">
+                        {% for name, weight in weights.items() | sort(attribute='1', reverse=True) %}
+                            <li class="list-group-item bg-dark d-flex justify-content-between">
+                                <span>{{ name }}</span>
+                                <span class="badge bg-primary">{{ (weight * 100) | round(1) }}%</span>
+                            </li>
+                        {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="text-muted">No allocation data yet (need positive PnL agents)</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card bg-dark">
+                <div class="card-header">
+                    <h5 class="mb-0">Confidence Multipliers</h5>
+                </div>
+                <div class="card-body">
+                    {% set conf = report.get('allocation', {}).get('confidence_state', {}).get('multipliers', {}) %}
+                    {% if conf %}
+                        <ul class="list-group list-group-flush">
+                        {% for name, multiplier in conf.items() %}
+                            <li class="list-group-item bg-dark d-flex justify-content-between">
+                                <span>{{ name }}</span>
+                                <span class="badge bg-{{ 'warning' if multiplier < 0.8 else 'success' }}">
+                                    {{ multiplier }}x
+                                </span>
+                            </li>
+                        {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="text-muted">No confidence data yet</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if report.get('agent_proposals') %}
+    <div class="card bg-dark mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Agent Proposals (Scored)</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-dark table-striped">
+                    <thead>
+                        <tr>
+                            <th>Score</th>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th>Expected Edge</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in report.agent_proposals[:10] %}
+                        <tr>
+                            <td><span class="badge bg-info">{{ p.get('score', 0) | round(1) }}</span></td>
+                            <td>{{ p.get('agent_name', 'Unknown') }}</td>
+                            <td>{{ p.get('category', '-') }}</td>
+                            <td>{{ (p.get('expected_edge', '') or '')[:80] }}{% if (p.get('expected_edge', '') or '')|length > 80 %}...{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if report.get('research', {}).get('failure_forensics', {}).get('by_agent') %}
+    <div class="card bg-dark mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Failure Forensics (Worst Agents)</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-dark table-striped">
+                    <thead>
+                        <tr>
+                            <th>Agent</th>
+                            <th>Loss Count</th>
+                            <th>Avg Loss (bps)</th>
+                            <th>Med Latency</th>
+                            <th>Error Rate</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for a in report.research.failure_forensics.by_agent[:8] %}
+                        <tr>
+                            <td>{{ a.agent }}</td>
+                            <td>{{ a.loss_count }}</td>
+                            <td class="text-danger">{{ a.avg_loss_bps | round(2) }}</td>
+                            <td>{{ a.median_latency_ms or '-' }}</td>
+                            <td>{{ a.error_rate | round(3) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

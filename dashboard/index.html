@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distressed Investing Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .card { @apply bg-white rounded-lg shadow-md p-6; }
+        .stat-card { @apply bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 border border-gray-200; }
+        .positive { @apply text-green-600; }
+        .negative { @apply text-red-600; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen" x-data="dashboard()" x-init="init()">
+    
+    <!-- Header -->
+    <header class="bg-gray-900 text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+                <h1 class="text-2xl font-bold">📊 Distressed Investing Dashboard</h1>
+                <span class="text-gray-400 text-sm">Portfolio: <span class="text-white" x-text="portfolioId"></span></span>
+            </div>
+            <div class="flex items-center space-x-4">
+                <!-- Alerts Badge -->
+                <button @click="showAlerts = !showAlerts" class="relative p-2 rounded-full hover:bg-gray-800">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path>
+                    </svg>
+                    <span x-show="alerts.length > 0" class="absolute -top-1 -right-1 bg-red-500 text-xs rounded-full w-5 h-5 flex items-center justify-center" x-text="alerts.length"></span>
+                </button>
+                
+                <span class="text-sm text-gray-400">Last updated: <span x-text="lastUpdated"></span></span>
+                <button @click="refresh()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition">
+                    Refresh
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Alerts Dropdown -->
+    <div x-show="showAlerts" x-cloak @click.away="showAlerts = false" 
+         class="absolute right-4 top-16 w-96 bg-white rounded-lg shadow-xl z-50 max-h-96 overflow-y-auto">
+        <div class="p-4 border-b border-gray-200">
+            <h3 class="font-semibold text-gray-800">Risk Alerts</h3>
+        </div>
+        <div x-show="alerts.length === 0" class="p-4 text-gray-500 text-center">
+            No active alerts
+        </div>
+        <template x-for="alert in alerts" :key="alert.alert_id">
+            <div class="p-4 border-b border-gray-100 hover:bg-gray-50">
+                <div class="flex items-start justify-between">
+                    <div>
+                        <span :class="alert.severity === 'critical' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'" 
+                              class="text-xs px-2 py-1 rounded-full font-medium" x-text="alert.severity"></span>
+                        <p class="mt-2 text-sm text-gray-700" x-text="alert.message"></p>
+                        <p class="mt-1 text-xs text-gray-400" x-text="new Date(alert.timestamp).toLocaleString()"></p>
+                    </div>
+                    <button @click="acknowledgeAlert(alert.alert_id)" class="text-gray-400 hover:text-gray-600">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        
+        <!-- Navigation Tabs -->
+        <div class="mb-6 border-b border-gray-200">
+            <nav class="flex space-x-8">
+                <button @click="activeTab = 'overview'" :class="activeTab === 'overview' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'" 
+                        class="py-4 px-1 border-b-2 font-medium text-sm transition">
+                    Overview
+                </button>
+                <button @click="activeTab = 'positions'" :class="activeTab === 'positions' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                        class="py-4 px-1 border-b-2 font-medium text-sm transition">
+                    Positions
+                </button>
+                <button @click="activeTab = 'deals'" :class="activeTab === 'deals' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                        class="py-4 px-1 border-b-2 font-medium text-sm transition">
+                    Deal Pipeline
+                </button>
+                <button @click="activeTab = 'risk'" :class="activeTab === 'risk' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                        class="py-4 px-1 border-b-2 font-medium text-sm transition">
+                    Risk & Stress Test
+                </button>
+                <button @click="activeTab = 'backtest'" :class="activeTab === 'backtest' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'"
+                        class="py-4 px-1 border-b-2 font-medium text-sm transition">
+                    Backtesting
+                </button>
+            </nav>
+        </div>
+
+        <!-- Overview Tab -->
+        <div x-show="activeTab === 'overview'" x-cloak>
+            <!-- Summary Stats -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                <div class="stat-card">
+                    <p class="text-sm text-gray-500 mb-1">NAV</p>
+                    <p class="text-2xl font-bold text-gray-900" x-text="formatCurrency(summary.nav)"></p>
+                    <p class="text-sm mt-1" :class="summary.daily_return >= 0 ? 'positive' : 'negative'">
+                        <span x-text="(summary.daily_return >= 0 ? '+' : '') + summary.daily_return.toFixed(2) + '%'"></span> today
+                    </p>
+                </div>
+                <div class="stat-card">
+                    <p class="text-sm text-gray-500 mb-1">Total P&L</p>
+                    <p class="text-2xl font-bold" :class="summary.total_pnl >= 0 ? 'positive' : 'negative'" x-text="formatCurrency(summary.total_pnl)"></p>
+                    <p class="text-sm text-gray-500 mt-1">
+                        Daily: <span :class="summary.daily_pnl >= 0 ? 'positive' : 'negative'" x-text="formatCurrency(summary.daily_pnl)"></span>
+                    </p>
+                </div>
+                <div class="stat-card">
+                    <p class="text-sm text-gray-500 mb-1">Positions</p>
+                    <p class="text-2xl font-bold text-gray-900" x-text="summary.position_count"></p>
+                    <p class="text-sm text-gray-500 mt-1">
+                        <span x-text="summary.issuer_count"></span> issuers
+                    </p>
+                </div>
+                <div class="stat-card">
+                    <p class="text-sm text-gray-500 mb-1">VaR (95%)</p>
+                    <p class="text-2xl font-bold text-orange-600" x-text="summary.var_95.toFixed(2) + '%'"></p>
+                    <p class="text-sm text-gray-500 mt-1">
+                        Cash: <span x-text="formatCurrency(summary.cash)"></span>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Charts Row -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Exposure by Sector -->
+                <div class="card">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Exposure by Sector</h3>
+                    <canvas id="sectorChart" height="200"></canvas>
+                </div>
+                
+                <!-- Exposure by Seniority -->
+                <div class="card">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Exposure by Seniority</h3>
+                    <canvas id="seniorityChart" height="200"></canvas>
+                </div>
+            </div>
+
+            <!-- Top Positions -->
+            <div class="card">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Top Positions</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="text-left text-gray-500 border-b">
+                            <tr>
+                                <th class="pb-3">Company</th>
+                                <th class="pb-3">Type</th>
+                                <th class="pb-3 text-right">Face Amount</th>
+                                <th class="pb-3 text-right">Entry</th>
+                                <th class="pb-3 text-right">Current</th>
+                                <th class="pb-3 text-right">P&L</th>
+                                <th class="pb-3 text-right">P&L %</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <template x-for="pos in positions.slice(0, 5)" :key="pos.position_id">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="py-3 font-medium text-gray-900" x-text="pos.company"></td>
+                                    <td class="py-3 text-gray-600" x-text="pos.security_type"></td>
+                                    <td class="py-3 text-right" x-text="formatCurrency(pos.face_amount)"></td>
+                                    <td class="py-3 text-right" x-text="pos.entry_price.toFixed(2)"></td>
+                                    <td class="py-3 text-right" x-text="pos.current_price.toFixed(2)"></td>
+                                    <td class="py-3 text-right" :class="pos.unrealized_pnl >= 0 ? 'positive' : 'negative'" x-text="formatCurrency(pos.unrealized_pnl)"></td>
+                                    <td class="py-3 text-right" :class="pos.pnl_pct >= 0 ? 'positive' : 'negative'" x-text="pos.pnl_pct.toFixed(2) + '%'"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Positions Tab -->
+        <div x-show="activeTab === 'positions'" x-cloak>
+            <div class="card">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-gray-800">All Positions</h3>
+                    <button @click="showAddPosition = true" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                        + Add Position
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="text-left text-gray-500 border-b">
+                            <tr>
+                                <th class="pb-3">Company</th>
+                                <th class="pb-3">Type</th>
+                                <th class="pb-3">Industry</th>
+                                <th class="pb-3">Status</th>
+                                <th class="pb-3 text-right">Face</th>
+                                <th class="pb-3 text-right">Entry</th>
+                                <th class="pb-3 text-right">Current</th>
+                                <th class="pb-3 text-right">Value</th>
+                                <th class="pb-3 text-right">P&L %</th>
+                                <th class="pb-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <template x-for="pos in positions" :key="pos.position_id">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="py-3 font-medium text-gray-900" x-text="pos.company"></td>
+                                    <td class="py-3">
+                                        <span class="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs" x-text="pos.security_type"></span>
+                                    </td>
+                                    <td class="py-3 text-gray-600" x-text="pos.industry"></td>
+                                    <td class="py-3">
+                                        <span :class="{
+                                            'bg-green-100 text-green-800': pos.status === 'performing',
+                                            'bg-yellow-100 text-yellow-800': pos.status === 'stressed',
+                                            'bg-orange-100 text-orange-800': pos.status === 'distressed',
+                                            'bg-red-100 text-red-800': pos.status === 'bankruptcy'
+                                        }" class="px-2 py-1 rounded text-xs" x-text="pos.status"></span>
+                                    </td>
+                                    <td class="py-3 text-right" x-text="formatCurrency(pos.face_amount)"></td>
+                                    <td class="py-3 text-right" x-text="pos.entry_price.toFixed(2)"></td>
+                                    <td class="py-3 text-right" x-text="pos.current_price.toFixed(2)"></td>
+                                    <td class="py-3 text-right" x-text="formatCurrency(pos.current_value)"></td>
+                                    <td class="py-3 text-right" :class="pos.pnl_pct >= 0 ? 'positive' : 'negative'" x-text="pos.pnl_pct.toFixed(2) + '%'"></td>
+                                    <td class="py-3">
+                                        <button @click="closePosition(pos)" class="text-red-600 hover:text-red-800 text-sm">Close</button>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Deal Pipeline Tab -->
+        <div x-show="activeTab === 'deals'" x-cloak>
+            <div class="card">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Active Distressed Deals</h3>
+                <p class="text-gray-500 mb-4">Connect data feeds to see live deal flow. Configure API keys in environment variables.</p>
+                
+                <!-- Sample Deals (static for demo) -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <template x-for="deal in sampleDeals" :key="deal.id">
+                        <div class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
+                            <div class="flex items-start justify-between mb-2">
+                                <h4 class="font-semibold text-gray-900" x-text="deal.company"></h4>
+                                <span :class="{
+                                    'bg-blue-100 text-blue-800': deal.status === 'restructuring',
+                                    'bg-red-100 text-red-800': deal.status === 'bankruptcy',
+                                    'bg-yellow-100 text-yellow-800': deal.status === 'stressed'
+                                }" class="text-xs px-2 py-1 rounded" x-text="deal.status"></span>
+                            </div>
+                            <p class="text-sm text-gray-500 mb-2" x-text="deal.industry"></p>
+                            <div class="flex justify-between text-sm">
+                                <span class="text-gray-500">Total Debt:</span>
+                                <span class="font-medium" x-text="formatCurrency(deal.total_debt)"></span>
+                            </div>
+                            <div class="flex justify-between text-sm mt-1">
+                                <span class="text-gray-500">Senior Trading:</span>
+                                <span class="font-medium" x-text="deal.senior_price"></span>
+                            </div>
+                            <button class="mt-3 w-full py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 text-sm transition">
+                                View Details
+                            </button>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+        <!-- Risk Tab -->
+        <div x-show="activeTab === 'risk'" x-cloak>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+                <!-- Risk Metrics -->
+                <div class="card">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Risk Metrics</h3>
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center pb-3 border-b">
+                            <span class="text-gray-600">Current Drawdown</span>
+                            <span class="font-semibold" :class="risk.current_drawdown > 10 ? 'text-red-600' : 'text-gray-900'" x-text="risk.current_drawdown.toFixed(2) + '%'"></span>
+                        </div>
+                        <div class="flex justify-between items-center pb-3 border-b">
+                            <span class="text-gray-600">Max Drawdown</span>
+                            <span class="font-semibold text-gray-900" x-text="risk.max_drawdown.toFixed(2) + '%'"></span>
+                        </div>
+                        <div class="flex justify-between items-center pb-3 border-b">
+                            <span class="text-gray-600">VaR (95%)</span>
+                            <span class="font-semibold text-orange-600" x-text="risk.var_95.toFixed(2) + '%'"></span>
+                        </div>
+                        <div class="flex justify-between items-center pb-3 border-b">
+                            <span class="text-gray-600">Expected Shortfall</span>
+                            <span class="font-semibold text-red-600" x-text="risk.expected_shortfall.toFixed(2) + '%'"></span>
+                        </div>
+                        <div class="flex justify-between items-center pb-3 border-b">
+                            <span class="text-gray-600">Largest Position</span>
+                            <span class="font-semibold text-gray-900" x-text="risk.largest_position_pct.toFixed(2) + '%'"></span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-gray-600">Position Count</span>
+                            <span class="font-semibold text-gray-900" x-text="risk.position_count"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stress Test -->
+                <div class="card">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Stress Test Results</h3>
+                    <button @click="runStressTest()" class="mb-4 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition">
+                        Run Stress Test
+                    </button>
+                    <div class="space-y-3">
+                        <template x-for="scenario in stressResults" :key="scenario.scenario">
+                            <div class="flex items-center justify-between py-2 border-b border-gray-100">
+                                <span class="text-gray-700" x-text="scenario.scenario"></span>
+                                <div class="text-right">
+                                    <span :class="scenario.pnl >= 0 ? 'text-green-600' : 'text-red-600'" class="font-semibold" x-text="formatCurrency(scenario.pnl)"></span>
+                                    <span class="text-sm text-gray-500 ml-2" x-text="'(' + scenario.pnl_pct.toFixed(2) + '%)'"></span>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Backtest Tab -->
+        <div x-show="activeTab === 'backtest'" x-cloak>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Strategy Selection -->
+                <div class="card">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Run Backtest</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Strategy</label>
+                            <select x-model="backtestConfig.strategy" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                                <option value="fulcrum_hunter">Fulcrum Hunter</option>
+                                <option value="deep_value">Deep Value</option>
+                                <option value="z_score_contrarian">Z-Score Contrarian</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                            <input type="date" x-model="backtestConfig.startDate" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                            <input type="date" x-model="backtestConfig.endDate" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Initial Capital</label>
+                            <input type="number" x-model="backtestConfig.capital" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                        </div>
+                        <button @click="runBacktest()" class="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                            Run Backtest
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Results -->
+                <div class="lg:col-span-2 card">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-4">Backtest Results</h3>
+                    <template x-if="backtestResults">
+                        <div>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                <div class="text-center p-3 bg-gray-50 rounded-lg">
+                                    <p class="text-sm text-gray-500">Total Return</p>
+                                    <p class="text-xl font-bold" :class="backtestResults.total_return >= 0 ? 'text-green-600' : 'text-red-600'" x-text="backtestResults.total_return.toFixed(2) + '%'"></p>
+                                </div>
+                                <div class="text-center p-3 bg-gray-50 rounded-lg">
+                                    <p class="text-sm text-gray-500">Sharpe Ratio</p>
+                                    <p class="text-xl font-bold text-gray-900" x-text="backtestResults.sharpe_ratio.toFixed(2)"></p>
+                                </div>
+                                <div class="text-center p-3 bg-gray-50 rounded-lg">
+                                    <p class="text-sm text-gray-500">Win Rate</p>
+                                    <p class="text-xl font-bold text-gray-900" x-text="backtestResults.win_rate.toFixed(1) + '%'"></p>
+                                </div>
+                                <div class="text-center p-3 bg-gray-50 rounded-lg">
+                                    <p class="text-sm text-gray-500">Max Drawdown</p>
+                                    <p class="text-xl font-bold text-red-600" x-text="backtestResults.max_drawdown.toFixed(2) + '%'"></p>
+                                </div>
+                            </div>
+                            <canvas id="equityCurveChart" height="150"></canvas>
+                        </div>
+                    </template>
+                    <template x-if="!backtestResults">
+                        <p class="text-gray-500 text-center py-8">Run a backtest to see results</p>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Historical Cases -->
+            <div class="card mt-6">
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Historical Bankruptcy Cases</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="text-left text-gray-500 border-b">
+                            <tr>
+                                <th class="pb-3">Company</th>
+                                <th class="pb-3">Industry</th>
+                                <th class="pb-3">Filing Date</th>
+                                <th class="pb-3">Outcome</th>
+                                <th class="pb-3 text-right">Total Debt</th>
+                                <th class="pb-3 text-right">Senior Recovery</th>
+                                <th class="pb-3 text-right">Sub Recovery</th>
+                                <th class="pb-3 text-right">Days</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <template x-for="c in historicalCases" :key="c.case_id">
+                                <tr class="hover:bg-gray-50">
+                                    <td class="py-3 font-medium text-gray-900" x-text="c.company"></td>
+                                    <td class="py-3 text-gray-600" x-text="c.industry"></td>
+                                    <td class="py-3 text-gray-600" x-text="c.filing_date"></td>
+                                    <td class="py-3">
+                                        <span :class="{
+                                            'bg-green-100 text-green-800': c.outcome === 'reorganization',
+                                            'bg-red-100 text-red-800': c.outcome === 'liquidation',
+                                            'bg-blue-100 text-blue-800': c.outcome === 'acquisition'
+                                        }" class="text-xs px-2 py-1 rounded" x-text="c.outcome"></span>
+                                    </td>
+                                    <td class="py-3 text-right" x-text="formatCurrency(c.total_debt)"></td>
+                                    <td class="py-3 text-right" x-text="c.senior_recovery + '%'"></td>
+                                    <td class="py-3 text-right" x-text="c.subordinated_recovery + '%'"></td>
+                                    <td class="py-3 text-right" x-text="c.days_in_bankruptcy"></td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Add Position Modal -->
+    <div x-show="showAddPosition" x-cloak class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-xl p-6 w-full max-w-lg" @click.away="showAddPosition = false">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Add Position</h3>
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+                        <input type="text" x-model="newPosition.company_name" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Security Type</label>
+                        <select x-model="newPosition.security_type" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                            <option value="secured_bond">Secured Bond</option>
+                            <option value="senior_unsecured">Senior Unsecured</option>
+                            <option value="subordinated">Subordinated</option>
+                            <option value="trade_claim">Trade Claim</option>
+                            <option value="equity">Equity</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Face Amount</label>
+                        <input type="number" x-model="newPosition.face_amount" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Entry Price</label>
+                        <input type="number" x-model="newPosition.entry_price" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Industry</label>
+                        <input type="text" x-model="newPosition.industry" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                        <select x-model="newPosition.case_status" class="w-full border border-gray-300 rounded-lg px-3 py-2">
+                            <option value="performing">Performing</option>
+                            <option value="stressed">Stressed</option>
+                            <option value="distressed">Distressed</option>
+                            <option value="bankruptcy">Bankruptcy</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button @click="showAddPosition = false" class="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
+                <button @click="addPosition()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Add Position</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Auto-detect API base URL (works on Replit and localhost)
+        const API_BASE = window.location.origin + '/api';
+
+        function dashboard() {
+            return {
+                portfolioId: 'main',
+                activeTab: 'overview',
+                lastUpdated: new Date().toLocaleTimeString(),
+                showAlerts: false,
+                showAddPosition: false,
+
+                // Data
+                summary: { nav: 0, cash: 0, total_pnl: 0, daily_pnl: 0, daily_return: 0, position_count: 0, issuer_count: 0, var_95: 0 },
+                positions: [],
+                exposure: { by_sector: {}, by_seniority: {} },
+                risk: { current_drawdown: 0, max_drawdown: 0, var_95: 0, expected_shortfall: 0, largest_position_pct: 0, position_count: 0 },
+                alerts: [],
+                stressResults: [],
+                backtestResults: null,
+                historicalCases: [],
+
+                // Sample data for demo
+                sampleDeals: [
+                    { id: 1, company: 'RetailCo Holdings', industry: 'Retail', status: 'bankruptcy', total_debt: 2500000000, senior_price: '45' },
+                    { id: 2, company: 'Energy Partners LP', industry: 'Energy', status: 'restructuring', total_debt: 1800000000, senior_price: '62' },
+                    { id: 3, company: 'TechStart Inc', industry: 'Technology', status: 'stressed', total_debt: 500000000, senior_price: '78' },
+                ],
+
+                // Forms
+                newPosition: {
+                    company_name: '',
+                    company_id: '',
+                    security_type: 'senior_unsecured',
+                    security_id: '',
+                    face_amount: 1000000,
+                    entry_price: 50,
+                    industry: '',
+                    case_status: 'distressed'
+                },
+                backtestConfig: {
+                    strategy: 'fulcrum_hunter',
+                    startDate: '2001-01-01',
+                    endDate: '2023-12-31',
+                    capital: 10000000
+                },
+
+                // Charts
+                sectorChart: null,
+                seniorityChart: null,
+                equityCurveChart: null,
+
+                async init() {
+                    await this.refresh();
+                    await this.loadHistoricalCases();
+                    this.initCharts();
+                },
+
+                async refresh() {
+                    try {
+                        // In demo mode, use sample data
+                        this.summary = {
+                            nav: 10500000,
+                            cash: 2500000,
+                            total_pnl: 500000,
+                            daily_pnl: 25000,
+                            daily_return: 0.24,
+                            position_count: 8,
+                            issuer_count: 6,
+                            var_95: 2.5,
+                            gross_exposure: 8000000
+                        };
+
+                        this.positions = [
+                            { position_id: '1', company: 'Hertz Global', security_type: 'senior_unsecured', industry: 'Transportation', status: 'bankruptcy', face_amount: 2000000, entry_price: 40, current_price: 65, current_value: 1300000, unrealized_pnl: 500000, pnl_pct: 62.5 },
+                            { position_id: '2', company: 'J.Crew Group', security_type: 'secured_bond', industry: 'Retail', status: 'bankruptcy', face_amount: 1500000, entry_price: 55, current_price: 82, current_value: 1230000, unrealized_pnl: 405000, pnl_pct: 49.1 },
+                            { position_id: '3', company: 'Caesars Entertainment', security_type: 'subordinated', industry: 'Gaming', status: 'distressed', face_amount: 1000000, entry_price: 8, current_price: 9, current_value: 90000, unrealized_pnl: 10000, pnl_pct: 12.5 },
+                            { position_id: '4', company: 'PG&E Corp', security_type: 'senior_unsecured', industry: 'Utilities', status: 'bankruptcy', face_amount: 2500000, entry_price: 93, current_price: 100, current_value: 2500000, unrealized_pnl: 175000, pnl_pct: 7.5 },
+                        ];
+
+                        this.exposure = {
+                            by_sector: { 'Retail': 1230000, 'Transportation': 1300000, 'Gaming': 90000, 'Utilities': 2500000 },
+                            by_seniority: { 'secured_bond': 1230000, 'senior_unsecured': 3800000, 'subordinated': 90000 }
+                        };
+
+                        this.risk = {
+                            current_drawdown: 2.5,
+                            max_drawdown: 8.2,
+                            var_95: 2.5,
+                            expected_shortfall: 3.8,
+                            largest_position_pct: 23.8,
+                            position_count: 8
+                        };
+
+                        this.lastUpdated = new Date().toLocaleTimeString();
+                        this.updateCharts();
+                    } catch (error) {
+                        console.error('Refresh error:', error);
+                    }
+                },
+
+                async loadHistoricalCases() {
+                    this.historicalCases = [
+                        { case_id: 'enron_2001', company: 'Enron Corp', industry: 'energy', filing_date: '2001-12-02', outcome: 'liquidation', total_debt: 31200000000, senior_recovery: 53, subordinated_recovery: 0, days_in_bankruptcy: 1081 },
+                        { case_id: 'lehman_2008', company: 'Lehman Brothers', industry: 'financial_services', filing_date: '2008-09-15', outcome: 'liquidation', total_debt: 613000000000, senior_recovery: 21, subordinated_recovery: 4, days_in_bankruptcy: 3116 },
+                        { case_id: 'gm_2009', company: 'General Motors', industry: 'automotive', filing_date: '2009-06-01', outcome: 'reorganization', total_debt: 172000000000, senior_recovery: 10, subordinated_recovery: 0, days_in_bankruptcy: 40 },
+                        { case_id: 'hertz_2020', company: 'Hertz Global', industry: 'transportation', filing_date: '2020-05-22', outcome: 'reorganization', total_debt: 19000000000, senior_recovery: 100, subordinated_recovery: 0, days_in_bankruptcy: 404 },
+                        { case_id: 'toysrus_2017', company: 'Toys R Us', industry: 'retail', filing_date: '2017-09-18', outcome: 'liquidation', total_debt: 7900000000, senior_recovery: 0, subordinated_recovery: 0, days_in_bankruptcy: 284 },
+                    ];
+                },
+
+                initCharts() {
+                    // Sector Chart
+                    const sectorCtx = document.getElementById('sectorChart');
+                    if (sectorCtx) {
+                        this.sectorChart = new Chart(sectorCtx, {
+                            type: 'doughnut',
+                            data: { labels: [], datasets: [{ data: [], backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'] }] },
+                            options: { responsive: true, plugins: { legend: { position: 'right' } } }
+                        });
+                    }
+
+                    // Seniority Chart
+                    const seniorityCtx = document.getElementById('seniorityChart');
+                    if (seniorityCtx) {
+                        this.seniorityChart = new Chart(seniorityCtx, {
+                            type: 'bar',
+                            data: { labels: [], datasets: [{ data: [], backgroundColor: '#3B82F6' }] },
+                            options: { responsive: true, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+                        });
+                    }
+                },
+
+                updateCharts() {
+                    if (this.sectorChart) {
+                        this.sectorChart.data.labels = Object.keys(this.exposure.by_sector);
+                        this.sectorChart.data.datasets[0].data = Object.values(this.exposure.by_sector);
+                        this.sectorChart.update();
+                    }
+
+                    if (this.seniorityChart) {
+                        this.seniorityChart.data.labels = Object.keys(this.exposure.by_seniority);
+                        this.seniorityChart.data.datasets[0].data = Object.values(this.exposure.by_seniority);
+                        this.seniorityChart.update();
+                    }
+                },
+
+                async runStressTest() {
+                    this.stressResults = [
+                        { scenario: '2008 Financial Crisis', pnl: -1250000, pnl_pct: -11.9 },
+                        { scenario: 'Sector Blowup', pnl: -780000, pnl_pct: -7.4 },
+                        { scenario: 'Liquidity Crisis', pnl: -520000, pnl_pct: -4.9 },
+                        { scenario: 'Recovery Rally', pnl: 850000, pnl_pct: 8.1 },
+                        { scenario: 'Bankruptcy Wave', pnl: -420000, pnl_pct: -4.0 },
+                    ];
+                },
+
+                async runBacktest() {
+                    this.backtestResults = {
+                        strategy: this.backtestConfig.strategy,
+                        total_return: 156.2,
+                        annualized_return: 12.8,
+                        sharpe_ratio: 1.45,
+                        sortino_ratio: 1.82,
+                        max_drawdown: 28.5,
+                        win_rate: 68.5,
+                        profit_factor: 2.1,
+                        total_trades: 42,
+                        avg_holding_period: 285,
+                        var_95: 8.2,
+                        equity_curve: [
+                            { date: '2001-12-02', equity: 10000000 },
+                            { date: '2008-09-15', equity: 8500000 },
+                            { date: '2009-06-01', equity: 12000000 },
+                            { date: '2015-01-15', equity: 18000000 },
+                            { date: '2020-05-22', equity: 22000000 },
+                            { date: '2023-12-31', equity: 25620000 },
+                        ]
+                    };
+
+                    // Update equity curve chart
+                    setTimeout(() => {
+                        const ctx = document.getElementById('equityCurveChart');
+                        if (ctx && this.backtestResults) {
+                            new Chart(ctx, {
+                                type: 'line',
+                                data: {
+                                    labels: this.backtestResults.equity_curve.map(p => p.date),
+                                    datasets: [{
+                                        label: 'Portfolio Value',
+                                        data: this.backtestResults.equity_curve.map(p => p.equity),
+                                        borderColor: '#3B82F6',
+                                        fill: false,
+                                        tension: 0.1
+                                    }]
+                                },
+                                options: { responsive: true, plugins: { legend: { display: false } } }
+                            });
+                        }
+                    }, 100);
+                },
+
+                async addPosition() {
+                    this.newPosition.company_id = this.newPosition.company_name.toLowerCase().replace(/\s+/g, '_');
+                    this.newPosition.security_id = `${this.newPosition.company_id}_${this.newPosition.security_type}`;
+                    
+                    // Add to local positions for demo
+                    const pos = {
+                        position_id: Date.now().toString(),
+                        company: this.newPosition.company_name,
+                        security_type: this.newPosition.security_type,
+                        industry: this.newPosition.industry,
+                        status: this.newPosition.case_status,
+                        face_amount: this.newPosition.face_amount,
+                        entry_price: this.newPosition.entry_price,
+                        current_price: this.newPosition.entry_price,
+                        current_value: this.newPosition.face_amount * (this.newPosition.entry_price / 100),
+                        unrealized_pnl: 0,
+                        pnl_pct: 0
+                    };
+                    this.positions.push(pos);
+                    this.showAddPosition = false;
+                    
+                    // Reset form
+                    this.newPosition = {
+                        company_name: '',
+                        company_id: '',
+                        security_type: 'senior_unsecured',
+                        security_id: '',
+                        face_amount: 1000000,
+                        entry_price: 50,
+                        industry: '',
+                        case_status: 'distressed'
+                    };
+                },
+
+                closePosition(pos) {
+                    if (confirm(`Close position in ${pos.company}?`)) {
+                        this.positions = this.positions.filter(p => p.position_id !== pos.position_id);
+                    }
+                },
+
+                acknowledgeAlert(alertId) {
+                    this.alerts = this.alerts.filter(a => a.alert_id !== alertId);
+                },
+
+                formatCurrency(value) {
+                    if (value === undefined || value === null) return '$0';
+                    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+                }
+            };
+        }
+    </script>
+</body>
+</html>

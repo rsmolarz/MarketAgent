@@ -1,0 +1,144 @@
+) EMAIL EXECUTIVE SUMMARY (CORE)
+1.1 Create notifiers/email_meta.py
+
+This assumes SMTP (works on Replit, VPS, Docker, etc.).
+If you already use SendGrid elsewhere, this still works (SMTP interface).
+
+import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+SMTP_HOST = os.environ.get("SMTP_HOST")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER")
+SMTP_PASS = os.environ.get("SMTP_PASS")
+EMAIL_FROM = os.environ.get("EMAIL_FROM")
+EMAIL_TO = os.environ.get("META_EMAIL_TO")  # comma-separated
+
+def send_meta_email(subject: str, text_body: str, html_body: str | None = None):
+    if not all([SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM, EMAIL_TO]):
+        raise RuntimeError("Email environment variables not fully configured")
+
+    msg = MIMEMultipart("alternative")
+    msg["From"] = EMAIL_FROM
+    msg["To"] = EMAIL_TO
+    msg["Subject"] = subject
+
+    msg.attach(MIMEText(text_body, "plain"))
+    if html_body:
+        msg.attach(MIMEText(html_body, "html"))
+
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASS)
+        server.sendmail(
+            EMAIL_FROM,
+            EMAIL_TO.split(","),
+            msg.as_string()
+        )
+
+2) META-AGENT EXECUTIVE SUMMARY (EMAIL VERSION)
+2.1 Update meta_supervisor/summary.py
+
+Replace the Slack/WhatsApp logic with email-first output.
+
+import json
+from pathlib import Path
+from datetime import datetime
+
+def build_exec_summary():
+    report = json.loads(Path("meta_supervisor/reports/meta_report.json").read_text())
+
+    fleet = report.get("fleet", {})
+    agents = report.get("agents", {})
+
+    subject = (
+        f"[Meta-Agent] Portfolio PnL {fleet.get('portfolio_pnl_bps',0)} bps | "
+        f"Hit {fleet.get('portfolio_hit_rate',0)} | "
+        f"Severity {report.get('meta',{}).get('severity','low')}"
+    )
+
+    lines = []
+    lines.append("META-AGENT EXECUTIVE SUMMARY")
+    lines.append("")
+    lines.append(f"Generated: {report.get('meta',{}).get('generated_at','')}")
+    lines.append("")
+    lines.append("PORTFOLIO")
+    lines.append(f"- PnL (bps): {fleet.get('portfolio_pnl_bps',0)}")
+    lines.append(f"- Hit rate: {fleet.get('portfolio_hit_rate',0)}")
+    lines.append(f"- Max drawdown (bps): {fleet.get('portfolio_max_drawdown_bps',0)}")
+    lines.append("")
+
+    lines.append("AGENTS (top contributors)")
+    ranked = sorted(
+        agents.items(),
+        key=lambda kv: kv[1].get("pnl_sum_bps", 0),
+        reverse=True
+    )[:6]
+
+    for name, a in ranked:
+        lines.append(
+            f"- {name}: "
+            f"PnL={a.get('pnl_sum_bps','')}bps | "
+            f"Hit={a.get('hit_rate','')} | "
+            f"Decision={a.get('decision','HOLD')}"
+        )
+
+    text_body = "\n".join(lines)
+
+    html_body = (
+        "<h2>Meta-Agent Executive Summary</h2>"
+        f"<p><b>Generated:</b> {report.get('meta',{}).get('generated_at','')}</p>"
+        f"<p><b>Portfolio PnL (bps):</b> {fleet.get('portfolio_pnl_bps',0)}</p>"
+        f"<p><b>Hit rate:</b> {fleet.get('portfolio_hit_rate',0)}</p>"
+        f"<p><b>Max DD (bps):</b> {fleet.get('portfolio_max_drawdown_bps',0)}</p>"
+        "<h3>Top Agents</h3>"
+        "<ul>" +
+        "".join(
+            f"<li><b>{name}</b>: "
+            f"PnL {a.get('pnl_sum_bps','')}bps | "
+            f"Hit {a.get('hit_rate','')} | "
+            f"{a.get('decision','HOLD')}</li>"
+            for name,a in ranked
+        ) +
+        "</ul>"
+    )
+
+    return subject, text_body, html_body
+
+3) SEND THE EMAIL FROM THE SCHEDULER
+3.1 Update scheduler.py
+
+Replace the WhatsApp / Slack section with email.
+
+Add imports
+from notifiers.email_meta import send_meta_email
+
+Replace _send_exec_summary() with:
+def _send_exec_summary(self):
+    with self.app.app_context():
+        try:
+            from meta_supervisor.summary import build_exec_summary
+            subject, text, html = build_exec_summary()
+            send_meta_email(subject, text, html)
+            logger.info("Meta-Agent executive email sent")
+        except Exception as e:
+            logger.error(f"Meta-Agent email error: {e}")
+
+
+Nothing else changes.
+
+4) REQUIRED ENVIRONMENT VARIABLES
+
+Add these to Replit Secrets or .env:
+
+SMTP_HOST=smtp.sendgrid.net   # or your SMTP server
+SMTP_PORT=587
+SMTP_USER=apikey             # SendGrid uses literal "apikey"
+SMTP_PASS=SG.xxxxxxxx
+EMAIL_FROM=meta@yourdomain.com
+META_EMAIL_TO=you@domain.com,partner@domain.com
+
+
+If you already send email elsewhere, reuse those credentials.

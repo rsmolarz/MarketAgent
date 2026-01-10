@@ -1,0 +1,377 @@
+Architecture (simple, reliable)
+
+Prometheus scrapes metrics from your app (/metrics)
+
+Grafana visualizes (latency, cost, reward, error rate, agent win-rate)
+
+Optional:
+
+Loki for logs (later)
+
+Tempo for traces (later)
+
+Add prometheus_client exporter
+requirements.txt (add)
+prometheus_client==0.20.0
+
+New file: telemetry/metrics.py
+from prometheus_client import Counter, Histogram, Gauge
+
+# Labels: agent
+AGENT_RUNS = Counter("agent_runs_total", "Total agent runs", ["agent"])
+AGENT_ERRORS = Counter("agent_errors_total", "Total agent errors", ["agent"])
+AGENT_LATENCY_MS = Histogram("agent_latency_ms", "Agent latency (ms)", ["agent"], buckets=(50,100,250,500,1000,2000,5000,10000))
+AGENT_COST_USD = Histogram("agent_cost_usd", "Agent cost (USD)", ["agent"], buckets=(0.0005,0.001,0.002,0.005,0.01,0.02,0.05,0.1))
+AGENT_REWARD = Histogram("agent_reward", "Agent reward", ["agent"], buckets=(-2,-1,-0.5,-0.2,0,0.1,0.2,0.5,1,2))
+
+# For “current” snapshots
+AGENT_LAST_REWARD = Gauge("agent_last_reward", "Last reward", ["agent"])
+AGENT_LAST_COST_USD = Gauge("agent_last_cost_usd", "Last cost (USD)", ["agent"])
+AGENT_LAST_LATENCY_MS = Gauge("agent_last_latency_ms", "Last latency (ms)", ["agent"])
+
+Update telemetry/instrumentation.py to emit metrics
+
+Add near the end of finally: after log_event(...):
+
+from telemetry.metrics import (
+    AGENT_RUNS, AGENT_ERRORS, AGENT_LATENCY_MS, AGENT_COST_USD, AGENT_REWARD,
+    AGENT_LAST_REWARD, AGENT_LAST_COST_USD, AGENT_LAST_LATENCY_MS
+)
+
+AGENT_RUNS.labels(agent_name).inc()
+if err:
+    AGENT_ERRORS.labels(agent_name).inc()
+
+AGENT_LATENCY_MS.labels(agent_name).observe(lat_ms)
+AGENT_LAST_LATENCY_MS.labels(agent_name).set(lat_ms)
+
+if cost_usd is not None:
+    AGENT_COST_USD.labels(agent_name).observe(float(cost_usd))
+    AGENT_LAST_COST_USD.labels(agent_name).set(float(cost_usd))
+
+AGENT_REWARD.labels(agent_name).observe(float(r))
+AGENT_LAST_REWARD.labels(agent_name).set(float(r))
+
+Expose /metrics in your app
+
+If you have FastAPI:
+
+from fastapi import FastAPI, Response
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+
+app = FastAPI()
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+If you have Flask:
+
+from flask import Flask, Response
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+
+app = Flask(__name__)
+
+@app.get("/metrics")
+def metrics():
+    return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
+
+Docker Compose (Grafana + Prometheus)
+
+Create ops/docker-compose.yml:
+
+version: "3.8"
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+
+Create ops/prometheus.yml (edit the target to your service/host):
+
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "agents"
+    static_configs:
+      - targets: ["host.docker.internal:8000"]  # your app host:port
+
+
+Grafana datasource: Prometheus at http://prometheus:9090. Then build panels:
+
+rate(agent_runs_total[5m]) by agent
+
+rate(agent_errors_total[5m]) / rate(agent_runs_total[5m]) error rate
+
+histogram_quantile(0.95, sum(rate(agent_latency_ms_bucket[5m])) by (le,agent))
+
+avg_over_time(agent_last_reward[15m]) etc.
+
+2) Capital-weighted reward functions
+
+Your current reward is “signal – cost – latency”. For anything near execution, you need expected value per unit risk.
+
+New file: telemetry/capital_reward.py
+from typing import Any, Dict, Optional
+
+def capital_weighted_reward(
+    agent: str,
+    output: Any,
+    *,
+    capital_usd: float,
+    max_loss_usd: float,
+    fill_prob: float = 0.7,
+    slippage_bps: float = 5.0,
+    fees_bps: float = 2.0,
+) -> float:
+    """
+    Return a scalar where >0 is good.
+    - capital_usd: how much you would deploy if acting on this signal
+    - max_loss_usd: worst-case loss limit if wrong (stop / risk cap)
+    - fill_prob: probability you can actually execute
+    - slippage_bps/fees_bps: expected friction in basis points
+
+    For arbitrage: output[0]["profit_pct"] is percent (e.g., 0.50 means 0.50%).
+    """
+    if not output or not isinstance(output, list) or not output[0]:
+        return 0.0
+
+    x = output[0]
+    if not isinstance(x, dict):
+        return 0.0
+
+    # Example: arbitrage case
+    profit_pct = float(x.get("profit_pct", 0.0)) / 100.0  # percent -> fraction
+    gross_ev = capital_usd * profit_pct
+
+    friction = capital_usd * ((slippage_bps + fees_bps) / 10000.0)
+    ev = fill_prob * (gross_ev - friction)
+
+    # Risk-adjust: EV per max loss (bounded)
+    denom = max(max_loss_usd, 1.0)
+    score = ev / denom
+
+    return score
+
+
+Usage:
+
+For an arb signal you might set capital_usd=25_000, max_loss_usd=300 (tight stops / fail-safe).
+
+For macro/geo signals, you can map them to a strategy risk budget and use the same function.
+
+3) Portfolio-level agent allocation (bandit + constraints)
+
+You want an allocator that decides which agents run more often and which signals get more capital.
+
+Minimal design
+
+Maintain a rolling reward distribution per agent
+
+Use a bandit for allocation (UCB or Thompson Sampling)
+
+Impose constraints:
+
+execution-sensitive agents capped
+
+max capital at risk per strategy
+
+min run frequency for “watchers”
+
+New file: meta/allocator.py
+import json
+from pathlib import Path
+from math import log, sqrt
+from collections import defaultdict, deque
+
+EVENTS = Path("telemetry/events.jsonl")
+
+class UCBAllocator:
+    def __init__(self, window=500, exploration=1.5):
+        self.window = window
+        self.exploration = exploration
+        self.rewards = defaultdict(lambda: deque(maxlen=window))
+        self.counts = defaultdict(int)
+
+    def ingest_events(self, last_n=5000):
+        if not EVENTS.exists():
+            return
+        for ln in EVENTS.read_text().splitlines()[-last_n:]:
+            try:
+                e = json.loads(ln)
+            except:
+                continue
+            a = e.get("agent")
+            r = e.get("reward")
+            if a and r is not None:
+                self.rewards[a].append(float(r))
+                self.counts[a] += 1
+
+    def score(self, agent: str, total_pulls: int) -> float:
+        rs = self.rewards[agent]
+        n = max(self.counts[agent], 1)
+        mean = sum(rs)/len(rs) if rs else 0.0
+        bonus = self.exploration * sqrt(log(max(total_pulls, 2)) / n)
+        return mean + bonus
+
+    def allocate(self, agents, min_runs=None, max_runs=None, total_budget_runs=100):
+        """
+        agents: list of agent names
+        returns dict agent -> run_quota
+        """
+        min_runs = min_runs or {}
+        max_runs = max_runs or {}
+
+        total_pulls = sum(self.counts[a] for a in agents) + 1
+        scores = {a: self.score(a, total_pulls) for a in agents}
+
+        # Start with minimums
+        quotas = {a: int(min_runs.get(a, 0)) for a in agents}
+        remaining = max(total_budget_runs - sum(quotas.values()), 0)
+
+        # Greedy allocate remaining runs to best scores respecting max
+        ranked = sorted(agents, key=lambda a: scores[a], reverse=True)
+        i = 0
+        while remaining > 0 and ranked:
+            a = ranked[i % len(ranked)]
+            if quotas[a] < int(max_runs.get(a, total_budget_runs)):
+                quotas[a] += 1
+                remaining -= 1
+            i += 1
+
+        return quotas, scores
+
+
+How to use it:
+
+Run allocator every N minutes
+
+It outputs per-agent run quotas
+
+Your scheduler executes agents accordingly (or scales their polling frequency)
+
+4) Live trading guardrails (hard safety gates)
+
+Even if you’re paper trading now, build guardrails as if real.
+
+Core components
+
+Pre-trade checks: max notional, max daily loss, max leverage, min confidence, liquidity, spread, stale data
+
+Circuit breakers: if error rate spikes or reward collapses → halt execution
+
+Kill switch: manual + automatic
+
+Two-man rule (optional): for new strategies, require approval token
+
+New file: trading/guardrails.py
+from dataclasses import dataclass
+from typing import Dict, Any, Optional
+import time
+
+@dataclass
+class GuardrailConfig:
+    paper_only: bool = True
+    max_order_notional_usd: float = 10_000
+    max_daily_loss_usd: float = 500
+    min_expected_edge_bps: float = 10.0
+    max_spread_bps: float = 15.0
+    max_slippage_bps: float = 20.0
+    max_staleness_sec: int = 30
+    max_error_rate_5m: float = 0.10
+
+class KillSwitch:
+    def __init__(self):
+        self._enabled = False
+        self._reason = ""
+
+    def trip(self, reason: str):
+        self._enabled = True
+        self._reason = reason
+
+    def clear(self):
+        self._enabled = False
+        self._reason = ""
+
+    @property
+    def enabled(self):
+        return self._enabled
+
+    @property
+    def reason(self):
+        return self._reason
+
+class TradeGuardrails:
+    def __init__(self, cfg: GuardrailConfig, kill: KillSwitch):
+        self.cfg = cfg
+        self.kill = kill
+        self.daily_loss_usd = 0.0
+        self.day_key = time.strftime("%Y-%m-%d")
+
+    def _roll_day(self):
+        k = time.strftime("%Y-%m-%d")
+        if k != self.day_key:
+            self.day_key = k
+            self.daily_loss_usd = 0.0
+
+    def record_pnl(self, pnl_usd: float):
+        self._roll_day()
+        self.daily_loss_usd += min(0.0, pnl_usd)
+
+    def check(self, signal: Dict[str, Any]) -> (bool, str):
+        """
+        signal must include:
+        - notional_usd
+        - expected_edge_bps
+        - spread_bps
+        - slippage_bps
+        - data_age_sec
+        """
+        self._roll_day()
+
+        if self.kill.enabled:
+            return False, f"KillSwitch enabled: {self.kill.reason}"
+
+        if self.cfg.paper_only and not signal.get("paper", True):
+            return False, "Paper-only mode enabled"
+
+        notional = float(signal.get("notional_usd", 0.0))
+        if notional > self.cfg.max_order_notional_usd:
+            return False, "Order notional exceeds limit"
+
+        if abs(self.daily_loss_usd) > self.cfg.max_daily_loss_usd:
+            self.kill.trip("Daily loss limit breached")
+            return False, "Daily loss limit breached"
+
+        if float(signal.get("expected_edge_bps", 0.0)) < self.cfg.min_expected_edge_bps:
+            return False, "Expected edge below minimum"
+
+        if float(signal.get("spread_bps", 0.0)) > self.cfg.max_spread_bps:
+            return False, "Spread too wide"
+
+        if float(signal.get("slippage_bps", 0.0)) > self.cfg.max_slippage_bps:
+            return False, "Slippage too high"
+
+        if int(signal.get("data_age_sec", 10**9)) > self.cfg.max_staleness_sec:
+            return False, "Signal data too stale"
+
+        return True, "OK"
+
+
+Where to enforce:
+
+In the only place orders are created (execution layer)
+
+If check fails → do not place; log telemetry; possibly trip kill switch on serious breaches

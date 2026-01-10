@@ -1,0 +1,771 @@
+0) Add dependencies
+
+In pyproject.toml add if not present:
+
+requests
+
+feedparser (only if you later want the literature scanner)
+
+1) Price fetcher (Binance primary, Coinbase fallback)
+
+Create alpha/prices_crypto.py:
+
+import time
+import requests
+from datetime import datetime, timezone
+
+BINANCE_BASE = "https://api.binance.com"
+COINBASE_BASE = "https://api.exchange.coinbase.com"
+
+def _to_ms(dt: datetime) -> int:
+    return int(dt.timestamp() * 1000)
+
+def _parse_iso(ts_iso: str) -> datetime:
+    return datetime.fromisoformat(ts_iso.replace("Z", "+00:00"))
+
+def _binance_symbol(sym: str) -> str:
+    # expects "BTC", "ETH", "SOL" -> "BTCUSDT"
+    s = sym.upper().replace("/", "")
+    if s.endswith("USDT"):
+        return s
+    return f"{s}USDT"
+
+def get_binance_close(symbol: str, ts_iso: str, interval: str = "1h") -> float | None:
+    dt = _parse_iso(ts_iso)
+    sym = _binance_symbol(symbol)
+
+    start = _to_ms(dt) - 2 * 60 * 60 * 1000  # small buffer
+    end = _to_ms(dt) + 2 * 60 * 60 * 1000
+
+    r = requests.get(
+        f"{BINANCE_BASE}/api/v3/klines",
+        params={"symbol": sym, "interval": interval, "startTime": start, "endTime": end, "limit": 10},
+        timeout=15,
+    )
+    if r.status_code != 200:
+        return None
+    data = r.json()
+    if not data:
+        return None
+
+    # pick candle whose open time is closest <= dt
+    target_ms = _to_ms(dt)
+    best = None
+    for k in data:
+        open_ms = int(k[0])
+        close_px = float(k[4])
+        if open_ms <= target_ms:
+            best = close_px
+    if best is None:
+        best = float(data[0][4])
+    return best
+
+def get_coinbase_spot(symbol: str) -> float | None:
+    # Coinbase public ticker, limited symbols (BTC-USD, ETH-USD, etc.)
+    sym = symbol.upper()
+    pair = f"{sym}-USD"
+    r = requests.get(f"{COINBASE_BASE}/products/{pair}/ticker", timeout=15)
+    if r.status_code != 200:
+        return None
+    j = r.json()
+    try:
+        return float(j["price"])
+    except Exception:
+        return None
+
+def get_price(symbol: str, ts_iso: str, horizon_hours: int) -> float | None:
+    # use interval aligned to horizon for more stable close
+    interval = "1h" if horizon_hours <= 1 else ("4h" if horizon_hours <= 4 else "1d")
+    px = get_binance_close(symbol, ts_iso, interval=interval)
+    if px is not None:
+        return px
+    # fallback (no timestamp alignment, but better than nothing)
+    return get_coinbase_spot(symbol)
+
+2) Multi-horizon reconciliation (1h / 4h / 24h) with run_id preserved
+
+Create alpha/reconcile.py:
+
+import json
+from pathlib import Path
+from datetime import datetime, timedelta, timezone
+
+from alpha.prices_crypto import get_price
+
+ALPHA = Path("alpha/events.jsonl")
+OUT = Path("alpha/reconciled.jsonl")
+
+HORIZONS_HOURS = [1, 4, 24]
+
+def load_jsonl(p: Path):
+    if not p.exists():
+        return []
+    return [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+
+def parse_ts(ts: str) -> datetime:
+    return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+def main(limit: int | None = None):
+    events = load_jsonl(ALPHA)
+    if limit:
+        events = events[-limit:]
+
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+
+    reconciled = []
+    for e in events:
+        symbol = e.get("symbol")
+        direction = (e.get("direction") or "").upper()
+        ts = e.get("ts")
+        if not symbol or direction not in ("LONG", "SHORT") or not ts:
+            continue
+
+        t0 = parse_ts(ts)
+
+        for h in HORIZONS_HOURS:
+            t1 = t0 + timedelta(hours=h)
+
+            entry_px = get_price(symbol, t0.isoformat().replace("+00:00", "Z"), horizon_hours=h)
+            exit_px  = get_price(symbol, t1.isoformat().replace("+00:00", "Z"), horizon_hours=h)
+
+            if not entry_px or not exit_px:
+                continue
+
+            if direction == "LONG":
+                pnl_bps = (exit_px / entry_px - 1.0) * 10_000
+            else:
+                pnl_bps = (entry_px / exit_px - 1.0) * 10_000
+
+            reconciled.append({
+                "ts": ts,
+                "agent": e.get("agent"),
+                "run_id": e.get("run_id"),
+                "symbol": symbol,
+                "direction": direction,
+                "entry_price": entry_px,
+                "exit_price": exit_px,
+                "horizon_hours": h,
+                "realized_pnl_bps": round(pnl_bps, 2),
+                "regime": e.get("regime"),
+                "confidence": e.get("confidence"),
+                "score_final": e.get("score_final"),
+            })
+
+    # append-only
+    with open(OUT, "a", encoding="utf-8") as f:
+        for r in reconciled:
+            f.write(json.dumps(r) + "\n")
+
+    return len(reconciled)
+
+if __name__ == "__main__":
+    n = main()
+    print(f"Reconciled rows appended: {n}")
+
+3) Run-level failure forensics (joins on run_id)
+
+Create/replace discovery_agents/failure_forensics.py:
+
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+RECON = Path("alpha/reconciled.jsonl")
+TEL   = Path("telemetry/events.jsonl")
+OUT   = Path("meta_supervisor/research/failure_forensics.json")
+
+FOCUS_HORIZON = 24
+TOP_N = 50
+
+def load_jsonl(p: Path):
+    if not p.exists():
+        return []
+    return [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+
+def run():
+    recon = [r for r in load_jsonl(RECON) if int(r.get("horizon_hours", 0)) == FOCUS_HORIZON]
+    tel = load_jsonl(TEL)
+
+    tel_by_run = {t.get("run_id"): t for t in tel if t.get("run_id")}
+    joined = []
+    for r in recon:
+        rid = r.get("run_id")
+        joined.append({**r, **(tel_by_run.get(rid, {}))})
+
+    worst = sorted(joined, key=lambda e: float(e.get("realized_pnl_bps", 0.0)))[:TOP_N]
+
+    by_agent = {}
+    for e in worst:
+        a = e.get("agent", "unknown")
+        by_agent.setdefault(a, []).append(e)
+
+    summaries = []
+    for agent, rows in by_agent.items():
+        pnls = [float(x.get("realized_pnl_bps", 0.0)) for x in rows]
+        lats = [int(x.get("latency_ms", 0)) for x in rows if x.get("latency_ms") is not None]
+        toks = [int(x.get("tokens_in", 0)) + int(x.get("tokens_out", 0)) for x in rows]
+        errs = [int(x.get("errors", 0)) for x in rows]
+
+        summaries.append({
+            "agent": agent,
+            "loss_count": len(rows),
+            "avg_loss_bps": round(sum(pnls)/max(len(pnls),1), 2),
+            "median_latency_ms": sorted(lats)[len(lats)//2] if lats else None,
+            "median_tokens": sorted(toks)[len(toks)//2] if toks else None,
+            "error_rate": round(sum(errs)/max(len(errs),1), 3),
+            "example_runs": rows[:5],
+            "hypotheses": [
+                "Regime mismatch (edge not conditioned on regime).",
+                "Liquidity/volatility shock (needs gating).",
+                "Confidence not decaying after losses (position sizing too sticky).",
+            ],
+        })
+
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(json.dumps({
+        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00","Z"),
+        "horizon_hours": FOCUS_HORIZON,
+        "worst_runs": worst[:10],
+        "by_agent": sorted(summaries, key=lambda x: x["avg_loss_bps"])
+    }, indent=2))
+
+    return summaries
+
+if __name__ == "__main__":
+    run()
+
+4) Confidence decay based on realized losses (run-level)
+
+Replace meta_supervisor/confidence_decay.py with a complete version (your zip copy is truncated):
+
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+CONF = Path("meta_supervisor/state/confidence_multipliers.json")
+RECON = Path("alpha/reconciled.jsonl")
+
+FOCUS_HORIZON = 24
+LOOKBACK_RUNS = 30
+
+def load_jsonl(p: Path):
+    if not p.exists():
+        return []
+    return [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+
+def load_state():
+    if not CONF.exists():
+        return {}
+    try:
+        return json.loads(CONF.read_text())
+    except Exception:
+        return {}
+
+def save_state(state: dict):
+    CONF.parent.mkdir(parents=True, exist_ok=True)
+    CONF.write_text(json.dumps(state, indent=2))
+
+def update_confidence_multipliers():
+    recon = [r for r in load_jsonl(RECON) if int(r.get("horizon_hours", 0)) == FOCUS_HORIZON]
+    state = load_state()
+
+    by_agent = {}
+    for r in recon:
+        by_agent.setdefault(r.get("agent","unknown"), []).append(r)
+
+    for agent, rows in by_agent.items():
+        rows = rows[-LOOKBACK_RUNS:]
+        pnls = [float(x.get("realized_pnl_bps", 0.0)) for x in rows]
+
+        # simple rules: decay on losses, recover slowly on wins
+        mult = float(state.get(agent, {}).get("confidence_multiplier", 1.0))
+
+        recent = pnls[-5:] if len(pnls) >= 5 else pnls
+        if recent and sum(recent) < -50:
+            mult *= 0.85
+        elif recent and sum(recent) < 0:
+            mult *= 0.93
+        elif recent and sum(recent) > 50:
+            mult *= 1.03
+
+        mult = max(0.2, min(mult, 1.2))
+
+        state[agent] = {
+            "confidence_multiplier": round(mult, 4),
+            "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00","Z"),
+            "horizon_hours": FOCUS_HORIZON,
+        }
+
+    save_state(state)
+    return state
+
+def get_confidence_multiplier(agent: str) -> float:
+    state = load_state()
+    return float(state.get(agent, {}).get("confidence_multiplier", 1.0))
+
+if __name__ == "__main__":
+    print(json.dumps(update_confidence_multipliers(), indent=2))
+
+5) Per-agent capital allocation
+
+Create meta_supervisor/allocation.py:
+
+import json
+from pathlib import Path
+from meta_supervisor.confidence_decay import get_confidence_multiplier
+
+ALLOCATION_STATE = Path("meta_supervisor/state/allocation.json")
+
+def compute_weights(agent_stats: dict) -> dict:
+    # agent_stats[name] should include pnl_sum_bps, hit_rate, error_rate
+    raw = {}
+    for name, s in agent_stats.items():
+        pnl = float(s.get("pnl_sum_bps", 0.0))
+        hit = float(s.get("hit_rate", 0.0))
+        err = float(s.get("error_rate", 0.0))
+        if err > 0.05:
+            continue
+        if pnl <= 0:
+            continue
+
+        # simple “quality” proxy
+        q = pnl * (0.5 + hit)  # rewards hit rate
+        q *= get_confidence_multiplier(name)  # apply decay/recovery
+        raw[name] = max(q, 0.0)
+
+    total = sum(raw.values())
+    if total <= 0:
+        return {}
+
+    weights = {k: round(v / total, 4) for k, v in raw.items()}
+    return weights
+
+def save_weights(weights: dict):
+    ALLOCATION_STATE.parent.mkdir(parents=True, exist_ok=True)
+    ALLOCATION_STATE.write_text(json.dumps(weights, indent=2))
+
+def main(agent_stats: dict):
+    w = compute_weights(agent_stats)
+    save_weights(w)
+    return w
+
+6) Promotion gates on realized PnL
+
+Replace/extend meta_supervisor/promotion_gate.py to use realized performance:
+
+def promotion_allowed(report: dict) -> tuple[bool, list[str]]:
+    reasons = []
+    fleet = report.get("fleet", {})
+    agents = report.get("agents", {})
+
+    if float(fleet.get("portfolio_pnl_bps", 0)) <= 0:
+        reasons.append("Portfolio PnL ≤ 0")
+
+    for name, a in agents.items():
+        if a.get("decision") == "KILL":
+            reasons.append(f"{name} marked KILL")
+        # promotion gate requires agent positive pnl and low error
+        if a.get("decision") == "PROMOTE":
+            if float(a.get("pnl_sum_bps", 0)) < 150:
+                reasons.append(f"{name} PROMOTE but pnl_sum_bps < 150")
+            if float(a.get("error_rate", 0)) > 0:
+                reasons.append(f"{name} PROMOTE but error_rate > 0")
+
+    return (len(reasons) == 0), reasons
+
+7) Update Meta report builder to use reconciled PnL + allocation + confidence
+
+Your existing meta_supervisor/build_meta_report.py in the zip is truncated. Replace it with this complete version:
+
+Create/replace meta_supervisor/build_meta_report.py:
+
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+from meta_supervisor.portfolio import portfolio_from_alpha
+from meta_supervisor.retirement import retirement_score, retirement_label
+from meta_supervisor.allocation import main as alloc_main
+from meta_supervisor.confidence_decay import update_confidence_multipliers
+
+TEL = Path("telemetry/events.jsonl")
+RECON = Path("alpha/reconciled.jsonl")
+
+def _now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+
+def load_jsonl(p: Path):
+    if not p.exists():
+        return []
+    return [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+
+def _load_json(path: str, default):
+    p = Path(path)
+    if not p.exists():
+        return default
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return default
+
+def main():
+    tel = load_jsonl(TEL)
+    recon = load_jsonl(RECON)
+
+    # focus horizon=24 for portfolio + decisions (keep 1h/4h available for later)
+    recon24 = [r for r in recon if int(r.get("horizon_hours", 0)) == 24]
+
+    tel_by_run = {t.get("run_id"): t for t in tel if t.get("run_id")}
+    joined = [{**r, **tel_by_run.get(r.get("run_id"), {})} for r in recon24]
+
+    # per-agent stats
+    agents = {}
+    for e in joined:
+        a = e.get("agent","unknown")
+        s = agents.setdefault(a, {
+            "runs": 0,
+            "pnl_sum_bps": 0.0,
+            "hit": 0,
+            "errors": 0,
+            "latencies": [],
+            "cost_usd": 0.0,
+            "alpha_signals": 0,
+        })
+        s["runs"] += 1
+        pnl = float(e.get("realized_pnl_bps", 0.0))
+        s["pnl_sum_bps"] += pnl
+        s["hit"] += 1 if pnl > 0 else 0
+        s["errors"] += int(e.get("errors", 0))
+        if e.get("latency_ms") is not None:
+            s["latencies"].append(int(e.get("latency_ms", 0)))
+        s["cost_usd"] += float(e.get("cost_usd", 0.0))
+        s["alpha_signals"] += 1
+
+    for a, s in agents.items():
+        n = max(s["runs"], 1)
+        s["pnl_sum_bps"] = round(s["pnl_sum_bps"], 2)
+        s["hit_rate"] = round(s["hit"] / n, 3)
+        s["error_rate"] = round(s["errors"] / n, 3)
+        s["avg_latency_ms"] = int(sum(s["latencies"]) / max(len(s["latencies"]),1)) if s["latencies"] else None
+        s["cost_usd"] = round(s["cost_usd"], 6)
+
+        # retirement score
+        rs = retirement_score(s)
+        s["retirement_score"] = rs
+        s["retirement_label"] = retirement_label(rs)
+
+        # decisions
+        s["decision"] = "HOLD"
+        if s["pnl_sum_bps"] < -150 or s["error_rate"] > 0.2:
+            s["decision"] = "KILL"
+        elif s["pnl_sum_bps"] > 150 and s["hit_rate"] >= 0.55 and s["error_rate"] == 0 and (s["avg_latency_ms"] or 0) < 900:
+            s["decision"] = "PROMOTE"
+
+    # portfolio metrics from realized pnl
+    fleet = portfolio_from_alpha(recon24)
+
+    # update confidence multipliers (decay/recover)
+    confidence_state = update_confidence_multipliers()
+
+    # allocation weights
+    weights = alloc_main(agents)
+
+    report = {
+        "meta": {"generated_at": _now(), "severity": "high" if fleet.get("portfolio_pnl_bps", 0) < 0 else "low"},
+        "fleet": fleet,
+        "agents": agents,
+        "allocation": {"weights": weights, "confidence_state": confidence_state},
+        "research": {
+            "literature_scan": _load_json("meta_supervisor/research/literature_scan.json", {}),
+            "failure_forensics": _load_json("meta_supervisor/research/failure_forensics.json", {}),
+        },
+        "regime_proposals": _load_json("meta_supervisor/agent_proposals_regime.json", {}),
+    }
+
+    Path("meta_supervisor/reports").mkdir(parents=True, exist_ok=True)
+    Path("meta_supervisor/reports/meta_report.json").write_text(json.dumps(report, indent=2))
+    return report
+
+if __name__ == "__main__":
+    main()
+    print("Meta report generated: meta_supervisor/reports/meta_report.json")
+
+8) LP-grade performance emails (portfolio, costs, promotion/kill, allocation)
+
+Create services/lp_email_service.py:
+
+import json
+from pathlib import Path
+from datetime import datetime
+
+REPORT = Path("meta_supervisor/reports/meta_report.json")
+
+def _load():
+    if not REPORT.exists():
+        return {}
+    return json.loads(REPORT.read_text())
+
+def format_lp_email(report: dict) -> tuple[str, str, str]:
+    meta = report.get("meta", {})
+    fleet = report.get("fleet", {})
+    agents = report.get("agents", {})
+    alloc = report.get("allocation", {}).get("weights", {})
+
+    subject = f"[LP Daily] Portfolio {fleet.get('portfolio_pnl_bps',0)} bps | DD {fleet.get('portfolio_max_drawdown_bps',0)} bps | {meta.get('generated_at','')}"
+
+    # Plain text
+    lines = []
+    lines.append(subject)
+    lines.append("")
+    lines.append("PORTFOLIO")
+    lines.append(f"- PnL (bps): {fleet.get('portfolio_pnl_bps')}")
+    lines.append(f"- Hit rate: {fleet.get('portfolio_hit_rate')}")
+    lines.append(f"- Max DD (bps): {fleet.get('portfolio_max_drawdown_bps')}")
+    lines.append("")
+
+    # Decisions
+    promos = [k for k,v in agents.items() if v.get("decision") == "PROMOTE"]
+    kills  = [k for k,v in agents.items() if v.get("decision") == "KILL"]
+    lines.append("DECISIONS")
+    lines.append(f"- PROMOTE: {', '.join(promos) if promos else 'None'}")
+    lines.append(f"- KILL: {', '.join(kills) if kills else 'None'}")
+    lines.append("")
+
+    # Allocation
+    lines.append("ALLOCATION (top)")
+    for name, w in sorted(alloc.items(), key=lambda kv: kv[1], reverse=True)[:8]:
+        lines.append(f"- {name}: {w}")
+    text = "\n".join(lines)
+
+    # HTML
+    def td(x): return f"<td style='border:1px solid #ddd;padding:8px'>{x}</td>"
+    def th(x): return f"<th style='border:1px solid #ddd;padding:8px;background:#f6f6f6;text-align:left'>{x}</th>"
+
+    rows = []
+    for name, a in sorted(agents.items(), key=lambda kv: kv[1].get("pnl_sum_bps",0), reverse=True)[:12]:
+        rows.append(
+            "<tr>" +
+            td(name) +
+            td(a.get("decision","")) +
+            td(a.get("pnl_sum_bps","")) +
+            td(a.get("hit_rate","")) +
+            td(a.get("error_rate","")) +
+            td(a.get("avg_latency_ms","")) +
+            td(a.get("cost_usd","")) +
+            "</tr>"
+        )
+
+    html = f"""
+    <html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.35">
+      <h2>LP Daily Performance</h2>
+      <div><b>Generated:</b> {meta.get("generated_at","")}</div>
+      <h3>Portfolio</h3>
+      <ul>
+        <li><b>PnL (bps):</b> {fleet.get("portfolio_pnl_bps")}</li>
+        <li><b>Hit rate:</b> {fleet.get("portfolio_hit_rate")}</li>
+        <li><b>Max drawdown (bps):</b> {fleet.get("portfolio_max_drawdown_bps")}</li>
+      </ul>
+
+      <h3>Decisions</h3>
+      <ul>
+        <li><b>PROMOTE:</b> {", ".join(promos) if promos else "None"}</li>
+        <li><b>KILL:</b> {", ".join(kills) if kills else "None"}</li>
+      </ul>
+
+      <h3>Allocation (top)</h3>
+      <ul>
+        {''.join([f"<li><b>{k}:</b> {v}</li>" for k,v in sorted(alloc.items(), key=lambda kv: kv[1], reverse=True)[:8]])}
+      </ul>
+
+      <h3>Top Agents</h3>
+      <table style="border-collapse:collapse;width:100%">
+        <tr>{th("Agent")}{th("Decision")}{th("PnL bps")}{th("Hit")}{th("Err")}{th("Latency ms")}{th("Cost $")}</tr>
+        {''.join(rows)}
+      </table>
+
+      <p style="color:#666;margin-top:12px">
+        Informational performance summary. Not investment advice.
+      </p>
+    </body></html>
+    """
+
+    return subject, text, html
+
+def send_lp_email():
+    report = _load()
+    if not report:
+        return False
+
+    subject, text, html = format_lp_email(report)
+
+    # Use your existing email sender (DailyEmailService / mail integration)
+    from services.email_service import send_email  # adjust import to your repo
+    # Example: send_email(to, subject, text, html)
+    send_email(subject=subject, text_body=text, html_body=html)
+    return True
+
+
+You will need to align the import to whatever your existing email sender is called (you already have a daily email service; use its send function).
+
+9) Wire everything into scheduler
+
+In scheduler.py, add these jobs in init_app() after schedule_daily_emails():
+
+self.schedule_alpha_reconcile()
+self.schedule_meta_reports()
+self.schedule_lp_email()
+
+
+Add these methods:
+
+def schedule_alpha_reconcile(self):
+    self.scheduler.add_job(
+        func=self._alpha_reconcile,
+        trigger=IntervalTrigger(minutes=30),
+        id="alpha_reconcile",
+        replace_existing=True
+    )
+
+def _alpha_reconcile(self):
+    try:
+        from alpha.reconcile import main as reconcile_main
+        reconcile_main(limit=500)  # reconcile recent signals
+    except Exception as e:
+        logger.error(f"alpha reconcile error: {e}")
+
+def schedule_meta_reports(self):
+    self.scheduler.add_job(
+        func=self._build_meta_report,
+        trigger=IntervalTrigger(minutes=30),
+        id="meta_report_build",
+        replace_existing=True
+    )
+    self.scheduler.add_job(
+        func=self._run_failure_forensics,
+        trigger=CronTrigger(hour=8, minute=30),
+        id="failure_forensics_daily",
+        replace_existing=True
+    )
+
+def _build_meta_report(self):
+    try:
+        from meta_supervisor.build_meta_report import main as build_main
+        build_main()
+    except Exception as e:
+        logger.error(f"meta report error: {e}")
+
+def _run_failure_forensics(self):
+    try:
+        from discovery_agents.failure_forensics import run as ff_run
+        ff_run()
+    except Exception as e:
+        logger.error(f"failure forensics error: {e}")
+
+def schedule_lp_email(self):
+    self.scheduler.add_job(
+        func=self._send_lp_email,
+        trigger=CronTrigger(hour=7, minute=10),
+        id="lp_email_daily",
+        replace_existing=True
+    )
+
+def _send_lp_email(self):
+    try:
+        from services.lp_email_service import send_lp_email
+        send_lp_email()
+    except Exception as e:
+        logger.error(f"lp email error: {e}")
+
+10) Dashboard: show Meta report + allocation + decisions
+
+In your Flask app.py, add a route:
+
+from flask import render_template
+import json
+from pathlib import Path
+
+@app.route("/meta")
+def meta_dashboard():
+    p = Path("meta_supervisor/reports/meta_report.json")
+    report = json.loads(p.read_text()) if p.exists() else {}
+    return render_template("meta_dashboard.html", report=report)
+
+
+Create template templates/meta_dashboard.html:
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Meta-Agent Dashboard</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;margin:20px}
+    table{border-collapse:collapse;width:100%}
+    td,th{border:1px solid #ddd;padding:8px}
+    th{background:#f6f6f6;text-align:left}
+    .muted{color:#666}
+  </style>
+</head>
+<body>
+  <h2>Meta-Agent Dashboard</h2>
+
+  <div class="muted">
+    Generated: {{ report.meta.generated_at if report.meta else "" }}
+  </div>
+
+  <h3>Portfolio</h3>
+  <ul>
+    <li>PnL (bps): <b>{{ report.fleet.portfolio_pnl_bps if report.fleet else "" }}</b></li>
+    <li>Hit rate: <b>{{ report.fleet.portfolio_hit_rate if report.fleet else "" }}</b></li>
+    <li>Max DD (bps): <b>{{ report.fleet.portfolio_max_drawdown_bps if report.fleet else "" }}</b></li>
+  </ul>
+
+  <h3>Allocation (weights)</h3>
+  <table>
+    <tr><th>Agent</th><th>Weight</th></tr>
+    {% for name, w in (report.allocation.weights.items() if report.allocation and report.allocation.weights else []) %}
+      <tr><td>{{ name }}</td><td>{{ w }}</td></tr>
+    {% endfor %}
+  </table>
+
+  <h3>Agents</h3>
+  <table>
+    <tr>
+      <th>Agent</th><th>Decision</th><th>PnL bps</th><th>Hit</th><th>Err</th><th>Latency ms</th><th>Cost $</th><th>Retirement</th>
+    </tr>
+    {% for name, a in (report.agents.items() if report.agents else []) %}
+      <tr>
+        <td>{{ name }}</td>
+        <td>{{ a.decision }}</td>
+        <td>{{ a.pnl_sum_bps }}</td>
+        <td>{{ a.hit_rate }}</td>
+        <td>{{ a.error_rate }}</td>
+        <td>{{ a.avg_latency_ms }}</td>
+        <td>{{ a.cost_usd }}</td>
+        <td>{{ a.retirement_label }} ({{ a.retirement_score }})</td>
+      </tr>
+    {% endfor %}
+  </table>
+</body>
+</html>
+
+11) What to run to validate (in Replit shell)
+
+Reconcile (creates realized pnl):
+
+python -m alpha.reconcile
+
+
+Build report:
+
+python -m meta_supervisor.build_meta_report
+
+
+Failure forensics:
+
+python -m discovery_agents.failure_forensics
+
+
+Open dashboard:
+
+visit /meta

@@ -1,0 +1,123 @@
+1️⃣ Concept (clear + deterministic)
+
+Each agent gets a decay multiplier based on recent realized performance.
+
+Instead of:
+
+enabled = False
+
+
+We do:
+
+effective_weight = base_weight × decay_factor
+
+
+Where:
+
+decay_factor ∈ [min_floor, 1.0]
+
+updates over time
+
+recovers if agent improves
+
+2️⃣ agent_decay.py
+
+Create one small file.
+
+"""
+Agent Decay Curves
+
+Smoothly fades agent capital allocation based on recent performance.
+Prevents abrupt disable / enable behavior.
+"""
+
+import math
+from typing import Dict
+
+
+class AgentDecayModel:
+    def __init__(
+        self,
+        half_life_days: float = 30.0,
+        min_floor: float = 0.05,
+        recovery_rate: float = 0.02
+    ):
+        self.half_life_days = half_life_days
+        self.min_floor = min_floor
+        self.recovery_rate = recovery_rate
+
+    def decay_factor(
+        self,
+        score: float,
+        days_since_eval: float
+    ) -> float:
+        """
+        score: normalized agent performance (e.g. Sharpe, mean return)
+        days_since_eval: time since last evaluation window
+        """
+
+        # Bad agents decay exponentially
+        if score < 0:
+            decay = math.exp(
+                math.log(0.5) * days_since_eval / self.half_life_days
+            )
+            return max(decay, self.min_floor)
+
+        # Good agents slowly recover toward 1.0
+        recovery = min(
+            1.0,
+            self.min_floor + (1.0 - self.min_floor) *
+            (1 - math.exp(-self.recovery_rate * days_since_eval))
+        )
+        return recovery
+
+3️⃣ Plug it into CapitalAllocator (minimal change)
+Modify CapitalAllocator.__init__
+from agent_decay import AgentDecayModel
+
+self.decay_model = AgentDecayModel()
+
+Modify allocation loop (this is the only logic change)
+
+Replace:
+
+agent_weight = min(cfg.get("weight", 0), self.max_agent_weight)
+
+
+With:
+
+base_weight = min(cfg.get("weight", 0), self.max_agent_weight)
+
+score = cfg.get("score", 0.0)
+days = cfg.get("days_since_eval", 30)
+
+decay = self.decay_model.decay_factor(score, days)
+agent_weight = base_weight * decay
+
+
+That’s it.
+
+No other code touched.
+
+4️⃣ Example effect (real numbers)
+Agent	Score	Base Weight	Decay	Effective
+MarketCorrection	-0.70	1.0	0.18	0.18
+EquityMomentum	-0.10	1.0	0.63	0.63
+BondStress	+0.40	0.1	0.91	0.091
+MacroWatcher	+0.20	1.0	0.85	0.85
+
+No cliffs. No sudden death.
+
+5️⃣ Why this is structurally important
+
+You now have:
+
+Continuous learning
+
+Capital memory
+
+Regime adaptability
+
+Statistical forgiveness
+
+This is how real funds avoid blowing up from false negatives.

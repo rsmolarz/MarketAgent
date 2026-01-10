@@ -1,0 +1,120 @@
+{
+  "agent": {
+    "class_name": "IntradayVolumeSpikeAgent",
+    "module_slug": "intraday_volume_spike_agent",
+    "description": "Detects unusual intraday volume spikes in equities by comparing recent volume against historical intraday averages to identify potential market inefficiencies due to sudden liquidity surges.",
+    "category": "equities",
+    "data_sources": [
+      {
+        "name": "equity_intraday_bars",
+        "type": "existing_client",
+        "details": "Uses intraday bar data (e.g., 5-minute bars) for equities to compute volume metrics."
+      }
+    ],
+    "detection_logic": [
+      "For each equity symbol, retrieve intraday volume bars for the current trading day and the past 20 trading days.",
+      "Calculate the average volume for each intraday interval (e.g., 5-minute intervals) over the past 20 days to establish a baseline volume profile.",
+      "For the current day, compare the volume in the latest intraday interval against the historical average volume for that interval.",
+      "If the current interval volume exceeds the historical average by a configurable threshold (e.g., 3x), flag this as a volume spike.",
+      "Generate a finding with details including the symbol, timestamp of the spike, current volume, historical average volume, and ratio.",
+      "Assign severity based on the magnitude of the spike and confidence based on data completeness."
+    ],
+    "parameters": {
+      "thresholds": {
+        "volume_spike_multiplier": 3
+      },
+      "cadence_minutes_default": 5
+    },
+    "output_examples": [
+      {
+        "title": "Intraday Volume Spike Detected for AAPL",
+        "description": "AAPL exhibited a 5-minute volume spike at 10:15 AM, with volume 4.2x the historical average for this interval, indicating unusual trading activity.",
+        "severity": "medium",
+        "confidence": 0.85,
+        "metadata": {
+          "timestamp": "2026-01-07T10:15:00Z",
+          "current_volume": 1250000,
+          "historical_avg_volume": 297619,
+          "volume_ratio": 4.2
+        },
+        "symbol": "AAPL",
+        "market_type": "equities"
+      }
+    ]
+  },
+  "eval": {
+    "suite_name": "IntradayVolumeSpikeAgent_smoke",
+    "cases": [
+      {
+        "id": "volume_spike_basic",
+        "input_fixture": {
+          "intraday_bars": [
+            {
+              "symbol": "AAPL",
+              "timestamp": "2026-01-07T10:15:00Z",
+              "volume": 1250000
+            }
+          ],
+          "historical_intraday_avg": {
+            "AAPL": {
+              "10:15": 297619
+            }
+          }
+        },
+        "expected_schema": {
+          "type": "list",
+          "item_required_keys": [
+            "title",
+            "description",
+            "severity",
+            "confidence",
+            "metadata",
+            "symbol",
+            "market_type"
+          ]
+        }
+      },
+      {
+        "id": "no_spike_below_threshold",
+        "input_fixture": {
+          "intraday_bars": [
+            {
+              "symbol": "MSFT",
+              "timestamp": "2026-01-07T10:15:00Z",
+              "volume": 500000
+            }
+          ],
+          "historical_intraday_avg": {
+            "MSFT": {
+              "10:15": 300000
+            }
+          }
+        },
+        "expected_schema": {
+          "type": "list",
+          "item_required_keys": [
+            "title",
+            "description",
+            "severity",
+            "confidence",
+            "metadata",
+            "symbol",
+            "market_type"
+          ]
+        }
+      }
+    ],
+    "offline_adapter_plan": "Use file fixtures containing intraday bar data and precomputed historical averages to simulate data inputs. Mock existing client calls to return these fixtures during CI tests."
+  },
+  "safety": {
+    "no_execution": true,
+    "protected_paths": [
+      ".github/",
+      "trading/",
+      "secrets/",
+      "infra/"
+    ],
+    "max_files_changed": 3,
+    "max_lines_changed": 150
+  }
+}

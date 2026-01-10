@@ -1,0 +1,228 @@
+Implementation plan — EXACTLY what we add, in order
+
+You asked to “get what we already have implemented.”
+So we proceed without breaking anything.
+
+PHASE 1 — Wire Meta-Agent + PR comments (NOW)
+1️⃣ Where Meta-Supervisor runs
+
+DO NOT put it in app.py.
+
+Instead:
+
+meta_supervisor/
+├─ supervisor.py        ← orchestrates evaluations
+├─ pr_comments.py       ← GitHub comment formatter
+├─ promotion.py         ← sandbox → prod rules
+├─ retirement.py        ← agent / strategy kill logic
+└─ portfolio.py         ← attribution rollups
+
+2️⃣ How it’s triggered (two ways)
+A. Scheduled (safe default)
+
+Add one scheduler job inside create_app() after scheduler init:
+
+from meta_supervisor.supervisor import run_meta_supervisor
+
+scheduler.scheduler.add_job(
+    func=run_meta_supervisor,
+    trigger=CronTrigger(hour="*/6"),
+    id="meta_supervisor",
+    replace_existing=True
+)
+
+
+📍 Insert right after:
+
+scheduler = AgentScheduler(app)
+
+
+This gives you:
+
+rolling reviews
+
+zero latency impact on agents
+
+3️⃣ GitHub PR Comment Template (exact)
+
+Your Meta-Agent produces JSON → we convert to this single canonical comment:
+
+## 🤖 Meta-Agent Review Report
+
+**Overall Severity:** HIGH  
+**Run ID:** {{run_id}}  
+**Compared Against:** `main`
+
+---
+
+### 📊 Agent Health Summary
+| Agent | Score | Alpha (30d) | Cost | Status |
+|------|------|-------------|------|--------|
+| {{agent}} | {{score}} | {{alpha}} | ${{cost}} | {{status}} |
+
+---
+
+### ⚠️ Top Findings
+{{#each findings}}
+- **{{title}}**  
+  Impact: {{impact}}  
+  Evidence: {{evidence}}
+{{/each}}
+
+---
+
+### ✅ Promotion Gate
+- Behavioral score ≥ {{threshold}}
+- Realized PnL positive
+- No safety violations
+
+**Result:** ❌ BLOCKED / ✅ APPROVED
+
+---
+
+### 🔧 Recommended Actions
+{{#each recommendations}}
+- {{change}} ({{priority}})
+{{/each}}
+
+---
+
+*Generated automatically by MarketAgents Meta-Supervisor*
+
+
+This goes in:
+
+meta_supervisor/pr_comments.py
+
+PHASE 2 — Promotion Gates (sandbox → prod)
+Promotion happens ONLY when:
+Gate	Requirement
+Behavioral	≥ 80
+Realized PnL	> 0
+Confidence decay	stable
+Cost drift	within bounds
+Kill-list	not flagged
+Implementation
+meta_supervisor/promotion.py
+
+def should_promote(agent_metrics):
+    return (
+        agent_metrics.score >= 80 and
+        agent_metrics.realized_pnl > 0 and
+        agent_metrics.confidence_decay < 0.2 and
+        not agent_metrics.kill_flag
+    )
+
+
+If passed:
+
+auto-create promotion PR
+
+tag [AUTO-PROMOTE]
+
+human can still veto
+
+PHASE 3 — Retirement scoring (agents + strategies)
+
+You asked for strategy-class kills, not just agents.
+
+New tables (models.py)
+class StrategyClass(db.Model):
+    name
+    status  # active | deprecated | killed
+    kill_reason
+
+Retirement rules
+
+Kill when any 2 of 4 are true:
+
+Alpha < 0 for N periods
+
+Confidence decay > threshold
+
+Cost > value delivered
+
+Repeated regime mismatch
+
+Stored in:
+
+meta_supervisor/retirement.py
+
+
+This triggers:
+
+scheduler stop
+
+exclusion from capital allocation
+
+permanent audit record
+
+PHASE 4 — Realized PnL reconciliation (you already started this)
+
+You already have:
+
+alpha/events.jsonl
+
+telemetry/events.jsonl
+
+Missing piece (now added)
+alpha/reconcile.py
+
+
+Responsibilities:
+
+join signal → market price
+
+compute realized PnL
+
+feed back into:
+
+confidence decay
+
+promotion gates
+
+failure forensics
+
+This plugs into Meta-Supervisor automatically.
+
+PHASE 5 — Capital allocation by agent
+meta_supervisor/portfolio.py
+
+
+Allocates capital via softmax:
+
+weight = softmax(alpha * confidence / volatility)
+
+
+Outputs:
+
+per-agent capital %
+
+portfolio-level attribution
+
+LP-grade metrics
+
+PHASE 6 — LP-grade performance emails (EMAIL only ✔)
+
+Since you switched off Slack/WhatsApp:
+
+services/lp_report_service.py
+
+
+Delivered via:
+
+your existing email infra
+
+same whitelist logic
+
+daily / weekly cadence
+
+Includes:
+
+realized PnL
+
+attribution
+
+active vs killed strategies
+
+promotion / demotion log

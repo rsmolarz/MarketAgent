@@ -1,0 +1,678 @@
+Below is a complete, drop-in implementation plan + code to add all 5:
+
+Merge-after-approval button (branch-safe)
+
+Live diff (side-by-side) viewer
+
+Clause-level risk heatmap inside PDFs (text-search highlights; good enough to start)
+
+Multi-agent voting (Builder vs Validator vs Compliance)
+
+“Why rejected before” hints injected into the agent prompt
+
+I’m writing this so you can paste these files into your Flask repo and wire them in with minimal changes.
+
+A) Data model (SQLite) for proposals, votes, and rejections
+
+Create: app/agent_store.py
+
+# app/agent_store.py
+import os
+import sqlite3
+import hashlib
+import json
+from datetime import datetime
+from typing import Optional, Tuple, Dict, Any
+
+DB_PATH = os.environ.get("AGENT_DB_PATH", "agent.db")
+
+def _conn():
+    c = sqlite3.connect(DB_PATH)
+    c.row_factory = sqlite3.Row
+    return c
+
+def init_agent_db():
+    with _conn() as con:
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS proposals (
+            id TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            branch TEXT NOT NULL,
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            rationale TEXT NOT NULL,
+            unified_diff TEXT NOT NULL,
+            overall_risk REAL NOT NULL,
+            file_risk_json TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'PROPOSED', -- PROPOSED|APPROVED|REJECTED|MERGED|BLOCKED
+            reject_reason TEXT
+        )
+        """)
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS votes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            proposal_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            agent_name TEXT NOT NULL, -- BUILDER|VALIDATOR|COMPLIANCE
+            vote TEXT NOT NULL,       -- APPROVE|REJECT
+            confidence REAL NOT NULL,
+            notes TEXT NOT NULL,
+            FOREIGN KEY(proposal_id) REFERENCES proposals(id)
+        )
+        """)
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS rejections (
+            diff_hash TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            reason TEXT NOT NULL
+        )
+        """)
+
+def _now():
+    return datetime.utcnow().isoformat() + "Z"
+
+def hash_diff(unified_diff: str) -> str:
+    return hashlib.sha256(unified_diff.encode("utf-8")).hexdigest()
+
+def store_proposal(*, pid: str, branch: str, title: str, summary: str, rationale: str,
+                   unified_diff: str, overall_risk: float, file_risk: Dict[str, float]) -> str:
+    init_agent_db()
+    with _conn() as con:
+        con.execute("""
+        INSERT INTO proposals (id, created_at, branch, title, summary, rationale, unified_diff, overall_risk, file_risk_json, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PROPOSED')
+        """, (pid, _now(), branch, title, summary, rationale, unified_diff, float(overall_risk), json.dumps(file_risk)))
+    return pid
+
+def get_proposal(pid: str) -> Optional[Dict[str, Any]]:
+    init_agent_db()
+    with _conn() as con:
+        row = con.execute("SELECT * FROM proposals WHERE id = ?", (pid,)).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["file_risk"] = json.loads(d["file_risk_json"])
+        return d
+
+def list_proposals(limit: int = 50):
+    init_agent_db()
+    with _conn() as con:
+        rows = con.execute("""
+            SELECT id, created_at, branch, title, overall_risk, status
+            FROM proposals ORDER BY created_at DESC LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+def add_vote(proposal_id: str, agent_name: str, vote: str, confidence: float, notes: str):
+    init_agent_db()
+    with _conn() as con:
+        con.execute("""
+        INSERT INTO votes (proposal_id, created_at, agent_name, vote, confidence, notes)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """, (proposal_id, _now(), agent_name, vote, float(confidence), notes))
+
+def get_votes(proposal_id: str):
+    init_agent_db()
+    with _conn() as con:
+        rows = con.execute("""
+        SELECT created_at, agent_name, vote, confidence, notes
+        FROM votes WHERE proposal_id = ?
+        ORDER BY created_at ASC
+        """, (proposal_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+def reject_proposal(pid: str, reason: str):
+    init_agent_db()
+    p = get_proposal(pid)
+    if not p:
+        return
+    h = hash_diff(p["unified_diff"])
+    with _conn() as con:
+        con.execute("UPDATE proposals SET status='REJECTED', reject_reason=? WHERE id=?", (reason, pid))
+        con.execute("""
+            INSERT OR REPLACE INTO rejections (diff_hash, created_at, reason)
+            VALUES (?, ?, ?)
+        """, (h, _now(), reason))
+
+def mark_status(pid: str, status: str):
+    init_agent_db()
+    with _conn() as con:
+        con.execute("UPDATE proposals SET status=? WHERE id=?", (status, pid))
+
+def previously_rejected_reason(unified_diff: str) -> Optional[str]:
+    init_agent_db()
+    h = hash_diff(unified_diff)
+    with _conn() as con:
+        row = con.execute("SELECT reason FROM rejections WHERE diff_hash=?", (h,)).fetchone()
+        return row["reason"] if row else None
+
+B) Risk scoring per file (simple, deterministic)
+
+Create: app/risk_scoring.py
+
+# app/risk_scoring.py
+import re
+from collections import defaultdict
+from typing import Dict, Tuple
+
+RISK_FILE_WEIGHTS = {
+    "requirements": 0.9,
+    "Dockerfile": 0.8,
+    "migrations": 0.8,
+    "models.py": 0.7,
+    "auth": 0.7,
+    "billing": 0.8,
+    "templates/": 0.4,
+    "static/": 0.3,
+    "tests/": 0.2,
+}
+
+def _file_weight(path: str) -> float:
+    for k, w in RISK_FILE_WEIGHTS.items():
+        if k in path:
+            return w
+    return 0.5
+
+def score_diff(unified_diff: str) -> Tuple[Dict[str, float], float]:
+    """
+    Returns: (per_file_risk, overall_risk)
+    Risk is a heuristic 0-1.
+    """
+    per_file = defaultdict(float)
+
+    file_headers = re.findall(r"^\+\+\+ b/(.+)$", unified_diff, flags=re.MULTILINE)
+    chunks = re.split(r"^\+\+\+ b/.+$", unified_diff, flags=re.MULTILINE)
+
+    # chunks[0] is before first file header; subsequent chunks map to file_headers order
+    for i, path in enumerate(file_headers):
+        body = chunks[i+1] if i+1 < len(chunks) else ""
+        add = len(re.findall(r"^\+(?!\+\+).*$", body, flags=re.MULTILINE))
+        rem = len(re.findall(r"^-(?!\-\-).*$", body, flags=re.MULTILINE))
+        changes = add + rem
+
+        # base risk: more lines changed => more risk (capped)
+        magnitude = min(1.0, changes / 200.0)
+
+        # sensitive keywords increase risk
+        keywords = 0
+        for kw in ["payment", "auth", "token", "enforce", "lawsuit", "default", "judgment", "stripe", "secret"]:
+            if kw in body.lower():
+                keywords += 1
+        keyword_risk = min(0.4, keywords * 0.08)
+
+        per_file[path] = min(1.0, 0.2 + magnitude * 0.6 + keyword_risk + _file_weight(path) * 0.2)
+
+    overall = 0.0
+    if per_file:
+        overall = sum(per_file.values()) / len(per_file)
+    return dict(per_file), float(min(1.0, overall))
+
+C) Side-by-side diff viewer (no external JS)
+
+This uses Python’s built-in difflib.HtmlDiff so it works immediately.
+
+Create: app/diff_render.py
+
+# app/diff_render.py
+import difflib
+from html import escape
+
+def render_side_by_side(unified_diff: str) -> str:
+    """
+    Minimal side-by-side HTML using difflib.
+    """
+    left, right = [], []
+    for line in unified_diff.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            right.append(line)
+        elif line.startswith("-") and not line.startswith("---"):
+            left.append(line)
+        else:
+            left.append(line)
+            right.append(line)
+
+    hd = difflib.HtmlDiff(tabsize=4, wrapcolumn=120)
+    return hd.make_table(left, right, fromdesc="Proposed", todesc="After", context=True, numlines=3)
+
+D) PDF clause heatmap (text-search highlight)
+
+This generates an annotated PDF for a given file and a set of clause strings/labels.
+Requires PyMuPDF (fitz). If it’s not installed in Replit, add it to requirements.
+
+Create: app/pdf_heatmap.py
+
+# app/pdf_heatmap.py
+import os
+from dataclasses import dataclass
+from typing import List, Optional
+
+@dataclass
+class ClauseHit:
+    label: str
+    text: str
+
+def annotate_pdf_with_clauses(pdf_path: str, hits: List[ClauseHit], out_dir: str = "uploads") -> str:
+    """
+    Highlights occurrences of each clause text in the PDF by searching text.
+    Returns path to annotated PDF.
+    """
+    import fitz  # PyMuPDF
+
+    os.makedirs(out_dir, exist_ok=True)
+    doc = fitz.open(pdf_path)
+
+    for hit in hits:
+        needle = hit.text.strip()
+        if not needle:
+            continue
+
+        for page in doc:
+            rects = page.search_for(needle, hit_max=64)
+            for r in rects:
+                annot = page.add_highlight_annot(r)
+                annot.set_info(title="Clause Risk", content=f"{hit.label}")
+                annot.update()
+
+    out_path = os.path.join(out_dir, f"annotated_{os.path.basename(pdf_path)}")
+    doc.save(out_path)
+    doc.close()
+    return out_path
+
+E) Multi-agent voting + “rejected before” hints injected into prompt
+
+Create: app/agent_runner.py
+(LLM calls are stubbed to your ai_service.py—replace the call_llm_json(...) function with your actual call.)
+
+# app/agent_runner.py
+import json
+from typing import Dict, Any, Optional
+
+def build_agent_prompt(goal: str, repo_context: str, rejected_hint: Optional[str]) -> str:
+    hint_block = ""
+    if rejected_hint:
+        hint_block = f"""
+IMPORTANT: This exact change (or equivalent) was rejected before.
+Reason:
+- {rejected_hint}
+
+Do NOT repeat it. Propose a different approach.
+"""
+
+    return f"""
+You are the Builder Agent for a regulated documentation platform.
+Your job: propose improvements that increase reliability, clarity, and compliance.
+
+Constraints:
+- Do NOT add language that implies enforcement, judgments, liability determinations, or guaranteed outcomes.
+- Prefer neutral, evidentiary phrasing.
+- Write small, testable changes.
+- Always add/adjust tests when you change extraction logic.
+
+Goal:
+{goal}
+
+Repo context:
+{repo_context}
+
+{hint_block}
+
+Return JSON with keys:
+title, summary, rationale, files_to_change (array), patch_plan (array of steps)
+""".strip()
+
+def validator_prompt(diff_text: str) -> str:
+    return f"""
+You are the Validator Agent. Review the proposed diff for correctness, regressions, and test coverage.
+Return JSON:
+vote (APPROVE/REJECT), confidence (0-1), notes, required_tests (array).
+Diff:
+{diff_text}
+""".strip()
+
+def compliance_prompt(diff_text: str) -> str:
+    return f"""
+You are the Compliance Agent. Ensure the proposed diff preserves neutral, non-enforcement posture.
+Reject anything that:
+- claims outcomes
+- declares defaults
+- implies legal conclusions
+Return JSON:
+vote (APPROVE/REJECT), confidence (0-1), notes, flagged_phrases (array).
+Diff:
+{diff_text}
+""".strip()
+
+def call_llm_json(prompt: str) -> Dict[str, Any]:
+    """
+    Replace this with your ai_service.py call.
+    Must return dict JSON.
+    """
+    # Example stub:
+    return {"vote": "APPROVE", "confidence": 0.7, "notes": "Stub response."}
+
+def run_validator(diff_text: str) -> Dict[str, Any]:
+    return call_llm_json(validator_prompt(diff_text))
+
+def run_compliance(diff_text: str) -> Dict[str, Any]:
+    return call_llm_json(compliance_prompt(diff_text))
+
+F) Routes: proposal detail, run votes, approve+merge, reject, heatmap
+
+Create: app/agent_routes.py
+
+# app/agent_routes.py
+import os
+import subprocess
+import uuid
+from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file
+
+from app.agent_store import (
+    init_agent_db, list_proposals, get_proposal, get_votes,
+    add_vote, reject_proposal, mark_status, previously_rejected_reason
+)
+from app.diff_render import render_side_by_side
+from app.agent_runner import run_validator, run_compliance
+from app.pdf_heatmap import annotate_pdf_with_clauses, ClauseHit
+
+agent_bp = Blueprint("agent", __name__)
+
+@agent_bp.get("/admin/agent")
+def agent_dashboard():
+    init_agent_db()
+    return render_template("agent_dashboard.html", proposals=list_proposals(50))
+
+@agent_bp.get("/admin/agent/proposals/<pid>")
+def agent_proposal_detail(pid):
+    p = get_proposal(pid)
+    if not p:
+        flash("Proposal not found.", "danger")
+        return redirect(url_for("agent.agent_dashboard"))
+
+    votes = get_votes(pid)
+    diff_html = render_side_by_side(p["unified_diff"])
+    return render_template(
+        "agent_proposal_detail.html",
+        proposal=p,
+        votes=votes,
+        diff_html=diff_html
+    )
+
+@agent_bp.post("/admin/agent/proposals/<pid>/run-votes")
+def agent_run_votes(pid):
+    p = get_proposal(pid)
+    if not p:
+        flash("Proposal not found.", "danger")
+        return redirect(url_for("agent.agent_dashboard"))
+
+    # run Validator + Compliance
+    v = run_validator(p["unified_diff"])
+    c = run_compliance(p["unified_diff"])
+
+    add_vote(pid, "VALIDATOR", v.get("vote", "REJECT"), float(v.get("confidence", 0.5)), v.get("notes", ""))
+    add_vote(pid, "COMPLIANCE", c.get("vote", "REJECT"), float(c.get("confidence", 0.5)), c.get("notes", ""))
+
+    flash("Votes recorded (Validator + Compliance).", "success")
+    return redirect(url_for("agent.agent_proposal_detail", pid=pid))
+
+def _run_tests() -> bool:
+    """
+    Adjust to your test command. Keeps it simple.
+    """
+    try:
+        subprocess.run(["pytest", "-q"], check=True)
+        return True
+    except Exception:
+        return False
+
+@agent_bp.post("/admin/agent/proposals/<pid>/approve-merge")
+def agent_approve_merge(pid):
+    p = get_proposal(pid)
+    if not p:
+        flash("Proposal not found.", "danger")
+        return redirect(url_for("agent.agent_dashboard"))
+
+    votes = get_votes(pid)
+    # Require at least 2 approvals (validator+compliance)
+    approvals = [x for x in votes if x["vote"] == "APPROVE" and x["agent_name"] in ("VALIDATOR", "COMPLIANCE")]
+    if len(approvals) < 2:
+        flash("Cannot merge: missing approvals from Validator and Compliance.", "danger")
+        return redirect(url_for("agent.agent_proposal_detail", pid=pid))
+
+    if float(p["overall_risk"]) >= 0.75:
+        flash("Blocked: risk score too high for auto-merge. Review manually.", "danger")
+        mark_status(pid, "BLOCKED")
+        return redirect(url_for("agent.agent_proposal_detail", pid=pid))
+
+    # Merge branch safely into main
+    try:
+        subprocess.run(["git", "checkout", "main"], check=True)
+        subprocess.run(["git", "pull"], check=False)
+
+        subprocess.run(["git", "merge", "--no-ff", p["branch"], "-m", f"Merge agent proposal {pid}: {p['title']}"], check=True)
+
+        # Run tests after merge (still local; if fail, revert merge)
+        if not _run_tests():
+            subprocess.run(["git", "reset", "--hard", "HEAD~1"], check=True)
+            flash("Tests failed after merge; merge reverted.", "danger")
+            mark_status(pid, "BLOCKED")
+            return redirect(url_for("agent.agent_proposal_detail", pid=pid))
+
+        mark_status(pid, "MERGED")
+        flash("Merged to main successfully.", "success")
+        return redirect(url_for("agent.agent_proposal_detail", pid=pid))
+
+    except Exception as e:
+        flash(f"Merge failed: {e}", "danger")
+        mark_status(pid, "BLOCKED")
+        return redirect(url_for("agent.agent_proposal_detail", pid=pid))
+
+@agent_bp.post("/admin/agent/proposals/<pid>/reject")
+def agent_reject(pid):
+    reason = request.form.get("reason", "").strip() or "Rejected without reason."
+    reject_proposal(pid, reason)
+    flash("Proposal rejected and stored in agent memory.", "success")
+    return redirect(url_for("agent.agent_proposal_detail", pid=pid))
+
+@agent_bp.post("/admin/agent/proposals/<pid>/heatmap")
+def agent_heatmap(pid):
+    """
+    Creates annotated PDF highlighting important clauses.
+    Expects a PDF path on disk (uploaded contract) and a list of clause strings.
+    """
+    pdf_path = request.form.get("pdf_path", "").strip()
+    if not pdf_path or not os.path.exists(pdf_path):
+        flash("PDF not found on server.", "danger")
+        return redirect(url_for("agent.agent_proposal_detail", pid=pid))
+
+    # Minimal clause list (expand later from extractor output)
+    hits = [
+        ClauseHit("Governing Law", request.form.get("governing_law_text", "")),
+        ClauseHit("Venue / Forum", request.form.get("venue_text", "")),
+        ClauseHit("Personal Guarantee", request.form.get("guarantee_text", "")),
+    ]
+
+    out_path = annotate_pdf_with_clauses(pdf_path, hits, out_dir="uploads")
+    return send_file(out_path, as_attachment=True)
+
+
+Register blueprint in app.py:
+
+from app.agent_routes import agent_bp
+app.register_blueprint(agent_bp)
+
+G) Templates
+1) Dashboard list page
+
+Create: templates/agent_dashboard.html
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Agent Dashboard</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Arial; margin: 24px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
+    .pill { padding: 4px 10px; border-radius: 999px; font-size: 12px; background: #f2f2f2; display: inline-block; }
+  </style>
+</head>
+<body>
+  <h1>Agent Risk Dashboard</h1>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Proposal</th>
+        <th>Risk</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in proposals %}
+      <tr>
+        <td>{{ p.created_at }}</td>
+        <td>
+          <a href="/admin/agent/proposals/{{ p.id }}">{{ p.title }}</a><br>
+          <small>{{ p.branch }}</small>
+        </td>
+        <td>{{ "%.2f"|format(p.overall_risk) }}</td>
+        <td><span class="pill">{{ p.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</body>
+</html>
+
+2) Proposal detail page (diff viewer + why + per-file risk + votes + merge)
+
+Create: templates/agent_proposal_detail.html
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Proposal {{ proposal.id }}</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Arial; margin: 24px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { border: 1px solid #eee; border-radius: 12px; padding: 14px; }
+    .muted { color: #666; }
+    pre { white-space: pre-wrap; }
+    .danger { color: #b00020; }
+    .ok { color: #0b7; }
+    .btn { padding: 10px 14px; border-radius: 10px; border: 1px solid #ddd; background: #fff; cursor: pointer; }
+    .btn-primary { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+    .btn-danger { background: #b00020; color: #fff; border-color: #b00020; }
+    .btn-success { background: #0b7; color: #fff; border-color: #0b7; }
+    .diffwrap { overflow-x: auto; border: 1px solid #eee; border-radius: 12px; padding: 10px; }
+    table.diff { width: 100%; }
+  </style>
+</head>
+<body>
+  <a href="/admin/agent">← Back</a>
+  <h1>{{ proposal.title }}</h1>
+  <div class="muted">Branch: {{ proposal.branch }} | Status: <b>{{ proposal.status }}</b> | Overall Risk: <b>{{ "%.2f"|format(proposal.overall_risk) }}</b></div>
+
+  <div class="row" style="margin-top:16px;">
+    <div class="card">
+      <h3>Why this change</h3>
+      <p><b>Summary:</b> {{ proposal.summary }}</p>
+      <p><b>Rationale:</b> {{ proposal.rationale }}</p>
+    </div>
+
+    <div class="card">
+      <h3>Per-file risk</h3>
+      <ul>
+        {% for f, r in proposal.file_risk.items() %}
+          <li><code>{{ f }}</code> — <b>{{ "%.2f"|format(r) }}</b></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <h3>Multi-agent votes</h3>
+    {% if votes|length == 0 %}
+      <div class="muted">No votes yet.</div>
+    {% else %}
+      <ul>
+        {% for v in votes %}
+          <li>
+            <b>{{ v.agent_name }}</b>:
+            {% if v.vote == "APPROVE" %}<span class="ok">APPROVE</span>{% else %}<span class="danger">REJECT</span>{% endif %}
+            ({{ "%.2f"|format(v.confidence) }}) — {{ v.notes }}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    <form method="POST" action="/admin/agent/proposals/{{ proposal.id }}/run-votes" style="display:inline;">
+      <button class="btn btn-primary" type="submit">Run Validator + Compliance</button>
+    </form>
+
+    <form method="POST" action="/admin/agent/proposals/{{ proposal.id }}/approve-merge" style="display:inline;">
+      <button class="btn btn-success" type="submit">Approve + Merge (safe)</button>
+    </form>
+
+    <form method="POST" action="/admin/agent/proposals/{{ proposal.id }}/reject" style="display:inline;">
+      <input name="reason" placeholder="Reject reason (stored in memory)" style="padding:10px;border-radius:10px;border:1px solid #ddd;width:320px;">
+      <button class="btn btn-danger" type="submit">Reject</button>
+    </form>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <h3>Live Diff (side-by-side)</h3>
+    <div class="diffwrap">
+      {{ diff_html|safe }}
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <h3>Clause-level PDF heatmap</h3>
+    <div class="muted">Provide a server path to an uploaded contract PDF and the clause strings you want highlighted.</div>
+    <form method="POST" action="/admin/agent/proposals/{{ proposal.id }}/heatmap">
+      <p><input name="pdf_path" placeholder="uploads/contract.pdf" style="width:520px;padding:10px;border-radius:10px;border:1px solid #ddd;"></p>
+      <p><input name="governing_law_text" placeholder="Paste governing law clause text (exact excerpt)" style="width:520px;padding:10px;border-radius:10px;border:1px solid #ddd;"></p>
+      <p><input name="venue_text" placeholder="Paste venue/forum clause text" style="width:520px;padding:10px;border-radius:10px;border:1px solid #ddd;"></p>
+      <p><input name="guarantee_text" placeholder="Paste guarantee clause text" style="width:520px;padding:10px;border-radius:10px;border:1px solid #ddd;"></p>
+      <button class="btn btn-primary" type="submit">Generate highlighted PDF</button>
+    </form>
+  </div>
+
+</body>
+</html>
+
+H) Wire “Why rejected before” into Builder Agent (important)
+
+In your auto-build route (builder), right before calling your builder LLM, do:
+
+from app.agent_store import previously_rejected_reason
+
+rejected_hint = previously_rejected_reason(unified_diff_candidate_or_last_attempt)
+
+
+But the best pattern is:
+
+First the Builder proposes a plan (no diff yet)
+
+Then you apply changes
+
+Then you compute diff
+
+Then you check previously_rejected_reason(diff)
+If it exists → block and ask Builder to propose alternative, injecting the reason
+
+Minimal integration example inside your builder flow:
+
+reason = previously_rejected_reason(unified_diff)
+if reason:
+    # store as blocked + stop
+    mark_status(pid, "BLOCKED")
+    flash(f"Blocked: previously rejected. Reason: {reason}", "danger")
+    return redirect(...)
+
+
+And for prompt injection (Agent learns), pass reason into build_agent_prompt(...).

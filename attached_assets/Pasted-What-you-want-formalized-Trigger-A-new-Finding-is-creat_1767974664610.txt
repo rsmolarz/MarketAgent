@@ -1,0 +1,207 @@
+What you want (formalized)
+
+Trigger
+
+A new Finding is created
+
+severity == "critical"
+
+Automatic pipeline
+
+Run 3-LLM council analysis
+
+Claude
+
+GPT
+
+Gemini
+
+Compute consensus
+
+If consensus == ACT
+
+Send email to whitelist
+
+Mark finding as acted=true
+
+Log:
+
+votes
+
+disagreement
+
+confidence
+
+Where this should live (important)
+
+✅ NOT in the dashboard
+✅ NOT in the agent code
+
+👉 It belongs right after a Finding is written to DB
+That gives you:
+
+guaranteed execution
+
+no UI dependency
+
+clean audit trail
+
+You already have the perfect hook.
+
+🔧 Step 1 — Add fields to Finding (if not present)
+
+In models.py (or equivalent):
+
+class Finding(db.Model):
+    ...
+    consensus_action = db.Column(db.String(16))  # ACT / HOLD / IGNORE
+    consensus_confidence = db.Column(db.Float)
+    llm_votes = db.Column(db.JSON)
+    llm_disagreement = db.Column(db.Boolean, default=False)
+    auto_analyzed = db.Column(db.Boolean, default=False)
+    alerted = db.Column(db.Boolean, default=False)
+
+
+Run migration or recreate DB if dev.
+
+🔧 Step 2 — LLM Council service (new file)
+
+Create:
+
+services/llm_council.py
+
+from services.llms import analyze_with_claude, analyze_with_gpt, analyze_with_gemini
+
+def llm_council_analyze(finding):
+    """
+    Returns:
+      {
+        action: ACT | HOLD | IGNORE,
+        confidence: float,
+        votes: {...},
+        disagreement: bool
+      }
+    """
+
+    prompt = f"""
+    Finding:
+    Title: {finding.title}
+    Severity: {finding.severity}
+    Description: {finding.description}
+    Metadata: {finding.finding_metadata}
+
+    Decide: ACT, HOLD, or IGNORE.
+    """
+
+    results = {
+        "claude": analyze_with_claude(prompt),
+        "gpt": analyze_with_gpt(prompt),
+        "gemini": analyze_with_gemini(prompt),
+    }
+
+    votes = {k: v["action"] for k, v in results.items()}
+    confidences = [v["confidence"] for v in results.values()]
+
+    # Majority vote
+    action = max(set(votes.values()), key=list(votes.values()).count)
+    disagreement = len(set(votes.values())) > 1
+
+    return {
+        "action": action,
+        "confidence": sum(confidences) / len(confidences),
+        "votes": votes,
+        "disagreement": disagreement
+    }
+
+
+Your existing Claude/GPT/Gemini wrappers plug in here directly.
+
+🔧 Step 3 — Email trigger (reuse your existing infra)
+
+You already have:
+
+notifiers/email_meta.py
+
+
+Add a helper:
+
+def send_critical_finding_alert(finding, consensus):
+    subject = f"🚨 CRITICAL SIGNAL — {finding.title}"
+    body = f"""
+    Consensus Action: {consensus['action']}
+    Confidence: {consensus['confidence']:.2f}
+    Votes: {consensus['votes']}
+    Disagreement: {consensus['disagreement']}
+
+    Description:
+    {finding.description}
+    """
+
+    send_meta_email(subject, body, body)
+
+🔧 Step 4 — Wire it into the scheduler (THIS is the key hook)
+
+Modify one place only in AgentScheduler._run_agent()
+Right after findings are committed.
+
+Find this block (you already have it):
+if findings:
+    for finding_data in findings:
+        finding = Finding()
+        ...
+        db.session.add(finding)
+
+Replace with this:
+from services.llm_council import llm_council_analyze
+from notifiers.email_meta import send_critical_finding_alert
+
+if findings:
+    for finding_data in findings:
+        finding = Finding()
+        finding.agent_name = agent_name
+        finding.title = finding_data.get('title')
+        finding.description = finding_data.get('description')
+        finding.severity = finding_data.get('severity')
+        finding.confidence = finding_data.get('confidence')
+        finding.finding_metadata = finding_data.get('metadata')
+        finding.symbol = finding_data.get('symbol')
+        finding.market_type = finding_data.get('market_type')
+
+        db.session.add(finding)
+        db.session.flush()  # get ID immediately
+
+        # 🔥 AUTOMATIC COUNCIL TRIGGER
+        if finding.severity == "critical" and not finding.auto_analyzed:
+            consensus = llm_council_analyze(finding)
+
+            finding.consensus_action = consensus["action"]
+            finding.consensus_confidence = consensus["confidence"]
+            finding.llm_votes = consensus["votes"]
+            finding.llm_disagreement = consensus["disagreement"]
+            finding.auto_analyzed = True
+
+            if consensus["action"] == "ACT":
+                send_critical_finding_alert(finding, consensus)
+                finding.alerted = True
+
+
+That’s it.
+
+No scheduler changes.
+No agent changes.
+No dashboard dependency.
+
+🧠 What you now get automatically
+
+✔ Every critical finding is analyzed
+✔ 3 LLMs vote
+✔ Disagreement is tracked
+✔ Only ACT consensus emails
+✔ Full audit trail
+✔ Ready for:
+
+allocator dampening
+
+uncertainty spikes
+
+regime transitions

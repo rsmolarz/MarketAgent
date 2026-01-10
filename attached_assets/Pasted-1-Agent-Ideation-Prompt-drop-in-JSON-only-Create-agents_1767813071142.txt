@@ -1,0 +1,247 @@
+1) Agent Ideation Prompt (drop-in, JSON-only)
+
+Create: agents/prompts/agent_ideation.md
+
+You are the Agent Ideation Model for a market-inefficiency detection system.
+
+Your job:
+1) Identify inefficiencies NOT yet covered by existing agents.
+2) Propose a new ANALYSIS-ONLY agent that detects one inefficiency.
+3) Specify detection logic, inputs, outputs, eval cases, and safety constraints.
+
+You MUST output STRICT JSON only. No prose.
+
+Context you will receive:
+- available_agents: list of agent class names already in the repo
+- telemetry_summary: recent performance metrics (reward, cost, error rate, sharpe-like, drawdown)
+- constraints: budget, banned sources, offline/CI limitations
+- allowed_data_sources: what the system can access in production
+- required_finding_schema: required keys for Finding storage
+
+Hard constraints:
+- The new agent MUST be analysis-only (no trade execution).
+- The agent MUST implement analyze() returning List[Dict[str, Any]].
+- Findings MUST be a list of dicts, each with at least:
+  - title (str)
+  - description (str)
+  - severity (low|medium|high)
+  - confidence (0..1)
+  - metadata (dict)
+  - symbol (optional)
+  - market_type (optional)
+- Do NOT propose paid datasets unless explicitly allowed.
+- Prefer signals that can be validated with deterministic eval fixtures.
+- Avoid fragile scraping; prefer RSS, public APIs, or your existing clients.
+
+Your output JSON schema:
+
+{
+  "agent": {
+    "class_name": "StringEndingWithAgent",
+    "module_slug": "snake_case_module_name",
+    "description": "one paragraph",
+    "category": "crypto|equities|macro|fx|rates|commodities|altdata|cross_asset",
+    "data_sources": [
+      {
+        "name": "short name",
+        "type": "existing_client|public_api|rss|file_fixture",
+        "details": "what is used and how"
+      }
+    ],
+    "detection_logic": [
+      "step-by-step algorithm in bullets as strings"
+    ],
+    "parameters": {
+      "thresholds": { "key": "value" },
+      "cadence_minutes_default": 120
+    },
+    "output_examples": [
+      {
+        "title": "example finding title",
+        "description": "example description",
+        "severity": "medium",
+        "confidence": 0.6,
+        "metadata": { "key": "value" },
+        "symbol": "optional",
+        "market_type": "optional"
+      }
+    ]
+  },
+  "eval": {
+    "suite_name": "AgentClassName_smoke",
+    "cases": [
+      {
+        "id": "case_id",
+        "input_fixture": {},
+        "expected_schema": {
+          "type": "list",
+          "item_required_keys": ["title", "severity", "confidence", "metadata"]
+        }
+      }
+    ],
+    "offline_adapter_plan": "How to test in CI without network, using fixtures/mocks"
+  },
+  "safety": {
+    "no_execution": true,
+    "protected_paths": [".github/", "trading/", "secrets/", "infra/"],
+    "max_files_changed": 4,
+    "max_lines_changed": 250
+  }
+}
+
+Decision criteria:
+- Favor high expected signal-to-noise.
+- Favor low false-positive risk.
+- Favor novelty relative to available_agents.
+- Favor implementability with existing stack.
+
+2) Wire it into the Meta-Agent (one orchestrator script)
+
+Create: meta/agent_builder/ideate_and_build.py
+
+This will:
+
+Load current agents list from agents/__init__.py (AVAILABLE_AGENTS)
+
+Load telemetry summary (if present)
+
+Call LLM with ideation prompt
+
+Create agent skeleton + eval suite
+
+Run sandbox prompt/self-mod loop (existing Phase 3 path)
+
+Run eval-before-commit
+
+Open a PR (human approved)
+
+import json
+from pathlib import Path
+import importlib
+
+from tools.llm_client import call_llm
+from meta.agent_builder.builder import create_agent
+from meta.agent_builder.eval_generator import generate_eval
+
+IDEATION_PROMPT = Path("agents/prompts/agent_ideation.md").read_text()
+
+def get_available_agents():
+    mod = importlib.import_module("agents")
+    return getattr(mod, "AVAILABLE_AGENTS", [])
+
+def load_telemetry_summary():
+    p = Path("telemetry/summary.json")
+    if p.exists():
+        return json.loads(p.read_text())
+    return {}
+
+def ideate_one():
+    payload = {
+        "available_agents": get_available_agents(),
+        "telemetry_summary": load_telemetry_summary(),
+        "constraints": {
+            "offline_ci": True,
+            "no_paid_datasets": True
+        },
+        "allowed_data_sources": [
+            "existing internal clients",
+            "RSS feeds",
+            "public APIs"
+        ],
+        "required_finding_schema": ["title","description","severity","confidence","metadata","symbol","market_type"]
+    }
+
+    msgs = [
+        {"role": "system", "content": IDEATION_PROMPT},
+        {"role": "user", "content": json.dumps(payload)}
+    ]
+    out = call_llm(msgs, temperature=0.3, max_tokens=2200)
+    return out
+
+def main():
+    idea = ideate_one()
+    agent = idea["agent"]
+
+    agent_name = agent["class_name"]
+    create_agent(agent_name, {"description": agent["description"]})
+    generate_eval(agent_name)
+
+    Path("meta/reports").mkdir(parents=True, exist_ok=True)
+    Path("meta/reports/ideation_last.json").write_text(json.dumps(idea, indent=2))
+
+    print(f"Created agent scaffold + eval: {agent_name}")
+
+if __name__ == "__main__":
+    main()
+
+
+This intentionally stops after creation so you can keep the lifecycle safe. Next step wires it to your existing sandbox self-modifier to improve and verify.
+
+3) Generate first 3 auto-built agents safely (policy)
+
+We do it in three PRs, each with:
+
+Scaffold + eval suite
+
+Sandbox improvement attempt (analysis-only)
+
+Eval-before-commit enforced
+
+Quarantine enabled on deploy
+
+Default cadence 120m
+
+Add: meta/agent_builder/ideate_three.py
+from meta.agent_builder.ideate_and_build import main as ideate_one
+
+if __name__ == "__main__":
+    for _ in range(3):
+        ideate_one()
+
+
+Operationally: run ideation once per PR (cleaner), but this file exists if you want a single run.
+
+4) Capital-weighted promotion thresholds (simple + strict)
+
+Promotion rule should not be “reward went up.” It should be:
+
+Capital-weighted reward mean > X
+
+Sharpe-like > Y
+
+Drawdown > -Z
+
+Minimum N runs
+
+Create: meta/agent_builder/promotion_policy.py
+
+def promotion_decision(stats, *,
+                       min_runs=200,
+                       min_cap_reward_mean=0.10,
+                       min_sharpe=0.20,
+                       max_drawdown=-2.0):
+    """
+    stats example:
+    {
+      "count": 500,
+      "avg_reward": 0.12,
+      "sharpe": 0.35,
+      "drawdown": -1.1
+    }
+    """
+    if stats.get("count", 0) < min_runs:
+        return False, "insufficient_runs"
+
+    if stats.get("cap_reward_mean", stats.get("avg_reward", 0.0)) < min_cap_reward_mean:
+        return False, "cap_reward_mean_below_threshold"
+
+    if stats.get("sharpe", 0.0) < min_sharpe:
+        return False, "sharpe_below_threshold"
+
+    if stats.get("drawdown", 0.0) <= max_drawdown:
+        return False, "drawdown_too_deep"
+
+    return True, "promote"
+
+
+You’ll feed this with rolling stats from telemetry/summary.json + telemetry/rolling_stats.py outputs.

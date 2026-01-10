@@ -1,0 +1,76 @@
+1) Tuning the Decay Curve
+
+We'll fine-tune the decay curve by adjusting the half-life and how decay progresses over time. For example, we can adjust the decay rate based on time, the number of signals, or the uncertainty level of the agent.
+
+I'll assume the decay curve follows an exponential model. Here's a simple adjustment you can make in the AgentDecay class:
+
+import numpy as np
+
+class AgentDecay:
+    def __init__(self, decay_rate=0.1):
+        self.decay_rate = decay_rate  # Rate of decay over time
+        self.state = defaultdict(lambda: 1)  # Default state to 1 (no decay)
+    
+    def get(self, agent_name: str) -> float:
+        """Return the decay multiplier for the agent"""
+        # Apply exponential decay over time
+        # For simplicity, decay happens every time an agent is invoked
+        return self.state[agent_name] * np.exp(-self.decay_rate)
+
+    def set(self, agent_name: str, value: float):
+        """Manually set decay for an agent"""
+        self.state[agent_name] = value
+
+
+This allows for gradual decay of the agent’s effectiveness over time. You can adjust the decay_rate for different agents based on their performance.
+
+2) Adjusting Plot Style & Adding Uncertainty Shading
+
+We'll enhance the plot by adding uncertainty bands to show where the agent's performance is most uncertain. We'll use shading between two standard deviation lines (based on the decay) to represent the uncertainty.
+
+Here’s an updated plotting code with uncertainty bands and customized styling:
+
+import matplotlib.pyplot as plt
+import numpy as np
+import yfinance as yf
+from meta.decay import AgentDecay
+
+# Fetch SPY data
+spy = yf.download("SPY", start="2020-01-01", end="2026-01-01")
+
+# Get decay data
+_decay = AgentDecay(decay_rate=0.05)  # Adjust decay rate for testing
+agents = ["MacroWatcherAgent", "WhaleWalletWatcherAgent"]  # Example agents
+
+# Fetch decay scores
+decay_scores = {
+    agent: [_decay.get(agent) for _ in range(len(spy))]
+    for agent in agents
+}
+
+# Create the plot
+fig, ax = plt.subplots(figsize=(12, 6))
+
+# Plot SPY price
+ax.plot(spy.index, spy['Close'], label='SPY Price', color='blue', alpha=0.6)
+
+# Plot decay scores with uncertainty bands
+for agent, scores in decay_scores.items():
+    # Calculate standard deviation for uncertainty band
+    uncertainty_upper = np.array(scores) + 0.1  # +10% as upper bound for uncertainty
+    uncertainty_lower = np.array(scores) - 0.1  # -10% as lower bound for uncertainty
+
+    # Plot decay line
+    ax.plot(spy.index, scores, label=f"Decay: {agent}", alpha=0.7)
+
+    # Add uncertainty bands
+    ax.fill_between(spy.index, uncertainty_lower, uncertainty_upper, color='gray', alpha=0.2)
+
+# Adding labels and title
+ax.set_title('SPY Price vs Agent Decay with Uncertainty Bands')
+ax.set_xlabel('Date')
+ax.set_ylabel('Price / Decay')
+ax.legend()
+
+# Display the plot
+plt.show()

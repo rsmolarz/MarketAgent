@@ -1,0 +1,24 @@
+{
+  "module": "agents.crypto_prediction_agent",
+  "callable": "CryptoPredictionAgent.predict",
+  "suite": "eval/suites/crypto_prediction.jsonl",
+  "results": [
+    {
+      "id": "crypto_smoke",
+      "ok": true,
+      "latency_s": 0.0,
+      "output": [
+        {
+          "symbol": "BTC",
+          "prediction": "bullish",
+          "confidence": 0.72,
+          "price_target": 52000.0,
+          "timeframe": "24h",
+          "timestamp": "2026-01-07T23:38:07.032473Z"
+        }
+      ],
+      "error": null,
+      "reward": 0.1
+    }
+  ]
+}

@@ -1,0 +1,89 @@
+{% extends "admin_layout.html" %}
+{% block title %}AI Oversight Dashboard{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i data-feather="git-pull-request"></i> AI Oversight Dashboard</h1>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#autobuildModal">
+            <i data-feather="plus-circle"></i> Request Agent Build
+        </button>
+    </div>
+
+    <div class="modal fade" id="autobuildModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark">
+                <div class="modal-header">
+                    <h5 class="modal-title">Request Agent Build</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST" action="{{ url_for('agent.autobuild') }}">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">Goal / Improvement Request</label>
+                            <textarea name="goal" class="form-control" rows="4" placeholder="Describe what you want the agent to improve or add..." required></textarea>
+                        </div>
+                        <p class="text-muted small">The agent will propose changes on a separate branch. You'll review the diff, risk scores, and agent votes before any merge.</p>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Submit Request</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Proposal</th>
+                        <th>Risk</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in proposals %}
+                    <tr>
+                        <td>{{ p.created_at }}</td>
+                        <td>
+                            <a href="{{ url_for('agent.agent_proposal_detail', pid=p.id) }}">{{ p.title }}</a><br>
+                            <small class="text-muted">{{ p.branch }}</small>
+                        </td>
+                        <td>
+                            {% if p.overall_risk >= 0.75 %}
+                                <span class="badge bg-danger">{{ "%.2f"|format(p.overall_risk) }}</span>
+                            {% elif p.overall_risk >= 0.5 %}
+                                <span class="badge bg-warning">{{ "%.2f"|format(p.overall_risk) }}</span>
+                            {% else %}
+                                <span class="badge bg-success">{{ "%.2f"|format(p.overall_risk) }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if p.status == 'MERGED' %}
+                                <span class="badge bg-success">{{ p.status }}</span>
+                            {% elif p.status == 'REJECTED' %}
+                                <span class="badge bg-danger">{{ p.status }}</span>
+                            {% elif p.status == 'BLOCKED' %}
+                                <span class="badge bg-warning">{{ p.status }}</span>
+                            {% elif p.status == 'APPROVED' %}
+                                <span class="badge bg-info">{{ p.status }}</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ p.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="text-center text-muted">No proposals yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

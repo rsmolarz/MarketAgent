@@ -1,0 +1,5 @@
+{"id":"distressed_property_smoke","input":{},"schema":{"type":"list","item":{"type":"dict","required_keys":["property_id","address","signal_type","signal_strength","price","status"]}}}
+{"id":"distressed_property_deep_discount","input":{"filter":"deep_discount"},"schema":{"type":"list","item":{"type":"dict","required_keys":["property_id","discount_pct","estimated_value"]}}}
+{"id":"distressed_property_auction","input":{"filter":"auction_imminent"},"schema":{"type":"list","item":{"type":"dict","required_keys":["property_id","signal_strength","status"]}}}
+{"id":"distressed_property_price_drop","input":{"filter":"price_drop"},"schema":{"type":"list","item":{"type":"dict","required_keys":["property_id","price","signal_strength"]}}}
+{"id":"distressed_property_strength_range","input":{},"validators":["signal_strength >= 0","signal_strength <= 100"]}

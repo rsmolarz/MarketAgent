@@ -1,0 +1,1044 @@
+0) What you’ll add (minimal new surface area)
+
+New modules:
+
+eval/ab_testing.py — prompt A/B runner + win-rate promotion logic
+
+meta/prompt_variant_manager.py — creates/loads prompt variants in agents/prompts/variants/
+
+telemetry/reward.py — reward shaping (signal per $ and latency)
+
+meta/retirement.py — retirement scoring + PR generator (disable agent in manifest)
+
+meta/critique_loops.py — cross-agent critiques (macro→geo, geo→macro, etc.)
+
+Workflows:
+
+.github/workflows/prompt_ab_test.yml
+
+.github/workflows/agent_retirement.yml
+
+Also add a folder:
+
+agents/prompts/variants/<prompt_name>/A.md, B.md, champion.md
+
+This integrates with your Phase 2 PR flow and Phase 3 sandbox flow.
+
+1) Prompt A/B testing with win-rate promotion
+Folder structure
+agents/prompts/
+  reviewer.md
+  meta_system.md
+  agent_guidelines.md
+  variants/
+    reviewer/
+      A.md
+      B.md
+      champion.md
+    meta_system/
+      A.md
+      B.md
+      champion.md
+
+meta/prompt_variant_manager.py
+from pathlib import Path
+
+BASE = Path("agents/prompts")
+VAR = BASE / "variants"
+
+def _prompt_slug(prompt_path: str) -> str:
+    return Path(prompt_path).stem  # reviewer.md -> reviewer
+
+def ensure_variants(prompt_path: str):
+    slug = _prompt_slug(prompt_path)
+    vdir = VAR / slug
+    vdir.mkdir(parents=True, exist_ok=True)
+
+    current = Path(prompt_path).read_text()
+
+    for name in ["A.md", "B.md", "champion.md"]:
+        p = vdir / name
+        if not p.exists():
+            p.write_text(current)
+
+def load_variant(prompt_path: str, variant: str) -> str:
+    slug = _prompt_slug(prompt_path)
+    return (VAR / slug / f"{variant}.md").read_text()
+
+def save_champion(prompt_path: str, text: str):
+    slug = _prompt_slug(prompt_path)
+    (VAR / slug / "champion.md").write_text(text)
+    Path(prompt_path).write_text(text)
+
+eval/ab_testing.py (runs evals under A and B prompts, promotes champion)
+
+This assumes your Meta-Agent uses prompt files directly when building its messages. If you currently read agents/prompts/*.md, this works.
+
+import json
+import yaml
+from pathlib import Path
+from copy import deepcopy
+
+from eval.harness import run_suite
+from meta.prompt_variant_manager import ensure_variants, load_variant, save_champion
+
+def _set_prompt_text(prompt_path: str, text: str):
+    Path(prompt_path).write_text(text)
+
+def run_all_evals(manifest):
+    summaries = {}
+    for a in manifest["agents"]:
+        out = f"eval/results/{a['name']}.json"
+        results = run_suite(
+            module=a["module"],
+            callable_spec=a["callable"],
+            suite_path=a["eval_suite"],
+            out_path=out,
+            eval_adapter=a.get("eval_adapter", "")
+        )
+        total = len(results)
+        passed = sum(1 for r in results if r["ok"])
+        summaries[a["name"]] = {"total": total, "passed": passed, "success_rate": passed / max(total,1)}
+    # global score = mean success_rate
+    global_score = sum(v["success_rate"] for v in summaries.values()) / max(len(summaries), 1)
+    return global_score, summaries
+
+def ab_test_prompts(prompt_paths, min_trials=1, promote_if_delta=0.01):
+    manifest = yaml.safe_load(Path("agents/manifest.yaml").read_text())
+
+    report = {"tests": []}
+
+    for prompt_path in prompt_paths:
+        ensure_variants(prompt_path)
+
+        A = load_variant(prompt_path, "A")
+        B = load_variant(prompt_path, "B")
+
+        # Trial A
+        _set_prompt_text(prompt_path, A)
+        score_A, detail_A = run_all_evals(manifest)
+
+        # Trial B
+        _set_prompt_text(prompt_path, B)
+        score_B, detail_B = run_all_evals(manifest)
+
+        delta = score_B - score_A
+        winner = "B" if delta > 0 else "A"
+
+        report["tests"].append({
+            "prompt": prompt_path,
+            "score_A": score_A,
+            "score_B": score_B,
+            "delta_B_minus_A": delta,
+            "winner": winner,
+            "detail_A": detail_A,
+            "detail_B": detail_B
+        })
+
+        # Promote winner to champion if meaningful improvement
+        if abs(delta) >= promote_if_delta:
+            champion_text = B if winner == "B" else A
+            save_champion(prompt_path, champion_text)
+        else:
+            # revert to champion (stable)
+            champ = load_variant(prompt_path, "champion")
+            _set_prompt_text(prompt_path, champ)
+
+    Path("meta/reports").mkdir(parents=True, exist_ok=True)
+    Path("meta/reports/ab_test_report.json").write_text(json.dumps(report, indent=2))
+    return report
+
+if __name__ == "__main__":
+    prompts = [
+        "agents/prompts/meta_system.md",
+        "agents/prompts/reviewer.md",
+        "agents/prompts/agent_guidelines.md"
+    ]
+    ab_test_prompts(prompts)
+
+Workflow: .github/workflows/prompt_ab_test.yml
+
+Creates a PR only if a champion is promoted (i.e., file changed).
+
+name: Prompt A/B Test + Promote Champion
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"   # daily 03:00 UTC
+
+jobs:
+  abtest:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run A/B tests
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-4.1-mini
+        run: |
+          python eval/ab_testing.py
+          git status --porcelain
+
+      - name: Create PR if changes
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: meta/prompt-ab-champion
+          title: "Meta: Promote prompt champion (A/B win-rate)"
+          body: |
+            Automated A/B test promoted new champion prompt(s).
+            See meta/reports/ab_test_report.json for scores and deltas.
+          labels: meta-agent,prompt-tuning,ab-test
+
+2) Telemetry-driven reward shaping (cost vs signal strength)
+
+You need a consistent “signal strength” per agent run. For analysis agents, compute signal strength from outputs (e.g., risk_score magnitude, anomaly severity, profit_pct).
+
+telemetry/reward.py
+from typing import Any, Dict, List
+import math
+
+def signal_strength(agent_name: str, output: Any) -> float:
+    """
+    Returns 0..1-ish signal strength from agent output.
+    Adjust scoring per agent type.
+    """
+    if output is None:
+        return 0.0
+
+    # Common: list of dict signals
+    if isinstance(output, list) and output:
+        x = output[0]
+        if isinstance(x, dict):
+            if "profit_pct" in x:
+                # profit_pct in percent units (0.5 means 0.5%)
+                return max(0.0, min(1.0, float(x["profit_pct"]) / 2.0))
+            if "risk_score" in x:
+                return max(0.0, min(1.0, float(x["risk_score"]) / 100.0))
+            if "signal" in x and "value" in x:
+                # macro anomaly: use normalized daily_change if present
+                dc = float(x.get("daily_change", 0.0))
+                return max(0.0, min(1.0, abs(dc) / 0.10))
+    return 0.1
+
+def reward(event: Dict[str, Any], output: Any) -> float:
+    """
+    Reward higher signal, penalize cost and latency.
+    """
+    sig = signal_strength(event.get("agent", ""), output)
+    cost = float(event.get("cost_usd") or 0.0)
+    lat_ms = float(event.get("latency_ms") or 0.0)
+
+    # penalties: mild for latency, heavier for cost
+    cost_penalty = math.log1p(cost * 200.0)  # 0.01$ -> noticeable
+    lat_penalty = math.log1p(lat_ms / 500.0)
+
+    return sig - 0.25 * cost_penalty - 0.10 * lat_penalty
+
+Wire into telemetry logging
+
+When you log an event, also log signal_strength and reward. Easiest place is wherever you already have agent output in hand (your orchestrator). If you don’t yet, start by wiring it into eval runs (since output exists there) to validate the pipeline.
+
+In eval/harness.py, in the per-case loop, after output is computed, add:
+
+from telemetry.logger import log_event, new_run_id
+from telemetry.reward import reward
+
+run_id = new_run_id()
+lat_ms = int((time.time() - t0) * 1000)
+# cost/tokens are unknown in offline eval; keep None
+event = {"agent": module, "run_id": run_id, "latency_ms": lat_ms, "cost_usd": None, "error": err}
+r = reward(event, output)
+log_event(agent=module, run_id=run_id, latency_ms=lat_ms, cost_usd=None, error=err)
+
+
+Then extend log_event to accept optional reward fields if you want. (If you want, I’ll provide the exact patch for telemetry/logger.py.)
+
+3) Agent retirement when marginal alpha → 0
+
+Define “marginal alpha” operationally:
+
+For arbitrage: number of opportunities above threshold per day/week; average profit_pct; downstream fill rate (later)
+
+For geo/macro: count of high-signal alerts that correlate with market moves (later)
+Right now, use telemetry-derived reward as the proxy. If an agent’s rolling reward is consistently low, retire it.
+
+meta/retirement.py
+import json
+from pathlib import Path
+from collections import defaultdict, deque
+import yaml
+
+from telemetry.summarize import summarize as summarize_telemetry
+
+def load_events(path="telemetry/events.jsonl", last_n=5000):
+    p = Path(path)
+    if not p.exists():
+        return []
+    lines = p.read_text().splitlines()[-last_n:]
+    out = []
+    for ln in lines:
+        try:
+            out.append(json.loads(ln))
+        except:
+            pass
+    return out
+
+def rolling_metrics(events, window=200):
+    by = defaultdict(lambda: deque(maxlen=window))
+    for e in events:
+        a = e.get("agent")
+        if not a: 
+            continue
+        r = e.get("reward")
+        if r is None:
+            continue
+        by[a].append(float(r))
+    metrics = {}
+    for a, dq in by.items():
+        if not dq:
+            continue
+        avg = sum(dq)/len(dq)
+        metrics[a] = {"rolling_avg_reward": avg, "n": len(dq)}
+    return metrics
+
+def retire_candidates(manifest_path="agents/manifest.yaml", min_n=100, reward_floor=0.05):
+    manifest = yaml.safe_load(Path(manifest_path).read_text())
+    events = load_events()
+    m = rolling_metrics(events)
+
+    candidates = []
+    for a in manifest["agents"]:
+        tag = a.get("module")  # telemetry agent uses module currently
+        if tag in m and m[tag]["n"] >= min_n and m[tag]["rolling_avg_reward"] < reward_floor:
+            candidates.append({"agent": a["name"], "module": tag, **m[tag]})
+    return candidates
+
+def write_report(candidates):
+    Path("meta/reports").mkdir(parents=True, exist_ok=True)
+    Path("meta/reports/retirement_report.json").write_text(json.dumps({"candidates": candidates}, indent=2))
+
+if __name__ == "__main__":
+    c = retire_candidates()
+    write_report(c)
+
+How retirement happens (safe)
+
+Retirement should be a PR that:
+
+flips a manifest flag enabled: false OR
+
+moves agent to agents/retired/ (not recommended initially)
+
+Update manifest to include enabled: true on all agents. Then retirement PR sets it false.
+
+Add to each manifest entry:
+
+enabled: true
+
+
+Then update your orchestrator to ignore disabled agents. If you don’t have orchestrator filtering yet, do it now (one-line).
+
+Workflow to generate retirement PR:
+
+.github/workflows/agent_retirement.yml
+name: Agent Retirement Candidates
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1"  # weekly
+
+jobs:
+  retire:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - run: |
+          python meta/retirement.py
+          git add meta/reports/retirement_report.json || true
+
+      - name: Create PR with report only
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: meta/agent-retirement
+          title: "Meta: Agent retirement candidates (low marginal alpha)"
+          body: |
+            See meta/reports/retirement_report.json.
+            This PR does not disable agents automatically; it flags candidates for review.
+          labels: meta-agent,retirement
+
+
+(Deliberately “report-only” first. When you like the results, promote it to auto-disable with human PR approval.)
+
+4) Cross-agent critique loops (macro critiques geo, etc.)
+
+Implement “critic agents” as LLM review passes that:
+
+read another agent’s output + telemetry context
+
+produce specific improvement suggestions
+
+optionally generate prompt improvements (Phase 2) or sandbox patches (Phase 3)
+
+meta/critique_loops.py
+import json
+from pathlib import Path
+from tools.llm_client import call_llm
+
+CRITIQUE_SCHEMA = {
+    "critiques": [
+        {
+            "target_agent": "",
+            "critic_agent": "",
+            "issues": [{"title":"", "evidence":"", "impact":"", "severity":"low|med|high"}],
+            "recommendations": [{"change":"", "why":"", "priority":"P0|P1|P2"}]
+        }
+    ]
+}
+
+def critique(critic_name: str, target_name: str, target_output, telemetry_summary):
+    msgs = [
+        {"role":"system","content":"You are a cross-agent critic. Output strict JSON only."},
+        {"role":"user","content":json.dumps({
+            "critic_agent": critic_name,
+            "target_agent": target_name,
+            "target_output": target_output,
+            "telemetry": telemetry_summary,
+            "output_schema": CRITIQUE_SCHEMA,
+            "rules": [
+                "Focus on false positives/negatives and decision usefulness",
+                "Recommend concrete improvements (prompt constraints, thresholds, ranking)",
+                "No code changes to protected paths"
+            ]
+        })}
+    ]
+    return call_llm(msgs, temperature=0.2, max_tokens=1800)
+
+def run_loops():
+    # Example: use latest eval previews as stand-ins for outputs
+    # In production, feed real last-run outputs from your orchestrator.
+    outputs = {}
+    for p in Path("eval/results").glob("*.json"):
+        d = json.loads(p.read_text())
+        # grab first output preview
+        prev = None
+        for r in d.get("results", []):
+            if r.get("output_preview") is not None:
+                prev = r["output_preview"]
+                break
+        outputs[p.stem] = prev
+
+    telemetry_summary = {}
+    tp = Path("telemetry/summary.json")
+    if tp.exists():
+        telemetry_summary = json.loads(tp.read_text())
+
+    loops = [
+        ("macro_watcher", "geopolitical_risk"),
+        ("geopolitical_risk", "macro_watcher"),
+    ]
+
+    all_crits = {"critiques": []}
+    for critic, target in loops:
+        out = critique(critic, target, outputs.get(target), telemetry_summary)
+        all_crits["critiques"].extend(out.get("critiques", []))
+
+    Path("meta/reports").mkdir(parents=True, exist_ok=True)
+    Path("meta/reports/cross_critiques.json").write_text(json.dumps(all_crits, indent=2))
+
+if __name__ == "__main__":
+    run_loops()
+
+
+Workflow (optional) to run critiques nightly and PR the report:
+
+Add a workflow similar to retirement that commits meta/reports/cross_critiques.json only.
+
+5) How these four upgrades work together
+
+A/B testing determines which prompts actually improve eval win-rate → promotes champion via PR.
+
+Reward shaping converts telemetry + output into a single scalar score (signal per cost/latency).
+
+Retirement uses rolling reward to flag agents that no longer justify their cost.
+
+Critique loops turn agent outputs into targeted recommendations that feed:
+
+prompt tuning (Phase 2)
+
+sandbox self-modification (Phase 3)
+
+This produces a closed loop:
+measure → critique → propose → validate → promote/retire
+
+What you must do to make this “real” (one dependency)
+
+Right now telemetry events don’t include reward unless you add it. Choose one:
+
+Add reward field to telemetry/logger.py and log it from your orchestrator (preferred), or
+
+Add reward computation into the eval harness only (useful but limited)
+
+If you paste your current telemetry/logger.py, I’ll provide the exact patch (small, safe) to add reward, signal_strength, and rolling summaries.
+
+telemetry/logger.py where can I find this? Im not seeing it
+
+That’s expected. telemetry/logger.py does not exist yet — it is a new file you create. Nothing is missing or broken.
+
+Below is exactly where it goes, why it exists, and the full file to paste in.
+
+Where telemetry/logger.py lives
+
+Create this folder + file at the repo root:
+
+telemetry/
+├── logger.py        ← CREATE THIS
+├── summarize.py    ← already referenced earlier
+├── reward.py       ← already referenced earlier
+└── events.jsonl    ← auto-created at runtime
+
+
+If telemetry/ does not exist yet, create it.
+
+Why this file exists (plain truth)
+
+telemetry/logger.py is the single choke point where all agents report:
+
+latency
+
+cost
+
+errors
+
+(soon) reward / signal strength
+
+This is intentional:
+
+No agent writes files directly
+
+No duplication
+
+Retirement, reward shaping, and A/B testing all depend on this
+
+If this file didn’t exist, nothing downstream could work.
+
+Copy-paste: telemetry/logger.py (FINAL)
+import json
+import uuid
+from pathlib import Path
+from datetime import datetime, timezone
+from typing import Optional
+
+LOG_PATH = Path("telemetry/events.jsonl")
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def new_run_id() -> str:
+    return str(uuid.uuid4())
+
+
+def log_event(
+    agent: str,
+    run_id: str,
+    latency_ms: int,
+    cost_usd: Optional[float] = None,
+    tokens_in: Optional[int] = None,
+    tokens_out: Optional[int] = None,
+    error: Optional[str] = None,
+    reward: Optional[float] = None,
+):
+    """
+    Append a single telemetry event as JSONL.
+
+    This is intentionally append-only.
+    No aggregation happens here.
+    """
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    event = {
+        "ts": _now_iso(),
+        "agent": agent,
+        "run_id": run_id,
+        "latency_ms": latency_ms,
+        "cost_usd": cost_usd,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "error": error,
+        "reward": reward,
+    }
+
+    with LOG_PATH.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(event) + "\n")
+
+
+That’s it. No dependencies. No configuration. No side effects.
+
+How it gets used (so you know it’s wired correctly)
+1️⃣ Eval harness (already discussed)
+
+In eval/harness.py, after each case finishes:
+
+from telemetry.logger import log_event, new_run_id
+from telemetry.reward import reward
+
+run_id = new_run_id()
+lat_ms = int((time.time() - t0) * 1000)
+
+r = reward(
+    {
+        "agent": module,
+        "latency_ms": lat_ms,
+        "cost_usd": None,
+    },
+    output,
+)
+
+log_event(
+    agent=module,
+    run_id=run_id,
+    latency_ms=lat_ms,
+    cost_usd=None,
+    error=err,
+    reward=r,
+)
+
+
+This immediately enables:
+
+reward shaping
+
+retirement scoring
+
+cost/latency tradeoffs
+
+2️⃣ Real agents later (production)
+
+When you’re ready, your orchestrator (not individual agents) logs:
+
+run_id = new_run_id()
+start = time.time()
+
+output = agent.analyze()
+
+latency_ms = int((time.time() - start) * 1000)
+
+log_event(
+    agent="macro_watcher",
+    run_id=run_id,
+    latency_ms=latency_ms,
+    cost_usd=llm_cost,
+    tokens_in=tokens_in,
+    tokens_out=tokens_out,
+    reward=reward(event, output),
+)
+
+
+No refactors needed later.
+
+Sanity check (verify it works in 30 seconds)
+
+Run this from repo root:
+
+python - <<'EOF'
+from telemetry.logger import log_event, new_run_id
+
+log_event(
+    agent="test_agent",
+    run_id=new_run_id(),
+    latency_ms=123,
+    cost_usd=0.002,
+    reward=0.42,
+)
+
+print("Wrote telemetry event.")
+EOF
+
+
+You should now see:
+
+telemetry/events.jsonl
+
+
+with one JSON line inside.
+
+Bottom line
+
+You didn’t miss anything
+
+This file is intentionally new
+
+It is the backbone for:
+
+reward shaping
+
+A/B promotion
+
+agent retirement
+
+performance-driven evolution
+
+If you want, next I can:
+
+wire telemetry into your actual runtime agents
+
+add rolling summaries (telemetry/summary.json)
+
+visualize reward vs cost over time
+
+Say which one you want next.
+
+lets do these wire telemetry into your actual runtime agents
+
+add rolling summaries (telemetry/summary.json)
+
+visualize reward vs cost over time
+1) Wire telemetry into actual runtime agents
+
+You should not add logging inside every agent method. Put it in one place: BaseAgent (or whatever orchestrates calls to analyze()).
+
+A) Create telemetry/instrumentation.py (new)
+import time
+import traceback
+from typing import Any, Callable, Optional, Dict
+
+from telemetry.logger import log_event, new_run_id
+from telemetry.reward import reward as compute_reward
+
+def instrument_agent_call(
+    agent_name: str,
+    fn: Callable[[], Any],
+    cost_usd: Optional[float] = None,
+    tokens_in: Optional[int] = None,
+    tokens_out: Optional[int] = None,
+) -> Any:
+    """
+    Wrap any agent call to record latency, error, (optional) cost/tokens, and reward.
+    """
+    run_id = new_run_id()
+    t0 = time.time()
+    err = None
+    output = None
+
+    try:
+        output = fn()
+        return output
+    except Exception as e:
+        err = f"{type(e).__name__}: {e}"
+        raise
+    finally:
+        lat_ms = int((time.time() - t0) * 1000)
+
+        event = {
+            "agent": agent_name,
+            "run_id": run_id,
+            "latency_ms": lat_ms,
+            "cost_usd": cost_usd,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "error": err,
+        }
+
+        # reward uses output + event context; if output is None and err exists, reward should drop
+        r = compute_reward(event, output)
+
+        log_event(
+            agent=agent_name,
+            run_id=run_id,
+            latency_ms=lat_ms,
+            cost_usd=cost_usd,
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            error=err,
+            reward=r,
+        )
+
+B) Minimal change to each agent method call site (recommended)
+
+Wherever you call agents (your orchestrator / main loop), wrap calls:
+
+from telemetry.instrumentation import instrument_agent_call
+
+agent = MacroWatcherAgent()
+
+output = instrument_agent_call(
+    agent_name="macro_watcher",
+    fn=lambda: agent.analyze()
+)
+
+C) If you have a shared BaseAgent.run() pattern (best)
+
+If your system has a uniform runner (example):
+
+class BaseAgent:
+    def run(self): ...
+
+
+Instrument inside that runner once:
+
+from telemetry.instrumentation import instrument_agent_call
+
+class BaseAgent:
+    name = "base"
+
+    def run(self):
+        return instrument_agent_call(self.name, lambda: self.analyze())
+
+
+Then every subclass gets telemetry automatically.
+
+2) Add rolling summaries: telemetry/summary.json
+Create telemetry/rollup.py (new)
+import json
+from pathlib import Path
+from collections import defaultdict
+from datetime import datetime, timezone
+
+EVENTS_PATH = Path("telemetry/events.jsonl")
+SUMMARY_PATH = Path("telemetry/summary.json")
+
+def _pct(vals, p):
+    if not vals:
+        return None
+    vals = sorted(vals)
+    idx = int((p/100.0) * (len(vals)-1))
+    return vals[idx]
+
+def rollup(last_n=5000):
+    if not EVENTS_PATH.exists():
+        out = {"available": False, "generated_at": datetime.now(timezone.utc).isoformat(), "by_agent": {}}
+        SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        SUMMARY_PATH.write_text(json.dumps(out, indent=2))
+        return out
+
+    lines = EVENTS_PATH.read_text().splitlines()[-last_n:]
+    by = defaultdict(lambda: {
+        "count": 0,
+        "errors": 0,
+        "lat_ms": [],
+        "cost_usd": [],
+        "reward": [],
+        "last_ts": None
+    })
+
+    for ln in lines:
+        try:
+            e = json.loads(ln)
+        except:
+            continue
+
+        a = e.get("agent", "unknown")
+        b = by[a]
+        b["count"] += 1
+        if e.get("error"):
+            b["errors"] += 1
+
+        if e.get("latency_ms") is not None:
+            try: b["lat_ms"].append(float(e["latency_ms"]))
+            except: pass
+
+        if e.get("cost_usd") is not None:
+            try: b["cost_usd"].append(float(e["cost_usd"]))
+            except: pass
+
+        if e.get("reward") is not None:
+            try: b["reward"].append(float(e["reward"]))
+            except: pass
+
+        ts = e.get("ts")
+        if ts:
+            b["last_ts"] = ts
+
+    out_by = {}
+    for a, b in by.items():
+        lat = b["lat_ms"]
+        cost = b["cost_usd"]
+        rew = b["reward"]
+        out_by[a] = {
+            "count": b["count"],
+            "error_rate": (b["errors"] / b["count"]) if b["count"] else 0.0,
+            "p50_latency_ms": _pct(lat, 50),
+            "p95_latency_ms": _pct(lat, 95),
+            "avg_cost_usd": (sum(cost)/len(cost)) if cost else None,
+            "avg_reward": (sum(rew)/len(rew)) if rew else None,
+            "last_ts": b["last_ts"],
+        }
+
+    out = {
+        "available": True,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "window_last_n_events": last_n,
+        "by_agent": out_by
+    }
+    SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    SUMMARY_PATH.write_text(json.dumps(out, indent=2))
+    return out
+
+if __name__ == "__main__":
+    rollup()
+
+Add a CI step after evaluations (or in your runtime cron)
+
+Add to your GitHub Actions jobs after eval/meta runs:
+
+- name: Roll up telemetry summary
+  run: |
+    python telemetry/rollup.py
+
+
+This creates/updates telemetry/summary.json.
+
+3) Visualize reward vs cost over time
+Create telemetry/plots.py (new)
+
+Generates:
+
+telemetry/charts/reward_vs_cost_scatter.png (reward vs cost)
+
+telemetry/charts/reward_over_time.png (reward over time)
+
+telemetry/charts/cost_over_time.png (cost over time)
+
+import json
+from pathlib import Path
+from datetime import datetime
+import matplotlib.pyplot as plt
+
+EVENTS_PATH = Path("telemetry/events.jsonl")
+OUT_DIR = Path("telemetry/charts")
+
+def load_events(last_n=8000):
+    if not EVENTS_PATH.exists():
+        return []
+    lines = EVENTS_PATH.read_text().splitlines()[-last_n:]
+    out = []
+    for ln in lines:
+        try:
+            out.append(json.loads(ln))
+        except:
+            pass
+    return out
+
+def parse_ts(s):
+    # ISO 8601
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except:
+        return None
+
+def main():
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    events = load_events()
+
+    # Filter to events with reward, and cost where available
+    xs_cost = []
+    ys_reward = []
+    for e in events:
+        r = e.get("reward")
+        c = e.get("cost_usd")
+        if r is None or c is None:
+            continue
+        try:
+            xs_cost.append(float(c))
+            ys_reward.append(float(r))
+        except:
+            pass
+
+    # Scatter: reward vs cost
+    plt.figure()
+    plt.scatter(xs_cost, ys_reward)
+    plt.xlabel("Cost (USD)")
+    plt.ylabel("Reward")
+    plt.title("Reward vs Cost (scatter)")
+    plt.savefig(OUT_DIR / "reward_vs_cost_scatter.png", dpi=200)
+    plt.close()
+
+    # Reward over time
+    ts_r = []
+    r_vals = []
+    for e in events:
+        r = e.get("reward")
+        t = parse_ts(e.get("ts",""))
+        if r is None or t is None:
+            continue
+        ts_r.append(t)
+        r_vals.append(float(r))
+    if ts_r:
+        plt.figure()
+        plt.plot(ts_r, r_vals)
+        plt.xlabel("Time")
+        plt.ylabel("Reward")
+        plt.title("Reward over time")
+        plt.tight_layout()
+        plt.savefig(OUT_DIR / "reward_over_time.png", dpi=200)
+        plt.close()
+
+    # Cost over time
+    ts_c = []
+    c_vals = []
+    for e in events:
+        c = e.get("cost_usd")
+        t = parse_ts(e.get("ts",""))
+        if c is None or t is None:
+            continue
+        ts_c.append(t)
+        c_vals.append(float(c))
+    if ts_c:
+        plt.figure()
+        plt.plot(ts_c, c_vals)
+        plt.xlabel("Time")
+        plt.ylabel("Cost (USD)")
+        plt.title("Cost over time")
+        plt.tight_layout()
+        plt.savefig(OUT_DIR / "cost_over_time.png", dpi=200)
+        plt.close()
+
+if __name__ == "__main__":
+    main()
+
+Add a CI step (optional)
+- name: Generate telemetry charts
+  run: |
+    python telemetry/plots.py
+
+
+If you want charts attached to PR artifacts:
+
+- name: Upload charts
+  uses: actions/upload-artifact@v4
+  with:
+    name: telemetry-charts
+    path: telemetry/charts/

@@ -1,0 +1,80 @@
+# ==============================================================================
+# MANIFEST ENTRIES FOR DISTRESSED AGENTS
+# Add these to your agents/manifest.yaml
+# ==============================================================================
+
+# --- Distressed Property Agent ---
+  - name: distressed_property
+    module: agents.distressed_property_agent
+    callable: "DistressedPropertyAgent.analyze"
+    eval_suite: eval/suites/distressed_property.jsonl
+    eval_adapter: eval.adapters_distressed:run_distressed_property_offline
+    sandbox_editable: true
+    execution_sensitive: false
+    telemetry_tag: distressed_property
+    interval_minutes: 60
+    regime_weight:
+      risk_on: 0.8
+      risk_off: 1.2
+      crisis: 1.5
+    description: "Identifies high-signal distressed real estate opportunities"
+
+# --- Distressed Deal Evaluator Agent ---
+  - name: distressed_deal_evaluator
+    module: agents.distressed_deal_evaluator_agent
+    callable: "DistressedDealEvaluatorAgent.analyze"
+    eval_suite: eval/suites/distressed_deal_evaluator.jsonl
+    eval_adapter: eval.adapters_distressed:run_distressed_deal_evaluator_offline
+    sandbox_editable: true
+    execution_sensitive: false
+    telemetry_tag: distressed_deals
+    interval_minutes: 120
+    regime_weight:
+      risk_on: 0.5
+      risk_off: 1.5
+      crisis: 2.0
+    description: "Institutional-grade distressed debt/equity evaluation with waterfall analysis"
+
+
+# ==============================================================================
+# FULL manifest.yaml EXAMPLE (for reference)
+# ==============================================================================
+# 
+# agents:
+#   - name: arbitrage_finder
+#     module: agents.arbitrage_finder_agent
+#     callable: "ArbitrageFinderAgent.analyze"
+#     eval_suite: eval/suites/arbitrage_finder.jsonl
+#     eval_adapter: eval.adapters:run_arbitrage_offline
+#     sandbox_editable: false
+#     execution_sensitive: true
+#     telemetry_tag: arbitrage
+# 
+#   - name: macro_watcher
+#     module: agents.macro_watcher_agent
+#     callable: "MacroWatcherAgent.analyze"
+#     eval_suite: eval/suites/macro_watcher.jsonl
+#     eval_adapter: eval.adapters:run_macro_offline
+#     sandbox_editable: true
+#     execution_sensitive: false
+#     telemetry_tag: macro
+# 
+#   - name: distressed_property
+#     module: agents.distressed_property_agent
+#     callable: "DistressedPropertyAgent.analyze"
+#     eval_suite: eval/suites/distressed_property.jsonl
+#     eval_adapter: eval.adapters_distressed:run_distressed_property_offline
+#     sandbox_editable: true
+#     execution_sensitive: false
+#     telemetry_tag: distressed_property
+#     interval_minutes: 60
+# 
+#   - name: distressed_deal_evaluator
+#     module: agents.distressed_deal_evaluator_agent
+#     callable: "DistressedDealEvaluatorAgent.analyze"
+#     eval_suite: eval/suites/distressed_deal_evaluator.jsonl
+#     eval_adapter: eval.adapters_distressed:run_distressed_deal_evaluator_offline
+#     sandbox_editable: true
+#     execution_sensitive: false
+#     telemetry_tag: distressed_deals
+#     interval_minutes: 120

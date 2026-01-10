@@ -1,0 +1,139 @@
+1) Telemetry (you just showed)
+{
+  "run_id": "uuid",
+  "agent": "CryptoFundingRateAgent",
+  "latency_ms": 412,
+  "tokens_in": 1830,
+  "tokens_out": 421,
+  "cost_usd": 0.0312,
+  "errors": 0
+}
+
+2) Alpha events (patched earlier)
+{
+  "run_id": "uuid",
+  "agent": "CryptoFundingRateAgent",
+  "symbol": "BTC",
+  "direction": "SHORT",
+  "score_final": -1.42,
+  "regime": "MEAN_REVERT"
+}
+
+3) Realized PnL (already planned / partially implemented)
+{
+  "run_id": "uuid",
+  "realized_pnl_bps": -37.4
+}
+
+
+This means:
+
+Every dollar lost or gained can now be explained.
+
+That’s the difference between hobby systems and real ones.
+
+🔓 WHAT THIS UNLOCKS IMMEDIATELY
+
+Because run_id is present everywhere:
+
+You can now answer:
+
+Why did this agent lose money?
+
+Was it slow, wrong, or mis-regimed?
+
+Did cost explode before performance degraded?
+
+Which runs should count against promotion?
+
+And you can do it programmatically, not by eyeballing charts.
+
+NEXT: 4 SMALL PATCHES I STRONGLY RECOMMEND
+
+These are minimal changes that massively increase power.
+
+1️⃣ Patch: Include run_id in realized PnL reconciliation
+
+Wherever you reconcile signals → prices (likely alpha/reconcile.py or similar), ensure this shape:
+
+{
+  "ts": "...",
+  "agent": agent,
+  "run_id": alpha_event["run_id"],   # REQUIRED
+  "symbol": symbol,
+  "entry_price": ...,
+  "exit_price": ...,
+  "realized_pnl_bps": pnl_bps,
+}
+
+
+If you want, paste that file and I’ll return a diff-ready patch.
+
+2️⃣ Upgrade failure-forensics to join on run_id (10 lines)
+
+Replace agent-only joins with:
+
+losses_by_run = {e["run_id"]: e for e in worst_losses}
+
+telemetry_by_run = {
+    t["run_id"]: t
+    for t in telemetry_events
+}
+
+joined = []
+for run_id, loss in losses_by_run.items():
+    joined.append({
+        **loss,
+        **telemetry_by_run.get(run_id, {})
+    })
+
+
+This lets the forensics agent say:
+
+“Losses cluster when latency > 900ms and token usage spikes.”
+
+That’s actionable.
+
+3️⃣ Add run-level confidence decay (very powerful)
+
+Add this rule inside Meta-Agent scoring:
+
+if run.realized_pnl_bps < -20:
+    confidence_decay = 0.85
+elif run.realized_pnl_bps < 0:
+    confidence_decay = 0.95
+else:
+    confidence_decay = 1.0
+
+
+Persist it per agent:
+
+{
+  "agent": "CryptoFundingRateAgent",
+  "confidence_multiplier": 0.72
+}
+
+
+This prevents agents from firing “full size” after bad behavior.
+
+4️⃣ Promotion / Kill Gates (now trivial)
+
+You can now define hard, auditable gates like:
+
+Promotion
+if (
+    rolling_pnl_bps > 150
+    and error_rate == 0
+    and median_latency_ms < 700
+):
+    promote_agent()
+
+Kill (agent OR strategy class)
+if (
+    last_5_runs_pnl < -100
+    or error_rate > 0.2
+):
+    kill_agent_or_strategy()
+
+
+Because everything is keyed by run_id, these are deterministic, not subjective.

@@ -1,0 +1,529 @@
+Goal
+- Build an “LLM regime council” (Claude + GPT + Gemini) that:
+  1) returns a structured regime assessment
+  2) combines the models with confidence weighting
+  3) detects disagreement / uncertainty spikes and escalates (but does NOT directly trigger risk controls)
+
+Key rules (non-negotiable)
+- Council output can modulate *soft* behaviors (email priority, investigation depth, “watch” mode).
+- Deterministic risk layer (drawdown governor, hard stops) remains math-only.
+Below is a drop-in design + code scaffold that fits your repo style.
+
+1) Council Output Schema (what every LLM must return)
+We force the same JSON from all models so we can compare apples-to-apples.
+
+Regimes (example set; adjust later):
+
+risk_on, risk_off, inflation_shock, growth_slowdown, liquidity_crunch, geopolitical_shock, rates_vol_spike
+
+Each model returns:
+
+json
+Copy code
+{
+  "asof_utc": "2026-01-08T01:23:45Z",
+  "regime_probs": {
+    "risk_on": 0.10,
+    "risk_off": 0.55,
+    "inflation_shock": 0.05,
+    "growth_slowdown": 0.12,
+    "liquidity_crunch": 0.08,
+    "geopolitical_shock": 0.05,
+    "rates_vol_spike": 0.05
+  },
+  "top_regime": "risk_off",
+  "confidence": 0.72,
+  "time_horizon_days": 10,
+  "key_evidence": [
+    "VIX elevated vs 30d avg",
+    "Rates vol rising; credit spreads widening"
+  ],
+  "risk_flags": ["correlation_break", "liquidity_thin"],
+  "recommended_posture": {
+    "exposure_multiplier": 0.75,
+    "hedge_bias": "increase",
+    "notes": "Prefer defensive/quality; reduce levered beta"
+  }
+}
+2) Confidence Weighting (Claude vs GPT vs Gemini)
+Use a two-part weight per model:
+
+Weight = reliability_weight × current_confidence
+
+current_confidence: the model’s self-reported confidence (0–1)
+
+reliability_weight: learned from history (Brier score / calibration)
+
+Initial defaults (until you have history):
+
+GPT: 1.0
+
+Claude: 1.0
+
+Gemini: 1.0
+
+As you backtest and collect realized outcomes, update reliability weights using an EMA of Brier scores.
+
+3) Disagreement Detection (uncertainty spikes)
+Compute 3 disagreement signals:
+
+Top-regime vote split
+
+If models pick different top_regime, this spikes immediately.
+
+Probability dispersion
+
+For each regime, compute variance across models; aggregate:
+
+prob_var = mean(var_across_models(regime_probs[regime]))
+
+Ensemble entropy
+
+Compute entropy of the aggregated distribution:
+
+high entropy = models collectively unsure
+
+You can raise an “uncertainty spike” if:
+
+vote_split >= 2 (2+ different top regimes), OR
+
+prob_var > 0.02, OR
+
+entropy > 1.4 (depends on number of regimes; tune later)
+
+Escalation behavior (safe):
+
+raise dashboard banner
+
+increase report frequency
+
+request human review
+
+DO NOT auto-shut off capital
+
+Code: Council + Weighting + Disagreement (add these files)
+A) tools/llm_providers.py
+Adapters for GPT/Claude/Gemini. If you already have an LLM client, map these to it.
+
+python
+Copy code
+# tools/llm_providers.py
+import os
+import json
+import time
+from typing import Dict, Any, Optional
+
+import requests
+
+class LLMProviderError(Exception):
+    pass
+
+def _post_json(url: str, headers: Dict[str, str], payload: Dict[str, Any], timeout: int = 45) -> Dict[str, Any]:
+    r = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    if r.status_code >= 400:
+        raise LLMProviderError(f"HTTP {r.status_code}: {r.text[:500]}")
+    return r.json()
+
+class GPTProvider:
+    """
+    Uses OpenAI Responses API-like payload shape.
+    If your repo already has a call_llm wrapper, replace this class with that wrapper.
+    """
+    def __init__(self, model: str = "gpt-4.1-mini"):
+        self.model = model
+        self.api_key = os.getenv("OPENAI_API_KEY", "")
+
+    def call(self, system: str, user: str) -> str:
+        if not self.api_key:
+            raise LLMProviderError("Missing OPENAI_API_KEY")
+        url = "https://api.openai.com/v1/responses"
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        payload = {
+            "model": self.model,
+            "input": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": 0.2,
+        }
+        data = _post_json(url, headers, payload)
+        # best-effort extraction
+        text = ""
+        for item in data.get("output", []):
+            for c in item.get("content", []):
+                if c.get("type") == "output_text":
+                    text += c.get("text", "")
+        return text.strip() or json.dumps(data)
+
+class ClaudeProvider:
+    def __init__(self, model: str = "claude-3-5-sonnet-latest"):
+        self.model = model
+        self.api_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+    def call(self, system: str, user: str) -> str:
+        if not self.api_key:
+            raise LLMProviderError("Missing ANTHROPIC_API_KEY")
+        url = "https://api.anthropic.com/v1/messages"
+        headers = {
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json"
+        }
+        payload = {
+            "model": self.model,
+            "max_tokens": 1200,
+            "temperature": 0.2,
+            "system": system,
+            "messages": [{"role": "user", "content": user}],
+        }
+        data = _post_json(url, headers, payload)
+        # Anthropic returns list of content blocks
+        blocks = data.get("content", [])
+        text = "".join([b.get("text", "") for b in blocks if b.get("type") == "text"])
+        return text.strip() or json.dumps(data)
+
+class GeminiProvider:
+    def __init__(self, model: str = "gemini-1.5-pro"):
+        self.model = model
+        self.api_key = os.getenv("GEMINI_API_KEY", "")
+
+    def call(self, system: str, user: str) -> str:
+        if not self.api_key:
+            raise LLMProviderError("Missing GEMINI_API_KEY")
+        # Google Generative Language API
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "contents": [{
+                "role": "user",
+                "parts": [{"text": f"SYSTEM:\n{system}\n\nUSER:\n{user}"}]
+            }],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 1200}
+        }
+        data = _post_json(url, headers, payload)
+        cands = data.get("candidates", [])
+        if not cands:
+            return json.dumps(data)
+        parts = cands[0].get("content", {}).get("parts", [])
+        text = "".join([p.get("text", "") for p in parts])
+        return text.strip() or json.dumps(data)
+B) meta/regime_council.py
+Main council logic: call models, parse JSON, weight, detect disagreement.
+
+python
+Copy code
+# meta/regime_council.py
+import json
+import math
+from dataclasses import dataclass
+from typing import Dict, Any, List, Optional, Tuple
+
+from tools.llm_providers import GPTProvider, ClaudeProvider, GeminiProvider, LLMProviderError
+
+REGIMES = [
+    "risk_on",
+    "risk_off",
+    "inflation_shock",
+    "growth_slowdown",
+    "liquidity_crunch",
+    "geopolitical_shock",
+    "rates_vol_spike",
+]
+
+SYSTEM_PROMPT = """You are a macro/regime analyst.
+Return ONLY valid JSON matching the required schema. No markdown, no extra text.
+
+Rules:
+- regime_probs must include exactly the regimes given and sum to 1.0 (±0.01).
+- confidence is your meta-confidence in this assessment (0.0-1.0).
+- keep key_evidence to 3-7 bullets, concise.
+"""
+
+USER_TEMPLATE = """As-of UTC: {asof_utc}
+
+Inputs (recent signals):
+{signals}
+
+Required regimes:
+{regimes}
+
+Return JSON:
+{schema}
+"""
+
+SCHEMA_EXAMPLE = {
+    "asof_utc": "YYYY-MM-DDTHH:MM:SSZ",
+    "regime_probs": {k: 0.0 for k in REGIMES},
+    "top_regime": "risk_off",
+    "confidence": 0.5,
+    "time_horizon_days": 10,
+    "key_evidence": ["..."],
+    "risk_flags": ["..."],
+    "recommended_posture": {
+        "exposure_multiplier": 1.0,
+        "hedge_bias": "neutral",
+        "notes": "..."
+    }
+}
+
+@dataclass
+class ModelVote:
+    model: str
+    raw_text: str
+    parsed: Optional[Dict[str, Any]]
+    error: Optional[str]
+
+def _safe_json_parse(s: str) -> Optional[Dict[str, Any]]:
+    try:
+        return json.loads(s)
+    except Exception:
+        # Try to extract first {...} block
+        start = s.find("{")
+        end = s.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(s[start:end+1])
+            except Exception:
+                return None
+        return None
+
+def _normalize_probs(p: Dict[str, float]) -> Dict[str, float]:
+    # fill missing
+    for r in REGIMES:
+        p.setdefault(r, 0.0)
+    # clip
+    p2 = {r: float(max(0.0, min(1.0, p[r]))) for r in REGIMES}
+    s = sum(p2.values())
+    if s <= 1e-9:
+        # fallback uniform
+        u = 1.0 / len(REGIMES)
+        return {r: u for r in REGIMES}
+    return {r: p2[r] / s for r in REGIMES}
+
+def entropy(probs: Dict[str, float]) -> float:
+    e = 0.0
+    for r in REGIMES:
+        p = max(1e-12, float(probs.get(r, 0.0)))
+        e -= p * math.log(p)
+    return e
+
+def mean_variance_across_models(model_probs: List[Dict[str, float]]) -> float:
+    # average variance across regimes
+    if not model_probs:
+        return 0.0
+    var_sum = 0.0
+    for r in REGIMES:
+        vals = [mp.get(r, 0.0) for mp in model_probs]
+        m = sum(vals) / len(vals)
+        var = sum((v - m) ** 2 for v in vals) / len(vals)
+        var_sum += var
+    return var_sum / len(REGIMES)
+
+class RegimeCouncil:
+    def __init__(
+        self,
+        reliability_weights: Optional[Dict[str, float]] = None,
+        gpt_model: str = "gpt-4.1-mini",
+        claude_model: str = "claude-3-5-sonnet-latest",
+        gemini_model: str = "gemini-1.5-pro",
+    ):
+        self.providers = {
+            "gpt": GPTProvider(model=gpt_model),
+            "claude": ClaudeProvider(model=claude_model),
+            "gemini": GeminiProvider(model=gemini_model),
+        }
+        self.reliability = reliability_weights or {"gpt": 1.0, "claude": 1.0, "gemini": 1.0}
+
+    def run(self, asof_utc: str, signals: str) -> Dict[str, Any]:
+        user = USER_TEMPLATE.format(
+            asof_utc=asof_utc,
+            signals=signals,
+            regimes=", ".join(REGIMES),
+            schema=json.dumps(SCHEMA_EXAMPLE, indent=2),
+        )
+
+        votes: List[ModelVote] = []
+        for name, prov in self.providers.items():
+            try:
+                raw = prov.call(SYSTEM_PROMPT, user)
+                parsed = _safe_json_parse(raw)
+                votes.append(ModelVote(model=name, raw_text=raw, parsed=parsed, error=None))
+            except Exception as e:
+                votes.append(ModelVote(model=name, raw_text="", parsed=None, error=str(e)))
+
+        # keep only valid
+        valid = [v for v in votes if isinstance(v.parsed, dict)]
+        if not valid:
+            return {
+                "ok": False,
+                "error": "No valid council responses",
+                "votes": [v.__dict__ for v in votes],
+            }
+
+        # Extract per-model normalized probs + confidences
+        model_probs: Dict[str, Dict[str, float]] = {}
+        model_conf: Dict[str, float] = {}
+        top_regimes: Dict[str, str] = {}
+        for v in valid:
+            p = v.parsed.get("regime_probs", {})
+            p = _normalize_probs(p if isinstance(p, dict) else {})
+            model_probs[v.model] = p
+            c = float(v.parsed.get("confidence", 0.5))
+            model_conf[v.model] = max(0.0, min(1.0, c))
+            top_regimes[v.model] = str(v.parsed.get("top_regime", "")).strip()
+
+        # Weighted ensemble
+        weights: Dict[str, float] = {}
+        for m in model_probs.keys():
+            weights[m] = float(self.reliability.get(m, 1.0)) * float(model_conf.get(m, 0.5))
+
+        wsum = sum(weights.values()) or 1.0
+        weights = {m: w / wsum for m, w in weights.items()}
+
+        ensemble = {r: 0.0 for r in REGIMES}
+        for m, p in model_probs.items():
+            for r in REGIMES:
+                ensemble[r] += weights[m] * p[r]
+        ensemble = _normalize_probs(ensemble)
+
+        # Disagreement metrics
+        unique_tops = {top_regimes[m] for m in top_regimes if top_regimes[m]}
+        vote_split = len(unique_tops) if unique_tops else 0
+        prob_var = mean_variance_across_models(list(model_probs.values()))
+        ent = entropy(ensemble)
+
+        # Uncertainty spike heuristic thresholds (tune later)
+        uncertainty_spike = (vote_split >= 2) or (prob_var > 0.02) or (ent > 1.4)
+
+        # Choose top regime from ensemble
+        top_regime = max(ensemble.items(), key=lambda kv: kv[1])[0]
+        # Combine evidence: take top 2 evidence bullets from each model
+        evidence = []
+        for v in valid:
+            ev = v.parsed.get("key_evidence", [])
+            if isinstance(ev, list):
+                for item in ev[:2]:
+                    s = str(item).strip()
+                    if s:
+                        evidence.append(f"{v.model}: {s}")
+
+        result = {
+            "ok": True,
+            "asof_utc": asof_utc,
+            "ensemble": {
+                "regime_probs": ensemble,
+                "top_regime": top_regime,
+                "entropy": ent,
+                "confidence": float(max(ensemble.values())),  # ensemble sharpness proxy
+            },
+            "weights_used": weights,
+            "disagreement": {
+                "vote_split": vote_split,
+                "prob_var": prob_var,
+                "uncertainty_spike": uncertainty_spike,
+                "unique_top_regimes": sorted(list(unique_tops)),
+            },
+            "evidence": evidence[:12],
+            "votes": [
+                {
+                    "model": v.model,
+                    "error": v.error,
+                    "parsed_ok": isinstance(v.parsed, dict),
+                    "top_regime": (v.parsed or {}).get("top_regime"),
+                    "confidence": (v.parsed or {}).get("confidence"),
+                }
+                for v in votes
+            ],
+        }
+        return result
+C) “Disagreement Spike” -> Alert Hook (no trading impact)
+Add a lightweight route so you can see it immediately.
+
+routes/api.py (add endpoint)
+python
+Copy code
+# routes/api.py (add)
+from flask import Blueprint, jsonify
+from datetime import datetime
+
+api_bp = Blueprint("api", __name__)
+
+@api_bp.route("/regime_council")
+def regime_council():
+    from meta.regime_council import RegimeCouncil
+    council = RegimeCouncil()
+    asof = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+    # Minimal signals for now; later feed in your real features + last findings
+    signals = "- last 50 findings summary\n- VIX level\n- rates move\n- credit stress\n"
+
+    out = council.run(asof_utc=asof, signals=signals)
+    return jsonify(out)
+Then hit:
+
+/api/regime_council
+
+If uncertainty_spike = true, you can:
+
+display a banner in dashboard
+
+send a “yellow alert” email
+
+increase update frequency
+
+D) Calibration / Reliability Weights (the “learned trust” layer)
+You asked for “confidence weighting.” The above does it today.
+To make it self-improving, store Brier scores per model.
+
+Minimal approach (JSON file):
+
+eval/regime_calibration.json
+
+Schema:
+
+json
+Copy code
+{
+  "gpt": {"ema_brier": 0.22, "reliability": 0.78},
+  "claude": {"ema_brier": 0.25, "reliability": 0.75},
+  "gemini": {"ema_brier": 0.30, "reliability": 0.70}
+}
+Reliability mapping:
+
+reliability = max(0.1, 1.0 - ema_brier) (simple)
+
+Better mapping later: logistic transform
+
+I can wire this into your backtest labeling once you confirm how you’re defining “ground truth regime” (SPY drawdown? vol regime? macro labels?).
+
+Environment Variables (Replit Secrets)
+Set these in Replit Secrets:
+
+OPENAI_API_KEY
+
+ANTHROPIC_API_KEY
+
+GEMINI_API_KEY
+
+Optional model overrides:
+
+COUNCIL_GPT_MODEL
+
+COUNCIL_CLAUDE_MODEL
+
+COUNCIL_GEMINI_MODEL
+
+What you get immediately
+A council that produces:
+
+ensemble regime probabilities
+
+per-model weights used
+
+disagreement metrics
+
+uncertainty spike flag
+
+A live endpoint to view it
+
+A safe escalation handle (banner/email) without compromising risk controls

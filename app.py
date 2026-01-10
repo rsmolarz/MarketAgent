@@ -1,213 +1,168 @@
 import os
 import logging
 from datetime import datetime
-from flask import Flask, jsonify, request, session, render_template
+
+from flask import Flask, jsonify, request, render_template
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.orm import DeclarativeBase
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
+# ------------------------------------------------------------------------------
+# Logging
+# ------------------------------------------------------------------------------
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-class Base(DeclarativeBase):
-    pass
 
-db = SQLAlchemy(model_class=Base)
+def _apply_finding_council_migration(db):
+    """Add LLM council columns to findings table if they don't exist."""
+    from sqlalchemy import inspect, text
+    
+    try:
+        inspector = inspect(db.engine)
+        existing_columns = {col['name'] for col in inspector.get_columns('findings')}
+        
+        new_columns = [
+            ("consensus_action", "VARCHAR(16)"),
+            ("consensus_confidence", "FLOAT"),
+            ("llm_votes", "JSON"),
+            ("llm_disagreement", "BOOLEAN DEFAULT FALSE"),
+            ("auto_analyzed", "BOOLEAN DEFAULT FALSE"),
+            ("alerted", "BOOLEAN DEFAULT FALSE"),
+            ("ta_regime", "VARCHAR(32)"),
+            ("analyzed_at", "TIMESTAMP"),
+        ]
+        
+        for col_name, col_type in new_columns:
+            if col_name not in existing_columns:
+                try:
+                    db.session.execute(text(f"ALTER TABLE findings ADD COLUMN {col_name} {col_type}"))
+                    db.session.commit()
+                    logger.info(f"Added column {col_name} to findings table")
+                except Exception as e:
+                    db.session.rollback()
+                    logger.debug(f"Column {col_name} may already exist: {e}")
+    except Exception as e:
+        logger.debug(f"Migration check skipped: {e}")
 
+
+# ------------------------------------------------------------------------------
+# Flask App Factory
+# ------------------------------------------------------------------------------
 def create_app():
-    # Create the app
     app = Flask(__name__)
-    app.secret_key = os.environ.get("SESSION_SECRET")
+    app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret")
+
+    # Required for Replit / proxies
     app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
-    
-    # Configure the database
-    database_url = os.environ.get("DATABASE_URL", "sqlite:///market_inefficiency.db")
+
+    # ------------------------------------------------------------------------------
+    # Database config
+    # ------------------------------------------------------------------------------
+    database_url = os.environ.get(
+        "DATABASE_URL",
+        "sqlite:///market_inefficiency.db"
+    )
+
     if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-    
-    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-        "pool_recycle": 300,
-        "pool_pre_ping": True,
-    }
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    
-    # Initialize the app with the extension
+        database_url = database_url.replace(
+            "postgres://", "postgresql://", 1
+        )
+
+    app.config.update(
+        SQLALCHEMY_DATABASE_URI=database_url,
+        SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        SQLALCHEMY_ENGINE_OPTIONS={
+            "pool_pre_ping": True,
+            "pool_recycle": 300,
+        },
+    )
+
+    # ------------------------------------------------------------------------------
+    # Init DB
+    # ------------------------------------------------------------------------------
+    from models import db
     db.init_app(app)
-    
+
     with app.app_context():
         try:
-            # Import models to ensure tables are created
             import models
             db.create_all()
-            app.logger.info("Database tables created successfully")
+            logger.info("Database tables created successfully")
             
-            # Seed admin emails from environment variable
-            admin_emails = os.environ.get('ADMIN_EMAILS', '')
-            if admin_emails:
-                for email in admin_emails.split(','):
-                    email = email.strip().lower()
-                    if email:
-                        existing = models.Whitelist.query.filter_by(email=email).first()
-                        if not existing:
-                            entry = models.Whitelist(email=email, added_by='system', notes='Initial admin')
-                            db.session.add(entry)
-                            app.logger.info(f"Added {email} to whitelist")
-                        
-                        existing_user = models.User.query.filter_by(email=email).first()
-                        if existing_user and not existing_user.is_admin:
-                            existing_user.is_admin = True
-                            app.logger.info(f"Promoted {email} to admin")
-                db.session.commit()
+            _apply_finding_council_migration(db)
         except Exception as e:
-            app.logger.error(f"Database initialization failed: {e}")
-            # Continue without database for basic health checks
-        
-        # Initialize Replit Auth
-        try:
-            from replit_auth import init_auth, make_replit_blueprint
-            init_auth(app)
-            app.register_blueprint(make_replit_blueprint(), url_prefix="/auth")
-            app.logger.info("Replit Auth initialized and blueprint registered")
-        except Exception as e:
-            app.logger.error(f"Replit Auth registration failed: {e}")
-        
-        # Register blueprints
-        try:
-            from routes.dashboard import dashboard_bp
-            from routes.api import api_bp
-            
-            app.register_blueprint(dashboard_bp)
-            app.register_blueprint(api_bp, url_prefix='/api')
-            
-            # Register raw data blueprint for debugging
-            from routes.raw import raw_bp
-            app.register_blueprint(raw_bp)
-            
-            # Register simple blueprint for ultra-minimal display
-            from routes.simple import simple_bp
-            app.register_blueprint(simple_bp)
-            
-            # Register admin blueprint for whitelist management
-            from routes.admin import admin_bp
-            app.register_blueprint(admin_bp, url_prefix='/admin')
-            
-            app.logger.info("Blueprints registered successfully")
-        except Exception as e:
-            app.logger.error(f"Blueprint registration failed: {e}")
-        
-        # Initialize scheduler
-        try:
-            from scheduler import AgentScheduler
-            scheduler = AgentScheduler(app)
-            # Store scheduler as an application extension instead of direct attribute
-            app.extensions['scheduler'] = scheduler
-            app.logger.info("Scheduler initialized successfully")
-        except Exception as e:
-            app.logger.error(f"Failed to initialize scheduler: {e}")
+            logger.error(f"Database initialization failed: {e}")
+
+    # ------------------------------------------------------------------------------
+    # Scheduler
+    # ------------------------------------------------------------------------------
+    try:
+        from scheduler import AgentScheduler
+        scheduler = AgentScheduler(app)
+        app.extensions["scheduler"] = scheduler
+        logger.info("AgentScheduler initialized successfully")
+    except Exception as e:
+        logger.error(f"Scheduler failed to initialize: {e}")
+
+    # ------------------------------------------------------------------------------
+    # ROUTES - Register Blueprints
+    # ------------------------------------------------------------------------------
+    from routes.dashboard import dashboard_bp
+    from routes.admin import admin_bp
+    from routes.api import api_bp
+    from routes.admin_proposals import admin_proposals_bp
+    from routes.uncertainty import bp as uncertainty_bp
+    from routes.ta import ta_bp
+    from routes.analyze import bp as analyze_bp
+    from routes.ensemble import bp as ensemble_bp
+    from routes.governor import bp as governor_bp
+    from routes.eval import bp as eval_bp
+    from routes.insights import bp as insights_bp
+    from routes.deals import deals_bp
+    from routes.distressed_platform import distressed_platform_bp
+    from replit_auth import make_replit_blueprint, init_auth
     
-    # Make session permanent
-    @app.before_request
-    def make_session_permanent():
-        session.permanent = True
+    init_auth(app)
+    replit_bp = make_replit_blueprint()
     
-    # CRITICAL: Ultra-simple root health check for deployment systems
-    @app.route('/', methods=['GET', 'HEAD', 'POST'])
-    def root_health_check():
-        """Bulletproof root endpoint - always returns 200 for deployment systems"""
-        try:
-            # Get user agent for detection (safely)
-            user_agent = request.headers.get('User-Agent', '').lower()
-            accept_header = request.headers.get('Accept', '').lower()
-            
-            # Deployment system detection with maximum compatibility
-            is_health_check = (
-                user_agent == '' or  # Empty user agent (most load balancers)
-                'curl' in user_agent or 'wget' in user_agent or  # CLI tools
-                'googlehc' in user_agent or 'health' in user_agent or  # Google Cloud/health checks
-                'probe' in user_agent or 'check' in user_agent or  # Probe/check agents
-                'monitor' in user_agent or 'bot' in user_agent or  # Monitor/bot agents
-                request.method == 'HEAD' or  # HEAD requests
-                request.args.get('health') is not None or  # ?health parameter
-                accept_header == '*/*' or accept_header == 'text/plain'  # Generic accept headers
-            )
-            
-            # Return immediate health check response
-            if is_health_check:
-                return 'OK', 200
-            
-            # Browser request - check authentication
-            try:
-                from flask_login import current_user
-                from replit_auth import is_user_whitelisted
-                
-                if current_user.is_authenticated and is_user_whitelisted(current_user.email):
-                    return render_template('dashboard.html', user=current_user)
-                else:
-                    return render_template('landing.html')
-            except Exception:
-                # Fallback to landing page
-                return render_template('landing.html')
-                
-        except Exception:
-            # Ultimate fallback - always return 200 for deployment reliability
-            return 'OK', 200
+    app.register_blueprint(dashboard_bp)
+    app.register_blueprint(admin_bp, url_prefix='/admin')
+    app.register_blueprint(admin_proposals_bp)
+    app.register_blueprint(api_bp, url_prefix='/api')
+    app.register_blueprint(uncertainty_bp)
+    app.register_blueprint(ta_bp)
+    app.register_blueprint(analyze_bp)
+    app.register_blueprint(ensemble_bp)
+    app.register_blueprint(governor_bp)
+    app.register_blueprint(eval_bp)
+    app.register_blueprint(insights_bp)
+    app.register_blueprint(deals_bp)
+    app.register_blueprint(distressed_platform_bp)
+    app.register_blueprint(replit_bp, url_prefix='/auth')
     
-    # Additional health check endpoints for different deployment systems
-    @app.route('/healthz')
-    def fallback_health():
-        """Primary health check endpoint for deployment systems - ultra fast"""
-        return 'OK', 200
-    
-    @app.route('/ping')
-    def ping():
-        """Simple ping endpoint for basic connectivity check"""
-        return 'pong', 200
-    
-    @app.route('/health')
-    def health():
-        """Lightweight health check for load balancers"""
-        return 'OK', 200
-    
-    @app.route('/ready')
-    def ready():
-        """Readiness probe for Kubernetes-style deployments"""
-        return 'READY', 200
-    
-    @app.route('/live')
-    def live():
-        """Liveness probe for Kubernetes-style deployments"""
-        return 'LIVE', 200
-    
-    @app.route('/status')
-    def status():
-        """Basic status endpoint with minimal processing"""
-        return jsonify({
-            'status': 'running',
-            'service': 'Market Inefficiency Detection Platform',
-            'timestamp': datetime.utcnow().isoformat()
-        }), 200
-    
-    @app.route('/landing')
+    @app.route("/landing")
     def landing():
-        """Landing page for non-authenticated users"""
-        return render_template('landing.html')
-    
-    # Add no-cache headers to prevent stale UI
-    @app.after_request
-    def add_no_cache_headers(response):
-        """Add headers to prevent caching of dynamic content"""
-        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '0'
-        return response
-    
+        return render_template("landing.html")
+
+    @app.route("/status")
+    def status():
+        return jsonify({
+            "service": "Market Inefficiency Detection Platform",
+            "status": "running",
+            "timestamp": datetime.utcnow().isoformat()
+        })
+
     return app
 
-# Create the app instance
+
+# ------------------------------------------------------------------------------
+# App instance
+# ------------------------------------------------------------------------------
 app = create_app()
 
-if __name__ == '__main__':
-    import os
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+# ------------------------------------------------------------------------------
+# Local run (Replit / dev)
+# ------------------------------------------------------------------------------
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)

@@ -1,0 +1,182 @@
+Below is a drop-in capital allocator that works with what you already have:
+
+Uses agent_schedule.json
+
+Consumes latest agent findings
+
+Outputs deterministic portfolio sizing
+
+Safe for live + backtest
+
+No changes to agents required
+
+1️⃣ capital_allocator.py
+
+Create this file at project root or portfolio/capital_allocator.py.
+
+"""
+Capital Allocator
+
+Converts agent weights + signals into portfolio position sizing.
+Designed to work for:
+- Live trading
+- Backtesting
+- Meta-agent control
+
+Inputs:
+- agent_schedule.json
+- agent findings (from DB or in-memory)
+Outputs:
+- portfolio_targets.json
+"""
+
+import json
+import math
+from collections import defaultdict
+from typing import Dict, List, Any
+from datetime import datetime
+import os
+
+
+class CapitalAllocator:
+    def __init__(
+        self,
+        schedule_path: str = "agent_schedule.json",
+        max_agent_weight: float = 0.25,
+        max_symbol_weight: float = 0.20,
+        cash_buffer: float = 0.10
+    ):
+        self.schedule_path = schedule_path
+        self.max_agent_weight = max_agent_weight
+        self.max_symbol_weight = max_symbol_weight
+        self.cash_buffer = cash_buffer
+
+        self.agent_config = self._load_schedule()
+
+    def _load_schedule(self) -> Dict[str, Any]:
+        with open(self.schedule_path, "r") as f:
+            return json.load(f)
+
+    def allocate(
+        self,
+        findings: List[Dict[str, Any]],
+        portfolio_value: float = 1.0
+    ) -> Dict[str, Any]:
+        """
+        Main allocation entrypoint.
+
+        Returns normalized portfolio targets.
+        """
+        raw_allocations = defaultdict(float)
+        agent_contributions = defaultdict(float)
+
+        # 1️⃣ Agent → signal → raw capital
+        for f in findings:
+            agent = f.get("agent")
+            symbol = f.get("symbol")
+            severity = f.get("severity", "low")
+            confidence = float(f.get("confidence", 0.5))
+
+            if not agent or not symbol:
+                continue
+
+            cfg = self.agent_config.get(agent)
+            if not cfg or not cfg.get("enabled", False):
+                continue
+
+            agent_weight = min(cfg.get("weight", 0), self.max_agent_weight)
+            severity_mult = self._severity_multiplier(severity)
+
+            capital = agent_weight * confidence * severity_mult
+
+            raw_allocations[symbol] += capital
+            agent_contributions[agent] += capital
+
+        # 2️⃣ Normalize + enforce symbol caps
+        total_risk = sum(raw_allocations.values())
+        if total_risk == 0:
+            return self._empty_portfolio()
+
+        normalized = {}
+        for symbol, w in raw_allocations.items():
+            norm = w / total_risk
+            capped = min(norm, self.max_symbol_weight)
+            normalized[symbol] = capped
+
+        # 3️⃣ Cash buffer
+        used = sum(normalized.values())
+        cash = max(self.cash_buffer, 1.0 - used)
+
+        # 4️⃣ Final scaling
+        scale = (1.0 - cash) / max(sum(normalized.values()), 1e-9)
+        for symbol in normalized:
+            normalized[symbol] *= scale * portfolio_value
+
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "portfolio_value": portfolio_value,
+            "targets": normalized,
+            "cash": cash * portfolio_value,
+            "agent_contributions": dict(agent_contributions),
+        }
+
+    def _severity_multiplier(self, severity: str) -> float:
+        return {
+            "low": 0.5,
+            "medium": 1.0,
+            "high": 1.5,
+            "critical": 2.0,
+        }.get(severity, 1.0)
+
+    def _empty_portfolio(self):
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "portfolio_value": 1.0,
+            "targets": {},
+            "cash": 1.0,
+            "agent_contributions": {},
+        }
+
+2️⃣ Save portfolio targets
+
+Optional helper:
+
+def write_portfolio_targets(result, path="portfolio_targets.json"):
+    with open(path, "w") as f:
+        json.dump(result, f, indent=2)
+
+3️⃣ How to call it (live or backtest)
+From live scheduler / dashboard
+from capital_allocator import CapitalAllocator
+from models import Finding
+
+allocator = CapitalAllocator()
+
+findings = [
+    f.to_dict() for f in
+    Finding.query.order_by(Finding.timestamp.desc()).limit(500).all()
+]
+
+portfolio = allocator.allocate(findings, portfolio_value=1_000_000)
+
+From backtest runner
+portfolio = allocator.allocate(
+    findings=signals_at_t,
+    portfolio_value=1.0
+)
+
+4️⃣ What this gives you immediately
+
+✔ Deterministic capital sizing
+✔ Agent performance now affects real exposure
+✔ Disabled agents = zero capital
+✔ Weight ≠ binary enable
+✔ Clean hooks for:
+
+decay curves
+
+clustering
+
+regime overlays
+
+execution engines

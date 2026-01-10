@@ -1,0 +1,141 @@
+1️⃣ Data contract (already satisfied)
+
+This assumes your backtest records already contain:
+
+{
+  "asof": "2010-05-06",
+  "agent": "MarketCorrectionAgent",
+  "cluster": "macro_defensive",
+  "regime": "risk_off",
+  "forward_return_20d": 0.062
+}
+
+
+You already have this.
+
+2️⃣ Add ONE endpoint: /regime_heatmap
+
+Add to routes/dashboard.py (or equivalent):
+
+from flask import jsonify
+from collections import defaultdict
+import numpy as np
+
+
+@dashboard_bp.route("/api/regime_heatmap")
+def regime_heatmap():
+    """
+    Returns regime x time effectiveness matrix
+    """
+    from models import Finding  # or backtest table if separate
+
+    records = load_backtest_records()  # however you load them
+
+    bucket = defaultdict(list)
+
+    for r in records:
+        key = (r["regime"], r["asof"])
+        bucket[key].append(r["forward_return_20d"])
+
+    heatmap = []
+    for (regime, date), vals in bucket.items():
+        heatmap.append({
+            "date": date,
+            "regime": regime,
+            "mean_return": float(np.mean(vals)),
+            "hit_rate": float((np.array(vals) > 0).mean())
+        })
+
+    return jsonify(heatmap)
+
+
+That’s it server-side.
+
+3️⃣ Frontend overlay (≈20 lines)
+
+Add this to dashboard.html below SPY chart JS:
+
+<script>
+fetch("/api/regime_heatmap")
+  .then(r => r.json())
+  .then(data => {
+
+    const regimes = [...new Set(data.map(d => d.regime))];
+
+    const traces = regimes.map(regime => ({
+      x: data.filter(d => d.regime === regime).map(d => d.date),
+      y: Array(data.filter(d => d.regime === regime).length).fill(regime),
+      mode: "markers",
+      marker: {
+        size: 12,
+        color: data.filter(d => d.regime === regime)
+                  .map(d => d.mean_return),
+        colorscale: "RdYlGn",
+        colorbar: { title: "Mean Return" }
+      },
+      name: regime
+    }));
+
+    Plotly.newPlot("regime-heatmap", traces, {
+      title: "Regime Effectiveness Heatmap",
+      yaxis: { type: "category" },
+      height: 350
+    });
+  });
+</script>
+
+
+And add the container:
+
+<div id="regime-heatmap"></div>
+
+4️⃣ What you’ll immediately see
+
+Visually:
+
+🟥 red zones → agents failing in that regime
+
+🟩 green zones → agents printing
+
+flat zones → neutral / noisy
+
+Overlayed with SPY price → intuition snaps into focus.
+
+5️⃣ Why this is high ROI
+
+This replaces:
+
+PDFs
+
+confusion
+
+gut feel
+
+With:
+
+explainable capital rotation
+
+defensible decisions
+
+post-mortems that teach
+
+6️⃣ What this unlocks next (trivially)
+
+Because the heatmap exists, you can now:
+
+1️⃣ Auto-switch agent weights on regime change
+2️⃣ Suppress false negatives during transitions
+3️⃣ Train regime-aware meta-models (optional)
+
+Your system status (truth)
+
+You now have:
+
+✔ Backtests
+✔ Forward returns
+✔ Capital allocator
+✔ Decay curves
+✔ Signal clustering
+✔ Regime-aware visualization
+
+This is exactly how real multi-strat desks operate.

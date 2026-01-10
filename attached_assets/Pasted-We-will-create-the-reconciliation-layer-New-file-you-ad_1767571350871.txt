@@ -1,0 +1,150 @@
+We will create the reconciliation layer.
+
+New file (you add this):
+alpha/reconcile.py
+
+
+This will:
+
+Read alpha/events.jsonl
+
+Fetch prices (spot, perp, equity — pluggable)
+
+Compute realized PnL at a fixed horizon (e.g. +24h)
+
+Write alpha/reconciled.jsonl
+
+Preserve run_id so everything joins cleanly
+
+Minimal, production-safe alpha/reconcile.py
+
+This version assumes:
+
+You already have or will stub a price fetcher
+
+Fixed horizon (24h) to start
+
+No leverage (bps-based PnL)
+
+You can refine later.
+
+alpha/reconcile.py
+import json
+import time
+from pathlib import Path
+from datetime import datetime, timedelta, timezone
+
+ALPHA = Path("alpha/events.jsonl")
+OUT = Path("alpha/reconciled.jsonl")
+
+HORIZON_HOURS = 24
+
+# ---- PRICE FETCHER (stub; replace with your real one)
+def get_price(symbol: str, ts_iso: str):
+    """
+    Replace this with:
+    - crypto exchange API
+    - equities data provider
+    - internal price cache
+    """
+    # PLACEHOLDER
+    raise NotImplementedError("Price fetcher not implemented")
+
+def parse_ts(ts: str):
+    return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+
+def load_jsonl(p: Path):
+    if not p.exists():
+        return []
+    return [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+
+def main():
+    events = load_jsonl(ALPHA)
+    if not events:
+        return
+
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+
+    reconciled = []
+
+    for e in events:
+        try:
+            symbol = e.get("symbol")
+            direction = e.get("direction")
+            ts = e.get("ts")
+            if not symbol or not direction or not ts:
+                continue
+
+            t0 = parse_ts(ts)
+            t1 = t0 + timedelta(hours=HORIZON_HOURS)
+
+            entry_px = get_price(symbol, t0.isoformat())
+            exit_px = get_price(symbol, t1.isoformat())
+
+            if entry_px is None or exit_px is None:
+                continue
+
+            # PnL in basis points
+            if direction.upper() == "LONG":
+                pnl_bps = (exit_px / entry_px - 1.0) * 10_000
+            else:
+                pnl_bps = (entry_px / exit_px - 1.0) * 10_000
+
+            reconciled.append({
+                "ts": ts,
+                "agent": e.get("agent"),
+                "run_id": e.get("run_id"),
+                "symbol": symbol,
+                "direction": direction,
+                "entry_price": entry_px,
+                "exit_price": exit_px,
+                "horizon_hours": HORIZON_HOURS,
+                "realized_pnl_bps": round(pnl_bps, 2),
+                "regime": e.get("regime"),
+            })
+
+        except Exception as ex:
+            # never break the loop
+            continue
+
+    # append-only write
+    with open(OUT, "a", encoding="utf-8") as f:
+        for r in reconciled:
+            f.write(json.dumps(r) + "\n")
+
+if __name__ == "__main__":
+    main()
+
+Where this plugs into your system
+
+After this file exists:
+
+Data flow becomes:
+agent.run()
+  → emit_alpha_signal()           → alpha/events.jsonl
+  → run_with_telemetry()          → telemetry/events.jsonl
+  → alpha/reconcile.py (cron)     → alpha/reconciled.jsonl
+  → meta_supervisor/build_meta_report.py
+
+
+Your Meta-Agent code you already have will now work correctly, because:
+
+run_id exists
+
+realized PnL exists
+
+joins are deterministic
+
+How to schedule reconciliation (1 line)
+
+In scheduler.py, add:
+
+self.scheduler.add_job(
+    func=lambda: __import__("alpha.reconcile").reconcile.main(),
+    trigger=CronTrigger(minute="*/30"),
+    id="alpha_reconcile",
+    replace_existing=True
+)
+
+
+(Adjust import path if needed.)

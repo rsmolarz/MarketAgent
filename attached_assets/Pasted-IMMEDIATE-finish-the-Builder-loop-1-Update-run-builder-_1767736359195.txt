@@ -1,0 +1,209 @@
+IMMEDIATE (finish the Builder loop)
+1️⃣ Update run_builder_agent() to output full files
+Builder Agent output contract (MANDATORY)
+
+Your Builder agent must return full file contents, never diffs.
+
+Required JSON schema (enforce this):
+
+{
+  "title": "Short title",
+  "summary": "One paragraph summary",
+  "rationale": "Why this improves the platform",
+  "files_to_change": [
+    {
+      "path": "services/example.py",
+      "content": "<FULL FILE CONTENT>"
+    }
+  ]
+}
+
+🔧 Builder Agent prompt template (drop-in)
+
+Use this exact system prompt when calling the Builder LLM:
+
+BUILDER_SYSTEM_PROMPT = """
+You are a senior software engineer improving a production Flask platform.
+
+CRITICAL RULES:
+- NEVER output diffs.
+- NEVER output partial files.
+- ALWAYS output complete file contents.
+- Only modify files explicitly listed.
+- Do NOT invent files unless necessary.
+- Do NOT remove existing functionality unless instructed.
+
+You must return valid JSON ONLY.
+
+JSON SCHEMA:
+{
+  "title": string,
+  "summary": string,
+  "rationale": string,
+  "files_to_change": [
+    {
+      "path": string,
+      "content": string
+    }
+  ]
+}
+
+Focus on:
+- Correctness
+- Safety
+- Maintainability
+- Testability
+
+If unsure, make the smallest safe improvement.
+"""
+
+🔧 Inject rejected memory into Builder prompt
+
+In your /autobuild route, update this section:
+
+rejected_hint = store['previously_rejected_reason']()
+
+
+Then pass it explicitly:
+
+proposal = svc['run_builder_agent'](
+    goal=goal,
+    repo_context=repo_context,
+    rejected_hint=rejected_hint
+)
+
+
+And inside run_builder_agent():
+
+if rejected_hint:
+    user_prompt += f"\n\nPreviously rejected changes failed because:\n{rejected_hint}\n\nDo NOT repeat those mistakes."
+
+
+✅ This prevents the agent from re-proposing bad ideas.
+
+SHORT-TERM (platform quality upgrades)
+2️⃣ Per-file risk badges in the UI
+
+You already compute this:
+
+file_risk, overall_risk = score_diff(diff)
+
+Store it (already done)
+store['store_proposal'](
+    ...
+    file_risk=file_risk
+)
+
+Render it (Jinja)
+
+In agent_proposal_detail.html:
+
+<h3>File Risk Analysis</h3>
+
+<ul class="list-group">
+  {% for file, score in proposal.file_risk.items() %}
+    <li class="list-group-item d-flex justify-content-between">
+      <code>{{ file }}</code>
+      <span class="badge 
+        {% if score < 0.3 %}bg-success
+        {% elif score < 0.6 %}bg-warning
+        {% else %}bg-danger{% endif %}">
+        {{ "%.2f"|format(score) }}
+      </span>
+    </li>
+  {% endfor %}
+</ul>
+
+
+This gives you:
+
+🟢 Low risk
+
+🟡 Medium risk
+
+🔴 High risk
+
+3️⃣ “Why this change” panel (already collected)
+
+You already store:
+
+summary
+
+rationale
+
+Just expose them clearly.
+
+Add to proposal detail page
+<hr>
+
+<h3>Why This Change</h3>
+
+<p><strong>Summary</strong></p>
+<p>{{ proposal.summary }}</p>
+
+<p><strong>Rationale</strong></p>
+<p>{{ proposal.rationale }}</p>
+
+
+This is critical for human trust and audit trails.
+
+4️⃣ Clause-specific pytest templates (VERY important)
+Goal
+
+Automatically validate:
+
+Governing Law
+
+Venue / Forum
+
+Personal Guarantee
+
+🔧 Template test file: tests/test_contract_clauses.py
+import pytest
+from services.contract_extractor import extract_clauses
+
+@pytest.mark.parametrize("text,expected", [
+    (
+        "This Agreement shall be governed by the laws of the State of New York.",
+        "New York"
+    ),
+    (
+        "This contract is governed by Texas law.",
+        "Texas"
+    ),
+])
+def test_governing_law_extraction(text, expected):
+    clauses = extract_clauses(text)
+    assert clauses.get("governing_law") == expected
+
+
+@pytest.mark.parametrize("text,expected", [
+    (
+        "Venue shall lie exclusively in Harris County, Texas.",
+        "Harris County, Texas"
+    ),
+])
+def test_venue_extraction(text, expected):
+    clauses = extract_clauses(text)
+    assert clauses.get("venue") == expected
+
+
+@pytest.mark.parametrize("text", [
+    "The undersigned personally guarantees all obligations.",
+    "This note is personally guaranteed by the borrower.",
+])
+def test_personal_guarantee_detection(text):
+    clauses = extract_clauses(text)
+    assert clauses.get("personal_guarantee") is True
+
+🔧 Builder Agent instruction (add this)
+
+In Builder goals:
+
+If modifying clause extraction logic, you MUST:
+- Add or update pytest tests
+- Cover governing law, venue, and guarantee detection
+- Ensure tests pass via pytest
+
+
+Your _run_tests() gate already enforces this. ✅

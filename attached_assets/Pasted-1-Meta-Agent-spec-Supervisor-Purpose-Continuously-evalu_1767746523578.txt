@@ -1,0 +1,458 @@
+1) Meta-Agent spec (Supervisor)
+Purpose
+
+Continuously evaluate all agents in the repo and generate actionable, ranked recommendations (and optionally a small PR) based on:
+
+Code quality + security posture
+
+Behavioral performance on fixed eval sets
+
+Runtime metrics (latency/cost/error) pulled from logs/telemetry
+
+Regression vs baseline (main branch)
+
+Inputs
+
+Repo snapshot
+
+Current branch code
+
+Diff vs main
+
+Agent inventory
+
+agents/manifest.yaml (what agents exist, entrypoints, eval suites)
+
+Eval artifacts
+
+eval/results/*.json (behavioral test results)
+
+Telemetry artifacts (optional)
+
+telemetry/*.jsonl (latency, cost, error rate per agent/tool)
+
+Policy
+
+meta/policy.yaml (guardrails: no auto-editing sensitive paths, max diff lines, etc.)
+
+Outputs
+
+Recommendation report
+
+meta/reports/meta_report.md
+
+meta/reports/meta_report.json
+
+PR comment body (if running on PR)
+
+Markdown summary + top 5 fixes + risk
+
+Optional patch branch
+
+Only if enabled and only for “low-risk” fixes (formatting, typing, dead code, prompt hygiene)
+
+Decision rules (high level)
+
+If tests fail → recommendations only; no PR bot.
+
+If security flags → block auto patching.
+
+If behavioral regressions exceed thresholds → block auto patching.
+
+If only “low-risk” linting/typing issues → allow diff-limited patch.
+
+Guardrails
+
+Never modify:
+
+infra/, .github/, secrets/, auth code, payment/trading execution code
+
+Max patch size:
+
+max_files_changed: 5
+
+max_lines_changed: 200
+
+Require green:
+
+unit tests + eval harness + lint
+
+Always produce a report even if blocked.
+
+2) Evaluation rubric (scored + thresholds)
+
+Create a single score per agent and a global score.
+
+A) Behavioral correctness (0–50)
+
+Measured via deterministic eval sets.
+
+Task success rate (0–25)
+
+Faithfulness (0–10): answers grounded in allowed sources / tool outputs
+
+Constraint adherence (0–10): format, schema, no forbidden actions
+
+Stability (0–5): variance across runs (if you run N=3)
+
+Fail thresholds
+
+Success rate < 80% OR
+
+Any “critical safety” violation OR
+
+Schema violations > 2%
+
+B) Reliability (0–20)
+
+Crash-free rate (0–10)
+
+Tool-call success rate (0–5)
+
+Timeout rate (0–5)
+
+C) Efficiency (0–15)
+
+Median latency (0–8)
+
+Token/cost budget adherence (0–7)
+
+D) Code health (0–15)
+
+Lint + typing + complexity + duplication
+
+Dependency vulnerability scan (counts as code health)
+
+Global pass
+
+Total score >= 80
+
+No critical failures
+
+No new high/critical security alerts
+
+No major regressions vs main
+
+3) Repo scaffold (minimal but real)
+Folder layout
+.
+├─ agents/
+│  ├─ manifest.yaml
+│  ├─ example_agent/
+│  │  ├─ agent.py
+│  │  └─ prompts/
+│  │     ├─ system.md
+│  │     └─ reviewer.md
+├─ eval/
+│  ├─ harness.py
+│  ├─ suites/
+│  │  └─ example_agent.jsonl
+│  └─ results/
+├─ meta/
+│  ├─ policy.yaml
+│  ├─ meta_agent.py
+│  └─ reports/
+├─ telemetry/
+├─ tools/
+│  └─ llm_client.py
+├─ requirements.txt
+└─ .github/
+   └─ workflows/
+      └─ meta_agent_ci.yml
+
+4) “Where it sends prompts” (LLM Reviewer Agent flow)
+
+The Meta-Agent sends a single structured prompt to the LLM Reviewer containing:
+
+Diff summary (or changed files list)
+
+Eval results JSON summary
+
+Telemetry summary
+
+Rubric thresholds + policy guardrails
+
+Required output schema
+
+The LLM must respond as strict JSON:
+
+severity, top_findings[], recommended_changes[], patch_suggestions[], risk_notes[]
+
+5) Working scaffold code (drop-in)
+agents/manifest.yaml
+agents:
+  - name: example_agent
+    entrypoint: agents/example_agent/agent.py:run
+    eval_suite: eval/suites/example_agent.jsonl
+    telemetry_tag: example_agent
+
+meta/policy.yaml
+auto_patch: false
+protected_paths:
+  - ".github/"
+  - "infra/"
+  - "secrets/"
+  - "trading/"
+max_patch:
+  max_files_changed: 5
+  max_lines_changed: 200
+thresholds:
+  min_total_score: 80
+  min_success_rate: 0.80
+  max_schema_violation_rate: 0.02
+
+tools/llm_client.py (OpenAI API-compatible)
+import os
+import json
+import urllib.request
+
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4.1-mini")  # set as you like
+OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+
+class LLMError(RuntimeError):
+    pass
+
+def call_llm(messages, temperature=0.2, max_tokens=1800):
+    if not OPENAI_API_KEY:
+        raise LLMError("OPENAI_API_KEY is not set")
+
+    url = f"{OPENAI_BASE_URL}/chat/completions"
+    payload = {
+        "model": OPENAI_MODEL,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "response_format": {"type": "json_object"},
+    }
+
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        raise LLMError(f"LLM call failed: {e}")
+
+    try:
+        content = data["choices"][0]["message"]["content"]
+        return json.loads(content)
+    except Exception as e:
+        raise LLMError(f"Bad LLM response: {e} | raw={data}")
+
+eval/harness.py (behavioral test runner)
+import json
+import time
+import importlib
+from pathlib import Path
+
+def load_entrypoint(entrypoint: str):
+    # "path/to/module.py:func"
+    mod_path, func_name = entrypoint.split(":")
+    mod_path = mod_path.replace("/", ".").replace(".py", "")
+    mod = importlib.import_module(mod_path)
+    return getattr(mod, func_name)
+
+def run_suite(agent_entrypoint: str, suite_path: str, out_path: str):
+    run_fn = load_entrypoint(agent_entrypoint)
+    suite = Path(suite_path).read_text().splitlines()
+
+    results = []
+    for line in suite:
+        if not line.strip():
+            continue
+        case = json.loads(line)
+        t0 = time.time()
+        try:
+            output = run_fn(case["input"])
+            ok = (output == case["expected"]) if "expected" in case else True
+            err = None
+        except Exception as e:
+            output = None
+            ok = False
+            err = str(e)
+        dt = time.time() - t0
+
+        results.append({
+            "id": case.get("id"),
+            "ok": ok,
+            "latency_s": dt,
+            "output": output,
+            "expected": case.get("expected"),
+            "error": err
+        })
+
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(out_path).write_text(json.dumps({
+        "suite": suite_path,
+        "entrypoint": agent_entrypoint,
+        "results": results
+    }, indent=2))
+
+    return results
+
+agents/example_agent/agent.py
+def run(user_input: str) -> str:
+    # placeholder agent behavior for scaffold
+    # replace with your agent orchestration
+    return user_input.strip().lower()
+
+eval/suites/example_agent.jsonl
+{"id":"ex1","input":"HELLO","expected":"hello"}
+{"id":"ex2","input":"  Mixed Case  ","expected":"mixed case"}
+
+meta/meta_agent.py (Supervisor + Reviewer prompt sender)
+import json
+import yaml
+import subprocess
+from pathlib import Path
+from tools.llm_client import call_llm
+
+def sh(cmd):
+    return subprocess.check_output(cmd, text=True).strip()
+
+def git_diff_summary():
+    # shortstat + names
+    shortstat = sh(["bash","-lc","git diff --shortstat origin/main...HEAD || true"])
+    names = sh(["bash","-lc","git diff --name-only origin/main...HEAD || true"])
+    return {"shortstat": shortstat, "files": [f for f in names.splitlines() if f]}
+
+def summarize_eval(eval_json_path: Path):
+    data = json.loads(eval_json_path.read_text())
+    results = data["results"]
+    total = len(results)
+    passed = sum(1 for r in results if r["ok"])
+    avg_latency = sum(r["latency_s"] for r in results) / max(total, 1)
+    return {
+        "suite": data["suite"],
+        "total": total,
+        "passed": passed,
+        "success_rate": passed / max(total, 1),
+        "avg_latency_s": avg_latency,
+        "failures": [r for r in results if not r["ok"]][:5],
+    }
+
+def build_reviewer_prompt(policy, diff, eval_summaries):
+    schema = {
+        "severity": "low|medium|high|critical",
+        "top_findings": [{"title":"", "evidence":"", "impact":"", "confidence":0.0}],
+        "recommended_changes": [{"change":"", "why":"", "files":[""], "priority":"P0|P1|P2"}],
+        "patch_suggestions": [{"diff_hunk":"", "notes":"", "risk":"low|medium|high"}],
+        "risk_notes": [""]
+    }
+
+    system = Path("agents/example_agent/prompts/system.md").read_text() if Path("agents/example_agent/prompts/system.md").exists() else \
+        "You are a senior code reviewer for an AI agent system. Output strict JSON only."
+
+    user = {
+        "policy": policy,
+        "diff": diff,
+        "eval_summaries": eval_summaries,
+        "output_schema": schema,
+        "instructions": [
+            "Use the rubric: prioritize regressions and reliability issues first.",
+            "Recommend minimal changes with clear file targets.",
+            "Do NOT recommend changes to protected paths.",
+            "If tests/regressions exist, severity must be at least 'high'.",
+            "Output must be valid JSON matching the schema keys."
+        ]
+    }
+
+    return [
+        {"role":"system", "content": system},
+        {"role":"user", "content": json.dumps(user)}
+    ]
+
+def main():
+    policy = yaml.safe_load(Path("meta/policy.yaml").read_text())
+    diff = git_diff_summary()
+
+    eval_results_dir = Path("eval/results")
+    eval_summaries = []
+    for p in sorted(eval_results_dir.glob("*.json")):
+        eval_summaries.append(summarize_eval(p))
+
+    messages = build_reviewer_prompt(policy, diff, eval_summaries)
+    review = call_llm(messages)
+
+    Path("meta/reports").mkdir(parents=True, exist_ok=True)
+    Path("meta/reports/meta_report.json").write_text(json.dumps(review, indent=2))
+    Path("meta/reports/meta_report.md").write_text(
+        "# Meta-Agent Report\n\n" +
+        "```json\n" + json.dumps(review, indent=2) + "\n```\n"
+    )
+
+if __name__ == "__main__":
+    main()
+
+.github/workflows/meta_agent_ci.yml
+name: Meta-Agent CI
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: "0 */6 * * *"   # every 6 hours
+
+jobs:
+  meta_agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Fetch main for diff base
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+
+      - name: Run eval harness for each agent
+        run: |
+          python -c "import yaml, json; from pathlib import Path; from eval.harness import run_suite
+          m=yaml.safe_load(Path('agents/manifest.yaml').read_text())
+          for a in m['agents']:
+            out=f\"eval/results/{a['name']}.json\"
+            run_suite(a['entrypoint'], a['eval_suite'], out)
+          "
+
+      - name: Run Meta-Agent reviewer (sends prompts)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-4.1-mini
+        run: |
+          python meta/meta_agent.py
+
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: meta-agent-reports
+          path: meta/reports/
+
+requirements.txt
+pyyaml==6.0.2
+
+6) What you need to set in GitHub
+
+Add repo secret: OPENAI_API_KEY
+
+(Optional) set OPENAI_MODEL in workflow env

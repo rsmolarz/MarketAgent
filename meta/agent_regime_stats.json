@@ -1,0 +1,31 @@
+{
+  "MarketCorrectionAgent": {
+    "risk_off": { "mean_return": 0.042, "hit_rate": 0.61 },
+    "risk_on": { "mean_return": -0.031, "hit_rate": 0.39 }
+  },
+  "BondStressAgent": {
+    "risk_off": { "mean_return": 0.055, "hit_rate": 0.68 },
+    "inflation": { "mean_return": 0.038, "hit_rate": 0.55 }
+  },
+  "EquityMomentumAgent": {
+    "risk_on": { "mean_return": 0.064, "hit_rate": 0.72 },
+    "deflation": { "mean_return": 0.028, "hit_rate": 0.52 }
+  },
+  "GeopoliticalRiskAgent": {
+    "risk_off": { "mean_return": 0.038, "hit_rate": 0.57 }
+  },
+  "CryptoPredictionAgent": {
+    "risk_on": { "mean_return": 0.085, "hit_rate": 0.58 }
+  },
+  "DailyPredictionAgent": {
+    "risk_on": { "mean_return": 0.045, "hit_rate": 0.62 },
+    "risk_off": { "mean_return": 0.022, "hit_rate": 0.48 }
+  },
+  "AltDataSignalAgent": {
+    "risk_on": { "mean_return": 0.032, "hit_rate": 0.55 }
+  },
+  "GreatestTradeAgent": {
+    "risk_off": { "mean_return": 0.095, "hit_rate": 0.71 },
+    "inflation": { "mean_return": 0.048, "hit_rate": 0.59 }
+  }
+}

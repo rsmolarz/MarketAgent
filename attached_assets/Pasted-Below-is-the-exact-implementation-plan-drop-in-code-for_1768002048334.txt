@@ -1,0 +1,528 @@
+Below is the exact implementation plan + drop-in code for all three:
+
+Backtest agent vs SPY by regime
+
+Signal compression → IC memo + email
+
+Portfolio drawdown governor wiring (live)
+
+I’m assuming Flask + SQLAlchemy + your existing Finding, AgentStatus, telemetry/events.jsonl, load_spy/load_symbol, and your email whitelist system.
+
+0) One small file layout assumption
+
+Create these files (or map to your existing structure):
+
+backtests/agent_vs_spy_by_regime.py
+
+services/signal_compression.py
+
+services/drawdown_governor.py
+
+routes/eval.py (or add endpoints to your existing dashboard blueprint)
+
+Optional: telemetry/events_store.py (parses events.jsonl safely)
+
+1️⃣ Backtest agent vs SPY by regime
+What you’ll get
+
+For each agent and each regime: hit-rate, mean return, count
+
+Compare to SPY baseline in same windows
+
+Dashboard endpoint: /api/eval/agent_vs_spy?agent=...&lookahead=1
+
+A) Event parsing helper (from telemetry/events.jsonl)
+
+telemetry/events_store.py
+
+import json
+from pathlib import Path
+from datetime import datetime
+from typing import Iterable
+
+EVENTS = Path("telemetry/events.jsonl")
+
+def iter_events(last_n: int = 20000) -> Iterable[dict]:
+    if not EVENTS.exists():
+        return
+    lines = EVENTS.read_text().splitlines()[-last_n:]
+    for ln in lines:
+        try:
+            e = json.loads(ln)
+        except Exception:
+            continue
+        # Normalize timestamp
+        ts = e.get("ts") or e.get("timestamp")
+        if isinstance(ts, str):
+            try:
+                e["_dt"] = datetime.fromisoformat(ts.replace("Z", "+00:00")).replace(tzinfo=None)
+            except Exception:
+                e["_dt"] = None
+        else:
+            e["_dt"] = None
+        yield e
+
+B) Backtest engine
+
+backtests/agent_vs_spy_by_regime.py
+
+import pandas as pd
+from datetime import timedelta
+from typing import Dict, Any
+
+from telemetry.events_store import iter_events
+from data_sources.price_loader import load_spy
+from regime import extract_features, score_regimes, regime_confidence
+
+def _build_daily_regime_map(spy_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Produces daily regime labels based on your existing regime pipeline.
+    Returns DataFrame with Date, regime, confidence.
+    """
+    # Minimal regime state using SPY-only if you want; if you require VIX/TNX/GLD, plug them in here.
+    spy = spy_df.copy()
+    spy = spy.sort_values("Date")
+    spy = spy.set_index("Date")
+
+    # Use your existing regime tools; if they require vix/tnx/gld, load them similarly.
+    # Here we do a safe fallback: treat as unknown if scoring fails.
+    out = []
+    dates = spy.index
+    for i in range(60, len(dates)):
+        window = spy.iloc[: i + 1].reset_index()
+        try:
+            # If your extract_features expects vix/tnx/gld, adapt this call.
+            features = extract_features(window, window, window, None)  # fallback-compatible if coded robustly
+            scores = score_regimes(features)
+            state = regime_confidence(features, scores, prev_regime=None)
+            out.append({
+                "Date": window["Date"].iloc[-1],
+                "regime": state.get("active_regime", "unknown"),
+                "conf": float(state.get("confidence", 0.0)),
+            })
+        except Exception:
+            out.append({
+                "Date": window["Date"].iloc[-1],
+                "regime": "unknown",
+                "conf": 0.0,
+            })
+    return pd.DataFrame(out)
+
+def _spy_forward_return(spy_df: pd.DataFrame, date: pd.Timestamp, lookahead_days: int) -> float | None:
+    spy_df = spy_df.sort_values("Date")
+    row = spy_df[spy_df["Date"] == date]
+    if row.empty:
+        return None
+    i = row.index[0]
+    j = i + lookahead_days
+    if j >= len(spy_df):
+        return None
+    p0 = float(spy_df.loc[i, "Close"])
+    p1 = float(spy_df.loc[j, "Close"])
+    if p0 <= 0:
+        return None
+    return (p1 / p0) - 1.0
+
+def backtest_agent_vs_spy_by_regime(
+    agent_name: str,
+    lookahead_days: int = 1,
+    last_n_events: int = 20000,
+    spy_start: str = "2020-01-01",
+) -> Dict[str, Any]:
+    """
+    Assumes telemetry events include:
+      - agent: str
+      - reward: numeric (optional)
+      - symbol: str (optional)
+      - direction: "up"/"down" (optional)
+      - ts: ISO timestamp (optional)
+
+    If direction missing, we treat "signal hit" as reward > 0 when present.
+    """
+    spy = load_spy(start=spy_start, use_cache=True)
+    spy["Date"] = pd.to_datetime(spy["Date"]).dt.normalize()
+
+    regime_map = _build_daily_regime_map(spy)
+    if regime_map.empty:
+        # fallback all unknown
+        regime_map = pd.DataFrame({"Date": spy["Date"], "regime": "unknown", "conf": 0.0})
+    regime_map["Date"] = pd.to_datetime(regime_map["Date"]).dt.normalize()
+
+    regime_by_date = dict(zip(regime_map["Date"], regime_map["regime"]))
+
+    rows = []
+    for e in iter_events(last_n=last_n_events):
+        if e.get("agent") != agent_name:
+            continue
+        dt = e.get("_dt")
+        if not dt:
+            continue
+        d = pd.Timestamp(dt.date())
+        regime = regime_by_date.get(d, "unknown")
+
+        fwd = _spy_forward_return(spy, d, lookahead_days)
+        if fwd is None:
+            continue
+
+        # Define "agent success":
+        # - If reward exists: success = reward > 0
+        # - Else if direction exists: success = SPY forward return aligns with direction
+        reward = e.get("reward")
+        direction = (e.get("direction") or "").lower().strip()
+
+        if reward is not None:
+            success = float(reward) > 0
+        elif direction in ("up", "long", "bull"):
+            success = fwd > 0
+        elif direction in ("down", "short", "bear"):
+            success = fwd < 0
+        else:
+            # no label → can’t score; skip
+            continue
+
+        rows.append({
+            "date": d,
+            "regime": regime,
+            "spy_fwd_ret": float(fwd),
+            "success": int(success),
+        })
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return {"ok": True, "agent": agent_name, "lookahead_days": lookahead_days, "rows": 0, "by_regime": []}
+
+    grp = df.groupby("regime")
+    by_regime = []
+    for regime, g in grp:
+        count = int(len(g))
+        hit = float(g["success"].mean()) if count else 0.0
+        mean_ret = float(g["spy_fwd_ret"].mean()) if count else 0.0
+
+        # Baseline: SPY unconditional in those same dates
+        baseline = float(g["spy_fwd_ret"].mean()) if count else 0.0
+
+        by_regime.append({
+            "regime": regime,
+            "count": count,
+            "hit_rate": round(hit, 4),
+            "mean_return": round(mean_ret, 6),
+            "spy_baseline": round(baseline, 6),
+            "alpha_vs_spy": round(mean_ret - baseline, 6),
+        })
+
+    # Sort regimes by count desc
+    by_regime.sort(key=lambda x: x["count"], reverse=True)
+
+    return {
+        "ok": True,
+        "agent": agent_name,
+        "lookahead_days": lookahead_days,
+        "rows": int(len(df)),
+        "by_regime": by_regime,
+    }
+
+C) API endpoint
+
+routes/eval.py
+
+from flask import Blueprint, request, jsonify
+from backtests.agent_vs_spy_by_regime import backtest_agent_vs_spy_by_regime
+
+bp = Blueprint("eval", __name__)
+
+@bp.route("/api/eval/agent_vs_spy", methods=["GET"])
+def api_agent_vs_spy():
+    agent = request.args.get("agent")
+    lookahead = int(request.args.get("lookahead", "1"))
+    if not agent:
+        return jsonify({"error": "agent is required"}), 400
+    res = backtest_agent_vs_spy_by_regime(agent_name=agent, lookahead_days=lookahead)
+    return jsonify(res)
+
+
+Register the blueprint in your app factory.
+
+2️⃣ Signal compression → IC memo + email
+What you’ll get
+
+Takes the last N findings (or last X hours)
+
+Groups into clusters by (symbol, market_type) + time proximity
+
+Produces one “thesis” per cluster
+
+Sends daily/triggered memo to whitelist (your existing email service)
+
+A) Compression engine
+
+services/signal_compression.py
+
+from datetime import datetime, timedelta
+from collections import defaultdict
+from typing import List, Dict, Any
+
+from models import Finding
+
+def compress_findings(findings: List[Finding], window_minutes: int = 90) -> List[Dict[str, Any]]:
+    """
+    Merge many findings into a small set of theses.
+    Simple deterministic clustering: (symbol, market_type) + time bucket.
+    """
+    buckets = defaultdict(list)
+    for f in findings:
+        sym = (f.symbol or "UNKNOWN").upper()
+        mkt = (f.market_type or "unknown")
+        t = f.timestamp
+        bucket = int(t.timestamp() // (window_minutes * 60))
+        buckets[(sym, mkt, bucket)].append(f)
+
+    theses = []
+    for (sym, mkt, bucket), fs in buckets.items():
+        fs = sorted(fs, key=lambda x: x.timestamp, reverse=True)
+        top = fs[0]
+        severity_rank = {"low": 1, "medium": 2, "high": 3, "critical": 4}
+        max_sev = max(fs, key=lambda x: severity_rank.get(x.severity, 0)).severity
+
+        # Consensus roll-up if present
+        acts = sum(1 for x in fs if (x.consensus_action or "").upper() == "ACT")
+        watches = sum(1 for x in fs if (x.consensus_action or "").upper() == "WATCH")
+        ignores = sum(1 for x in fs if (x.consensus_action or "").upper() == "IGNORE")
+        if acts >= max(watches, ignores):
+            consensus = "ACT"
+        elif watches >= ignores:
+            consensus = "WATCH"
+        else:
+            consensus = "IGNORE"
+
+        avg_conf = sum((x.consensus_confidence or x.confidence or 0.5) for x in fs) / max(len(fs), 1)
+
+        theses.append({
+            "symbol": sym,
+            "market_type": mkt,
+            "start_ts": fs[-1].timestamp.isoformat(),
+            "end_ts": fs[0].timestamp.isoformat(),
+            "finding_count": len(fs),
+            "max_severity": max_sev,
+            "consensus": consensus,
+            "confidence": round(float(avg_conf), 3),
+            "headline": top.title,
+            "supporting": [
+                {
+                    "id": x.id,
+                    "agent": x.agent_name,
+                    "severity": x.severity,
+                    "confidence": x.consensus_confidence or x.confidence,
+                    "title": x.title,
+                } for x in fs[:6]
+            ],
+        })
+
+    theses.sort(key=lambda x: ({"critical":4,"high":3,"medium":2,"low":1}.get(x["max_severity"],0), x["confidence"]), reverse=True)
+    return theses
+
+def build_ic_memo_text(theses: List[Dict[str, Any]]) -> str:
+    lines = []
+    lines.append("IC Memo — Signal Compression\n")
+    for i, th in enumerate(theses[:10], 1):
+        lines.append(f"{i}. {th['symbol']} ({th['market_type']}) — {th['max_severity'].upper()} — {th['consensus']} @ {th['confidence']}")
+        lines.append(f"   Thesis: {th['headline']}")
+        lines.append(f"   Window: {th['start_ts']} → {th['end_ts']} | n={th['finding_count']}")
+        for s in th["supporting"]:
+            lines.append(f"     - {s['agent']} [{s['severity']}] ({(s['confidence'] or 0.5):.2f}) {s['title']}")
+        lines.append("")
+    return "\n".join(lines)
+
+B) Email sender hook
+
+If you have a send_lp_email style service, add:
+
+services/ic_memo_email.py
+
+from models import db, Finding, Whitelist
+from datetime import datetime, timedelta
+
+from services.signal_compression import compress_findings, build_ic_memo_text
+from notifiers.email_meta import send_meta_email  # you already have this
+
+def send_ic_memo_compressed(hours: int = 24):
+    since = datetime.utcnow() - timedelta(hours=hours)
+    findings = Finding.query.filter(Finding.timestamp >= since).order_by(Finding.timestamp.desc()).limit(500).all()
+    theses = compress_findings(findings, window_minutes=90)
+    body = build_ic_memo_text(theses)
+
+    subject = f"IC Memo (Compressed) — last {hours}h — {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC"
+    # send_meta_email presumably sends to your whitelist; if not, loop Whitelist and send.
+    send_meta_email(subject, body, None)
+
+C) Scheduler job (daily + on-demand)
+
+In your scheduler schedule_meta_reports() or a new schedule:
+
+def schedule_compressed_ic_memo(self):
+    try:
+        self.scheduler.add_job(
+            func=self._send_compressed_ic_memo,
+            trigger=CronTrigger(hour=12, minute=5),
+            id="compressed_ic_memo",
+            replace_existing=True
+        )
+    except Exception as e:
+        logger.error(f"Error scheduling compressed IC memo: {e}")
+
+def _send_compressed_ic_memo(self):
+    with self.app.app_context():
+        from services.ic_memo_email import send_ic_memo_compressed
+        send_ic_memo_compressed(hours=24)
+
+
+Call self.schedule_compressed_ic_memo() in init_app().
+
+3️⃣ Portfolio drawdown governor wiring (live)
+What you’ll get
+
+A “portfolio risk state” computed from your PnL stream (or a proxy)
+
+If drawdown breaches thresholds:
+
+Reduce allocator aggressiveness
+
+Increase uncertainty flag
+
+Throttle cadence
+
+Optional: trip kill switch for new “ACT” signals (paper-only still)
+
+You already have:
+
+TradeGuardrails
+
+UCBAllocator
+
+UncertaintyEvent model
+
+scheduler _rebalance_agent_allocation() every 15 minutes
+
+We’ll wire the governor into _rebalance_agent_allocation() and guardrails.
+
+A) Drawdown governor service
+
+services/drawdown_governor.py
+
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+import json
+
+# If you have a proper PnL store, replace this with that.
+# This expects telemetry/events.jsonl includes {"portfolio_pnl": ..., "equity": ...} occasionally.
+EVENTS = Path("telemetry/events.jsonl")
+
+@dataclass
+class GovernorState:
+    ok: bool
+    dd: float            # drawdown as negative fraction (e.g., -0.05)
+    risk_multiplier: float  # 0..1
+    block_new_act: bool
+    reason: str
+
+def compute_drawdown_state(last_n: int = 50000) -> GovernorState:
+    if not EVENTS.exists():
+        return GovernorState(ok=True, dd=0.0, risk_multiplier=1.0, block_new_act=False, reason="no_events")
+
+    lines = EVENTS.read_text().splitlines()[-last_n:]
+    equity = []
+    for ln in lines:
+        try:
+            e = json.loads(ln)
+        except Exception:
+            continue
+        eq = e.get("equity")
+        if eq is not None:
+            try:
+                equity.append(float(eq))
+            except Exception:
+                pass
+
+    if len(equity) < 30:
+        return GovernorState(ok=True, dd=0.0, risk_multiplier=1.0, block_new_act=False, reason="insufficient_equity")
+
+    peak = equity[0]
+    dd = 0.0
+    for v in equity:
+        if v > peak:
+            peak = v
+        cur_dd = (v / peak) - 1.0
+        if cur_dd < dd:
+            dd = cur_dd
+
+    # Thresholds (tune)
+    # -3%: soften
+    # -6%: hard throttle
+    # -10%: freeze new ACT (still allow WATCH/IGNORE analysis)
+    if dd <= -0.10:
+        return GovernorState(ok=False, dd=dd, risk_multiplier=0.10, block_new_act=True, reason="dd>10%")
+    if dd <= -0.06:
+        return GovernorState(ok=False, dd=dd, risk_multiplier=0.30, block_new_act=False, reason="dd>6%")
+    if dd <= -0.03:
+        return GovernorState(ok=True, dd=dd, risk_multiplier=0.60, block_new_act=False, reason="dd>3%")
+
+    return GovernorState(ok=True, dd=dd, risk_multiplier=1.00, block_new_act=False, reason="normal")
+
+B) Wire governor into allocator (5–10 lines)
+
+In your scheduler _rebalance_agent_allocation() before calling self.allocator.allocate(...):
+
+from services.drawdown_governor import compute_drawdown_state
+
+
+Then:
+
+gov = compute_drawdown_state()
+
+# Soft: reduce total run budget (less aggressiveness)
+base_budget = 30
+total_budget = max(5, int(base_budget * gov.risk_multiplier))
+
+# Reduce exploration when stressed (less churn)
+if gov.risk_multiplier < 1.0:
+    self.allocator.exploration = max(0.5, self.allocator.exploration * 0.9)
+else:
+    self.allocator.exploration = min(1.5, self.allocator.exploration * 1.02)
+
+quotas, scores = self.allocator.allocate(
+    agents=agent_names,
+    min_runs={"MacroWatcherAgent": 1},
+    max_runs={"ArbitrageFinderAgent": 12},
+    total_budget_runs=total_budget
+)
+
+C) Block “ACT” emissions when drawdown severe
+
+Where you call emit_alpha_signal(findings, agent_name) in _run_agent, add:
+
+from services.drawdown_governor import compute_drawdown_state
+gov = compute_drawdown_state()
+
+if gov.block_new_act:
+    logger.warning(f"Drawdown governor blocking new ACT signals (dd={gov.dd:.2%}, reason={gov.reason})")
+    return
+
+
+That’s the live governor.
+
+✅ Minimal integration checklist (so it actually runs)
+
+Register new blueprint:
+
+eval.bp and your analysis bp already.
+
+Ensure these imports exist:
+
+telemetry/events_store.py used by backtest
+
+services/drawdown_governor.py imported by scheduler + agent run
+
+Confirm telemetry has either:
+
+reward per agent (already), and ideally equity for drawdown.
+If you don’t have equity in events yet: tell me where your portfolio/PnL lives and I’ll bind to that instead of the proxy.

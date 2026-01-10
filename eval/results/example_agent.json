@@ -1,0 +1,21 @@
+{
+  "module": "agents.example_agent.agent",
+  "entrypoint": "run",
+  "suite": "eval/suites/example_agent.jsonl",
+  "results": [
+    {
+      "id": "ex1",
+      "ok": true,
+      "latency_s": 0.0,
+      "output": "hello",
+      "error": null
+    },
+    {
+      "id": "ex2",
+      "ok": true,
+      "latency_s": 0.0,
+      "output": "mixed case",
+      "error": null
+    }
+  ]
+}

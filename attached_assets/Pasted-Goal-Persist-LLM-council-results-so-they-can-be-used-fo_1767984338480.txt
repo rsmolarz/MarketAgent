@@ -1,0 +1,160 @@
+Goal
+
+Persist LLM council results so they can be used for:
+
+Allocator weighting
+
+Regime/uncertainty learning
+
+Failure forensics
+
+Auditability (“why was this agent on/off?”)
+
+Dashboard overlays
+
+1️⃣ Database model: LLMCouncilResult
+
+Add this to models.py
+
+from sqlalchemy.dialects.postgresql import JSONB
+from datetime import datetime
+
+class LLMCouncilResult(db.Model):
+    __tablename__ = "llm_council_results"
+
+    id = db.Column(db.Integer, primary_key=True)
+
+    finding_id = db.Column(db.Integer, db.ForeignKey("finding.id"), index=True, nullable=False)
+    agent_name = db.Column(db.String(128), index=True)
+
+    consensus = db.Column(db.String(16))   # ACT | WATCH | IGNORE
+    agreement = db.Column(db.Float)         # 0.0 – 1.0
+    uncertainty = db.Column(db.Float)       # 1 - agreement
+
+    models_used = db.Column(JSONB)          # ["claude", "gpt", "gemini"]
+    raw_votes = db.Column(JSONB)             # {"claude": "ACT", ...}
+    analyses = db.Column(JSONB)              # full text (optional but valuable)
+
+    severity = db.Column(db.String(16))
+    confidence = db.Column(db.Float)
+
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "finding_id": self.finding_id,
+            "agent": self.agent_name,
+            "consensus": self.consensus,
+            "agreement": self.agreement,
+            "uncertainty": self.uncertainty,
+            "models_used": self.models_used,
+            "severity": self.severity,
+            "created_at": self.created_at.isoformat()
+        }
+
+
+Why JSONB?
+You’ll want to mine this later for meta-learning and failure attribution. Don’t flatten it.
+
+2️⃣ Persistence helper (single responsibility)
+
+Create services/llm_council_persistence.py
+
+from models import db, LLMCouncilResult
+
+def persist_council_result(finding, council_result: dict):
+    record = LLMCouncilResult(
+        finding_id=finding.id,
+        agent_name=finding.agent_name,
+        consensus=council_result.get("consensus"),
+        agreement=council_result.get("agreement"),
+        uncertainty=council_result.get("uncertainty"),
+        models_used=council_result.get("models_used"),
+        raw_votes=council_result.get("votes"),
+        analyses=council_result.get("analyses"),
+        severity=finding.severity,
+        confidence=finding.confidence
+    )
+
+    db.session.add(record)
+    db.session.commit()
+
+    return record
+
+3️⃣ Modify the council orchestrator (minimal change)
+
+In ai_analysis.py, update the return payload:
+
+return {
+    "success": True,
+    "consensus": consensus,
+    "agreement": agreement,
+    "uncertainty": uncertainty,
+    "models_used": [r["model"] for r in results],
+    "votes": dict(zip(
+        [r["model"] for r in results],
+        decision_votes
+    )),
+    "analyses": results
+}
+
+4️⃣ Auto-persist on CRITICAL findings
+
+In AgentScheduler._run_agent, after findings are saved:
+
+from services.llm_council_persistence import persist_council_result
+from services.ai_analysis import analyze_alert_with_llm_council
+
+if finding.severity == "critical":
+    council = analyze_alert_with_llm_council(finding.to_dict())
+
+    if council.get("success"):
+        persist_council_result(finding, council)
+
+
+This guarantees:
+
+Zero UI dependency
+
+Works for live + backtests
+
+Runs exactly once per critical finding
+
+5️⃣ What this unlocks immediately
+
+Because council results are now queryable, you can:
+
+Allocator hook (example)
+SELECT agent_name,
+       AVG(agreement) AS mean_agreement,
+       AVG(uncertainty) AS mean_uncertainty
+FROM llm_council_results
+WHERE created_at > now() - interval '30 days'
+GROUP BY agent_name;
+
+Regime transition detector
+
+Rising uncertainty before performance collapse
+
+Disagreement spikes as early-warning signals
+
+Dashboard overlays
+
+“Consensus: ACT (2/3)” badge
+
+Uncertainty bands
+
+Failure heatmaps
+
+6️⃣ Design note (important)
+
+You did this in the correct order:
+
+Council
+
+Persistence
+
+Learning
+
+Most systems try to “add AI” at step 5.
+You’ve built infrastructure, not a feature.

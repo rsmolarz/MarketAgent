@@ -1,0 +1,304 @@
+1) Wire ideation → build → sandbox improve → eval → PR
+
+You now have the sandbox self-modifier entrypoint. We will reuse it and add a new pipeline script that:
+
+Calls the Ideation prompt
+
+Generates an agent scaffold + eval suite
+
+Updates agents/manifest.yaml to include the new agent as sandbox_editable: true and execution_sensitive: false
+
+Runs your existing sandbox self-modifier to improve the new agent
+
+Runs evals and commits changes (your self-modifier already commits on pass)
+
+Leaves the branch ready for your existing “Create PR” workflow
+
+This is the fastest path to “automatic agent builder”.
+
+2) Required small adjustments (so this works cleanly)
+A) One-time: add auto-discovery to agents registry (optional but recommended)
+
+If you keep AVAILABLE_AGENTS static, the builder must also append to it. If you adopt auto-discovery, no edits needed. If you want auto-discovery, I can give you the exact patch, but it’s optional for now.
+
+B) Add a manifest entry for each new agent
+
+Your sandbox self-modifier only targets agents listed in agents/manifest.yaml. So the builder must add the new agent entry.
+
+3) Create the new pipeline script
+
+Create: meta/agent_builder/autobuild_pipeline.py
+
+import json
+import re
+import subprocess
+from pathlib import Path
+import importlib
+import yaml
+
+from tools.llm_client import call_llm
+from meta.agent_builder.builder import create_agent
+from meta.agent_builder.eval_generator import generate_eval
+
+# Your existing sandbox self-modifier script (the one you pasted)
+SANDBOX_SELF_MODIFIER = Path("meta/sandbox_self_modifier.py")
+
+IDEATION_PROMPT_PATH = Path("agents/prompts/agent_ideation.md")
+MANIFEST_PATH = Path("agents/manifest.yaml")
+
+
+def git(cmd: str) -> str:
+    try:
+        return subprocess.check_output(["bash", "-lc", cmd], text=True, stderr=subprocess.DEVNULL).strip()
+    except subprocess.CalledProcessError:
+        return ""
+
+
+def snake_case(name: str) -> str:
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+def class_name_from_module(module_slug: str) -> str:
+    return "".join(x.capitalize() for x in module_slug.split("_"))
+
+
+def get_available_agents():
+    mod = importlib.import_module("agents")
+    return getattr(mod, "AVAILABLE_AGENTS", [])
+
+
+def load_telemetry_summary():
+    p = Path("telemetry/summary.json")
+    if p.exists():
+        try:
+            return json.loads(p.read_text())
+        except Exception:
+            return {}
+    return {}
+
+
+def ideate_one() -> dict:
+    if not IDEATION_PROMPT_PATH.exists():
+        raise RuntimeError(f"Missing ideation prompt: {IDEATION_PROMPT_PATH}")
+
+    prompt = IDEATION_PROMPT_PATH.read_text()
+
+    payload = {
+        "available_agents": get_available_agents(),
+        "telemetry_summary": load_telemetry_summary(),
+        "constraints": {
+            "offline_ci": True,
+            "no_paid_datasets": True,
+            "analysis_only": True
+        },
+        "allowed_data_sources": [
+            "existing internal clients",
+            "RSS feeds",
+            "public APIs",
+            "file fixtures for CI"
+        ],
+        "required_finding_schema": [
+            "title", "description", "severity", "confidence", "metadata", "symbol", "market_type"
+        ]
+    }
+
+    msgs = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": json.dumps(payload)}
+    ]
+    out = call_llm(msgs, temperature=0.3, max_tokens=2400)
+    if not isinstance(out, dict) or "agent" not in out or "eval" not in out:
+        raise RuntimeError("Ideation model returned invalid JSON (missing agent/eval).")
+    return out
+
+
+def ensure_manifest():
+    if not MANIFEST_PATH.exists():
+        raise RuntimeError("agents/manifest.yaml not found. Required for sandbox modifier.")
+    manifest = yaml.safe_load(MANIFEST_PATH.read_text())
+    if "agents" not in manifest or not isinstance(manifest["agents"], list):
+        raise RuntimeError("agents/manifest.yaml is missing 'agents' list.")
+    return manifest
+
+
+def add_agent_to_manifest(manifest: dict, agent_class_name: str, module_slug: str, eval_suite_path: str):
+    # Prevent duplicates
+    for a in manifest["agents"]:
+        if a.get("name") == agent_class_name:
+            return
+
+    # Assumptions based on your sandbox modifier:
+    # - module: python import path for module
+    # - callable: method/function name to call (you use callable_name in run_suite)
+    # - eval_suite: path to eval jsonl
+    # - eval_adapter: optional
+    manifest["agents"].append({
+        "name": agent_class_name,
+        "module": f"agents.{module_slug}",
+        "callable": "run",                 # BaseAgent.run() is canonical
+        "eval_suite": eval_suite_path,
+        "eval_adapter": None,
+        "sandbox_editable": True,
+        "execution_sensitive": False
+    })
+
+
+def write_eval_suite(agent_name: str, eval_spec: dict) -> str:
+    """
+    Write an eval suite based on ideation output.
+    If ideation doesn't provide structured cases, fall back to generator.
+    """
+    Path("eval/suites").mkdir(parents=True, exist_ok=True)
+    suite_path = Path("eval/suites") / f"{agent_name}.jsonl"
+
+    # If ideation provided cases, store them; otherwise use the simple generator.
+    cases = eval_spec.get("cases")
+    if isinstance(cases, list) and cases:
+        # Store as JSONL: one case per line
+        lines = []
+        for c in cases:
+            lines.append(json.dumps(c))
+        suite_path.write_text("\n".join(lines) + "\n")
+        return str(suite_path)
+
+    # fallback
+    p = generate_eval(agent_name)
+    return str(p)
+
+
+def run_sandbox_self_modifier():
+    if not SANDBOX_SELF_MODIFIER.exists():
+        raise RuntimeError(f"Sandbox self-modifier not found at {SANDBOX_SELF_MODIFIER}")
+
+    # Run in-process via python -m; simplest is direct python invocation
+    cmd = f"python {SANDBOX_SELF_MODIFIER}"
+    out = subprocess.check_output(["bash", "-lc", cmd], text=True)
+    return out
+
+
+def main(n_agents: int = 3):
+    manifest = ensure_manifest()
+
+    Path("meta/reports").mkdir(parents=True, exist_ok=True)
+
+    built = []
+    for i in range(n_agents):
+        idea = ideate_one()
+        agent = idea["agent"]
+        eval_spec = idea["eval"]
+
+        class_name = agent["class_name"]
+        module_slug = agent.get("module_slug") or snake_case(class_name)
+
+        # 1) Create scaffold agent file
+        create_agent(class_name, {"description": agent.get("description", "")})
+
+        # 2) Create eval suite (prefer ideation cases; fallback to generator)
+        suite_path = write_eval_suite(class_name, eval_spec)
+
+        # 3) Add to manifest so sandbox modifier can touch it
+        add_agent_to_manifest(manifest, class_name, module_slug, suite_path)
+
+        # Persist ideation report
+        Path(f"meta/reports/ideation_{class_name}.json").write_text(json.dumps(idea, indent=2))
+
+        built.append(class_name)
+
+        # Commit scaffold immediately (clean PR history)
+        git("git add agents/ eval/suites/ meta/reports/ agents/manifest.yaml")
+        git(f'git commit -m "AgentBuilder: scaffold {class_name} + eval suite"')
+
+    # Write manifest updates once
+    MANIFEST_PATH.write_text(yaml.safe_dump(manifest, sort_keys=False))
+    git("git add agents/manifest.yaml")
+    git('git commit -m "AgentBuilder: register new agents in manifest"')
+
+    # 4) Improve via sandbox self-modifier (applies patch + runs evals + commits on success)
+    sandbox_log = run_sandbox_self_modifier()
+    Path("meta/reports/sandbox_self_modifier_last.log").write_text(sandbox_log)
+
+    print(f"Built agents: {built}")
+    print("Sandbox improvement attempted; check git log and meta/reports/ for details.")
+
+
+if __name__ == "__main__":
+    # default: build 3
+    main(3)
+
+
+What this gives you:
+
+One command builds 3 agents
+
+Each gets an eval suite
+
+They’re added to manifest (so sandbox modifier can work)
+
+Sandbox modifier applies improvements and will rollback on eval fail
+
+Everything is committed in small, reviewable commits
+
+4) GitHub Actions workflow to run the auto-builder and open a PR
+
+Create: .github/workflows/auto_agent_builder.yml
+
+name: Auto Agent Builder (Ideate → Build → Sandbox Improve)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  autobuild:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Auto Agent Builder
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: gpt-4.1-mini
+        run: |
+          python meta/agent_builder/autobuild_pipeline.py
+          git status --porcelain
+
+      - name: Create PR
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: meta/auto-agent-builder
+          title: "Auto Agent Builder: 3 new analysis agents (eval-verified)"
+          body: |
+            - Generated 3 new analysis-only agents
+            - Added eval suites
+            - Ran sandbox self-modifier (eval-before-commit enforced)
+            - See meta/reports/ for ideation specs and logs
+          labels: meta-agent,agent-builder,sandbox
+
+5) Capital-weighted promotion thresholds (add now, but enforce later)
+
+You already have the pieces: capital-weighted reward + rolling stats + quarantine. The “promotion thresholds” should control:
+
+schedule cadence acceleration (interval reduction)
+
+capital allocation bumps
+
+whitelist for “production” routing
+
+Implement as a separate job that reads telemetry summaries and proposes changes via PR (human-approved). If you want that next, I’ll give you:
+
+meta/agent_builder/promotion_runner.py
+
+a workflow that opens PRs to adjust intervals/capital per agent

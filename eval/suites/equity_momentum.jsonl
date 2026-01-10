@@ -1,0 +1,1 @@
+{"id":"equity_smoke","input":{},"schema":{"type":"list","item":{"type":"dict","required_keys":["symbol","momentum_score","signal"]}}}

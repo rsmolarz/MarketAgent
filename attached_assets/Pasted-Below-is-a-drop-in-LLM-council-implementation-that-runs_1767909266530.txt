@@ -1,0 +1,434 @@
+Below is a drop-in “LLM council” implementation that runs 3 LLMs (GPT + Claude + Gemini) on a finding, then returns:
+
+each model’s analysis
+
+a consensus summary
+
+an explicit decision (e.g., “ACT / WATCH / IGNORE”)
+
+a confidence score
+
+disagreement flags (uncertainty spike)
+
+This replaces your current “Analyze = single LLM” behavior.
+
+0) Required env vars
+
+Set these in Replit Secrets / .env:
+
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
+GEMINI_API_KEY=...
+
+
+Optional tuning:
+
+LLM_COUNCIL_TIMEOUT_SEC=20
+LLM_COUNCIL_MIN_AGREE=2
+
+1) Create services/llm_council.py
+import os
+import json
+import time
+import re
+import asyncio
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Tuple
+
+# --- Providers (minimal, no extra dependencies) ---
+import requests
+
+
+@dataclass
+class CouncilResult:
+    model: str
+    ok: bool
+    latency_ms: int
+    raw_text: str
+    parsed: Optional[Dict[str, Any]]
+    error: Optional[str] = None
+
+
+def _now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def _safe_json_extract(text: str) -> Optional[Dict[str, Any]]:
+    """
+    Tries to extract a JSON object from a model response.
+    We ask models to return strict JSON, but this makes it resilient.
+    """
+    if not text:
+        return None
+    # If the whole thing is JSON
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+
+    # Try to find a JSON block
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(0))
+    except Exception:
+        return None
+
+
+def _council_prompt(finding: Dict[str, Any]) -> str:
+    """
+    We force a strict schema so consensus is possible.
+    """
+    return f"""
+You are an investment risk/market signal analyst.
+
+Given this finding, output STRICT JSON ONLY matching the schema below. No markdown.
+
+FINDING_JSON:
+{json.dumps(finding, ensure_ascii=False)}
+
+SCHEMA:
+{{
+  "verdict": "ACT" | "WATCH" | "IGNORE",
+  "severity": "low" | "medium" | "high" | "critical",
+  "confidence": number,  // 0..1
+  "key_drivers": [string, ...],  // 3-6 items
+  "what_to_verify": [string, ...],  // 2-5 items
+  "time_horizon": "intraday" | "days" | "weeks" | "months",
+  "positioning": {{
+    "bias": "risk-on" | "risk-off" | "neutral",
+    "suggested_actions": [string, ...]  // concrete steps, no trades required
+  }},
+  "one_paragraph_summary": string
+}}
+
+Rules:
+- Be conservative: if uncertain, choose WATCH.
+- confidence must reflect uncertainty.
+- If missing data, put it into what_to_verify.
+""".strip()
+
+
+# ---------- OpenAI (Chat Completions compatible) ----------
+def call_openai(prompt: str, timeout_sec: int = 20) -> Tuple[bool, str, Optional[str]]:
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    if not api_key:
+        return False, "", "OPENAI_API_KEY missing"
+
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": os.getenv("OPENAI_COUNCIL_MODEL", "gpt-4.1-mini"),
+        "messages": [
+            {"role": "system", "content": "Return strict JSON only."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+    }
+
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=timeout_sec)
+        r.raise_for_status()
+        data = r.json()
+        text = data["choices"][0]["message"]["content"]
+        return True, text, None
+    except Exception as e:
+        return False, "", str(e)
+
+
+# ---------- Anthropic (Claude) ----------
+def call_anthropic(prompt: str, timeout_sec: int = 20) -> Tuple[bool, str, Optional[str]]:
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return False, "", "ANTHROPIC_API_KEY missing"
+
+    url = "https://api.anthropic.com/v1/messages"
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    payload = {
+        "model": os.getenv("ANTHROPIC_COUNCIL_MODEL", "claude-3-5-sonnet-latest"),
+        "max_tokens": 700,
+        "temperature": 0.2,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=timeout_sec)
+        r.raise_for_status()
+        data = r.json()
+        # anthropic content is list of blocks
+        text = "".join([blk.get("text", "") for blk in data.get("content", [])])
+        return True, text, None
+    except Exception as e:
+        return False, "", str(e)
+
+
+# ---------- Gemini ----------
+def call_gemini(prompt: str, timeout_sec: int = 20) -> Tuple[bool, str, Optional[str]]:
+    api_key = os.getenv("GEMINI_API_KEY", "")
+    if not api_key:
+        return False, "", "GEMINI_API_KEY missing"
+
+    model = os.getenv("GEMINI_COUNCIL_MODEL", "gemini-1.5-pro")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+    payload = {
+        "contents": [{"parts": [{"text": "Return strict JSON only.\n\n" + prompt}]}],
+        "generationConfig": {"temperature": 0.2},
+    }
+
+    try:
+        r = requests.post(url, json=payload, timeout=timeout_sec)
+        r.raise_for_status()
+        data = r.json()
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+        return True, text, None
+    except Exception as e:
+        return False, "", str(e)
+
+
+async def _call_async(name: str, fn, prompt: str, timeout_sec: int) -> CouncilResult:
+    start = _now_ms()
+    loop = asyncio.get_running_loop()
+    ok, text, err = await loop.run_in_executor(None, fn, prompt, timeout_sec)
+    latency = _now_ms() - start
+    parsed = _safe_json_extract(text) if ok else None
+    return CouncilResult(model=name, ok=ok, latency_ms=latency, raw_text=text, parsed=parsed, error=err)
+
+
+def _normalize_vote(parsed: Dict[str, Any]) -> Tuple[str, float]:
+    """
+    Returns (verdict, confidence). Falls back safely.
+    """
+    verdict = (parsed.get("verdict") or "WATCH").upper()
+    if verdict not in ("ACT", "WATCH", "IGNORE"):
+        verdict = "WATCH"
+    conf = parsed.get("confidence")
+    try:
+        conf = float(conf)
+    except Exception:
+        conf = 0.5
+    conf = max(0.0, min(1.0, conf))
+    return verdict, conf
+
+
+def _consensus(results: List[CouncilResult], min_agree: int = 2) -> Dict[str, Any]:
+    """
+    Majority vote on verdict + confidence weighting.
+    Also produces an uncertainty_spike boolean when disagreement is high.
+    """
+    usable = [r for r in results if r.ok and isinstance(r.parsed, dict)]
+    if not usable:
+        return {
+            "ok": False,
+            "reason": "No usable model outputs",
+            "uncertainty_spike": True,
+            "consensus": None,
+        }
+
+    votes = []
+    for r in usable:
+        verdict, conf = _normalize_vote(r.parsed)
+        votes.append((verdict, conf, r.model))
+
+    # Weighted counts
+    score = {"ACT": 0.0, "WATCH": 0.0, "IGNORE": 0.0}
+    for v, conf, _ in votes:
+        score[v] += conf
+
+    # Majority by count (first), tie-break by weighted confidence
+    counts = {"ACT": 0, "WATCH": 0, "IGNORE": 0}
+    for v, _, _ in votes:
+        counts[v] += 1
+
+    sorted_by_count = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)
+    top_verdict, top_count = sorted_by_count[0]
+
+    if top_count < min_agree:
+        # no clear majority
+        uncertainty_spike = True
+        top_verdict = max(score.items(), key=lambda kv: kv[1])[0]  # best weighted
+    else:
+        # still mark uncertainty if 3-way split or close
+        uncertainty_spike = (sorted_by_count[1][1] == top_count)
+
+    # Build consensus narrative: use the highest-confidence model as the "base"
+    best = max(votes, key=lambda t: t[1])
+    best_model = best[2]
+    best_parsed = next(r.parsed for r in usable if r.model == best_model)
+
+    # Consensus confidence: average of confidences after penalizing disagreement
+    avg_conf = sum(conf for _, conf, _ in votes) / max(len(votes), 1)
+    if uncertainty_spike:
+        avg_conf *= 0.75
+    avg_conf = round(avg_conf, 3)
+
+    # Merge key drivers / verify lists (dedupe, keep short)
+    def _merge_list(field: str, limit: int) -> List[str]:
+        out = []
+        seen = set()
+        for r in usable:
+            items = r.parsed.get(field) or []
+            if isinstance(items, list):
+                for x in items:
+                    if isinstance(x, str):
+                        s = x.strip()
+                        if s and s not in seen:
+                            seen.add(s)
+                            out.append(s)
+            if len(out) >= limit:
+                break
+        return out[:limit]
+
+    consensus_obj = {
+        "verdict": top_verdict,
+        "confidence": avg_conf,
+        "uncertainty_spike": uncertainty_spike,
+        "majority": counts,
+        "weighted": {k: round(v, 3) for k, v in score.items()},
+        "key_drivers": _merge_list("key_drivers", 6),
+        "what_to_verify": _merge_list("what_to_verify", 5),
+        "time_horizon": best_parsed.get("time_horizon", "days"),
+        "positioning": best_parsed.get("positioning", {"bias": "neutral", "suggested_actions": []}),
+        "one_paragraph_summary": best_parsed.get("one_paragraph_summary", ""),
+    }
+
+    return {"ok": True, "consensus": consensus_obj, "uncertainty_spike": uncertainty_spike}
+
+
+async def analyze_with_council(finding: Dict[str, Any]) -> Dict[str, Any]:
+    timeout_sec = int(os.getenv("LLM_COUNCIL_TIMEOUT_SEC", "20"))
+    min_agree = int(os.getenv("LLM_COUNCIL_MIN_AGREE", "2"))
+    prompt = _council_prompt(finding)
+
+    tasks = [
+        _call_async("openai", call_openai, prompt, timeout_sec),
+        _call_async("claude", call_anthropic, prompt, timeout_sec),
+        _call_async("gemini", call_gemini, prompt, timeout_sec),
+    ]
+
+    results = await asyncio.gather(*tasks)
+
+    consensus = _consensus(results, min_agree=min_agree)
+
+    return {
+        "models": [
+            {
+                "model": r.model,
+                "ok": r.ok,
+                "latency_ms": r.latency_ms,
+                "error": r.error,
+                "parsed": r.parsed,
+                "raw_text": r.raw_text if not r.parsed else None,  # keep raw only when parse failed
+            }
+            for r in results
+        ],
+        "consensus": consensus.get("consensus"),
+        "uncertainty_spike": consensus.get("uncertainty_spike", True),
+        "ok": consensus.get("ok", False),
+        "reason": consensus.get("reason"),
+    }
+
+2) Add an API route to call the council
+
+In your Flask app (wherever your current “Analyze” endpoint is), add:
+
+routes/analysis_routes.py (or directly in app.py)
+import asyncio
+from flask import Blueprint, jsonify
+from models import Finding
+from services.llm_council import analyze_with_council
+
+bp = Blueprint("analysis_routes", __name__)
+
+@bp.route("/api/findings/<int:finding_id>/analyze", methods=["POST"])
+def analyze_finding(finding_id: int):
+    finding = Finding.query.get_or_404(finding_id)
+
+    finding_payload = {
+        "id": finding.id,
+        "agent_name": finding.agent_name,
+        "title": finding.title,
+        "description": finding.description,
+        "severity": finding.severity,
+        "confidence": finding.confidence,
+        "symbol": finding.symbol,
+        "market_type": finding.market_type,
+        "timestamp": finding.timestamp.isoformat() if getattr(finding, "timestamp", None) else None,
+        "metadata": finding.finding_metadata or {},
+    }
+
+    result = asyncio.run(analyze_with_council(finding_payload))
+    return jsonify(result)
+
+
+Then register blueprint:
+
+app.register_blueprint(bp)
+
+3) Update your dashboard “Analyze” button to call the new endpoint
+
+Wherever your dashboard JS currently calls the single-LLM endpoint, change to:
+
+async function analyzeFinding(findingId) {
+  const res = await fetch(`/api/findings/${findingId}/analyze`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" }
+  });
+  const data = await res.json();
+
+  // Render consensus + individual model outputs
+  renderCouncilAnalysis(data);
+}
+
+
+And render something like:
+
+Consensus verdict + confidence
+
+Disagreement / uncertainty banner if uncertainty_spike == true
+
+Tabs: OpenAI / Claude / Gemini (each model’s parsed JSON)
+
+4) Consensus behavior (what you’ll see)
+
+If 2/3 agree on ACT/WATCH/IGNORE ⇒ consensus is that verdict
+
+If split (1–1–1 or no majority) ⇒ verdict chosen by weighted confidence, and:
+
+uncertainty_spike: true
+
+confidence penalized
+
+This is exactly what you want for “provisional” signals.
+
+5) Optional: log “uncertainty events” (ties into your scheduler/allocator)
+
+If you want your allocator to respond to LLM disagreement, add this minimal hook after analysis:
+
+if uncertainty_spike == true, write a row in telemetry or DB (you already have telemetry/events.jsonl patterns)
+
+Example (pseudo-minimal) after result = ...:
+
+if result.get("uncertainty_spike"):
+    logger.warning(f"UNCERTAINTY_SPIKE finding_id={finding.id} agent={finding.agent_name}")
+
+
+If you want this fully persisted, paste your models.py Finding schema and I’ll add an UncertaintyEvent model in-place.
+
+What you asked for (explicitly)
+
+“recent findings and triggers analyzed by 3 different llms and come to a consensus”
+
+This code does that:
+
+runs 3 providers in parallel
+
+enforces structured outputs
+
+produces consensus + disagreement detection
+
+does not require changing any agents

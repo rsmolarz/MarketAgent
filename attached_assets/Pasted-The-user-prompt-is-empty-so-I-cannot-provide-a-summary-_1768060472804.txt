@@ -1,0 +1,383 @@
+The user prompt is empty, so I cannot provide a summary. Please provide a user prompt in order for me to generate an appropriate summary.Now I understand the full architecture. This is a sophisticated multi-agent trading/market intelligence platform with:
+
+Agent Interface: Each agent has an analyze() method that returns List[Dict[str, Any]]
+Canonical output shape: Each agent returns a specific schema
+Manifest registration: Agents are registered in agents/manifest.yaml
+Eval system: Each agent has eval suites and offline adapters
+Sandbox editability: Some agents can be self-modified, others (execution-sensitive) cannot
+
+For the DistressedPropertyAgent, I need to create:
+
+The agent class with analyze() method
+Canonical output shape
+Manifest entry
+Eval suite
+Offline adapter
+
+Based on the patterns shown:
+
+MacroWatcherAgent returns anomalies with symbol, name, signal, value, daily_change, timestamp
+ArbitrageFinderAgent returns opportunities with exchange/price data
+GeopoliticalRiskAgent returns risk signals with region, risk_score, headline, sentiment, source, timestamp
+
+For DistressedPropertyAgent, I should design:
+
+Output shape that fits the pattern
+It would be analysis-only (not execution-sensitive)
+Sandbox-editable
+
+Let me design a proper DistressedPropertyAgent that:
+
+Fetches distressed property data from APIs
+Analyzes for investment opportunities/signals
+Returns structured signals in the canonical format
+
+Output shape could be:
+python{
+    "property_id": str,
+    "address": str,
+    "city": str,
+    "state": str,
+    "signal_type": str,  # "deep_discount", "auction_soon", "price_drop", "high_yield"
+    "signal_strength": float,  # 0-100
+    "price": float,
+    "estimated_value": float,
+    "discount_pct": float,
+    "property_type": str,
+    "status": str,  # foreclosure, auction, etc.
+    "days_on_market": int,
+    "source": str,
+    "timestamp": str
+}
+Since this is purely analytical work with no execution risk, I'll mark it as sandbox_editable: true and execution_sensitive: false.Now I understand your architecture. Let me create a DistressedPropertyAgent that fits perfectly into your platform:
+
+1. Agent Contract
+DistressedPropertyAgent
+
+Callable: DistressedPropertyAgent.analyze()
+
+Returns: List[Dict[str, Any]]
+
+Each dict represents a distressed property signal
+
+Canonical output shape:
+{
+  "property_id": str,        # "prop-12345"
+  "address": str,            # "123 Foreclosure Lane"
+  "city": str,               # "Phoenix"
+  "state": str,              # "AZ"
+  "signal_type": str,        # "deep_discount" | "auction_imminent" | "price_drop" | "high_yield"
+  "signal_strength": float,  # 0–100
+  "price": float,            # 185000.0
+  "estimated_value": float,  # 250000.0
+  "discount_pct": float,     # 26.0
+  "property_type": str,      # "single_family"
+  "status": str,             # "foreclosure" | "auction" | "pre-foreclosure" | "reo"
+  "days_on_market": int,     # 45
+  "source": str,             # "attom" | "auction.com" | "zillow"
+  "timestamp": str
+}
+
+Analysis-only → sandbox-editable
+
+2. Agent Implementation
+agents/distressed_property_agent.py
+python"""
+DistressedPropertyAgent
+=======================
+Identifies high-signal distressed real estate opportunities.
+Fetches from configured APIs, scores properties, and emits actionable signals.
+
+Analysis-only. Sandbox-editable. Non-execution-sensitive.
+"""
+
+import os
+import logging
+from datetime import datetime
+from typing import List, Dict, Any, Optional
+
+import requests
+
+logger = logging.getLogger(__name__)
+
+
+class DistressedPropertyAgent:
+    """
+    Agent that analyzes distressed property data for investment signals.
+    
+    Signal Types:
+    - deep_discount: Property priced >20% below estimated value
+    - auction_imminent: Auction within 7 days
+    - price_drop: Recent price reduction >10%
+    - high_yield: Estimated rental yield >12%
+    """
+
+    # Configurable thresholds (can be tuned by Meta-Agent)
+    DEEP_DISCOUNT_THRESHOLD = 0.20      # 20% below value
+    AUCTION_IMMINENT_DAYS = 7           # days until auction
+    PRICE_DROP_THRESHOLD = 0.10         # 10% price reduction
+    HIGH_YIELD_THRESHOLD = 0.12         # 12% rental yield
+    MIN_SIGNAL_STRENGTH = 50            # minimum score to emit
+
+    def __init__(self):
+        self.api_endpoints = self._load_endpoints()
+        self.timeout = int(os.getenv("PROPERTY_API_TIMEOUT", "30"))
+
+    def _load_endpoints(self) -> List[Dict[str, Any]]:
+        """Load API endpoints from environment."""
+        endpoints = []
+        i = 1
+        while True:
+            url = os.getenv(f"PROPERTY_API_{i}_URL")
+            if not url:
+                break
+            endpoints.append({
+                "name": os.getenv(f"PROPERTY_API_{i}_NAME", f"PropertyAPI_{i}"),
+                "url": url,
+                "key": os.getenv(f"PROPERTY_API_{i}_KEY"),
+                "response_key": os.getenv(f"PROPERTY_API_{i}_RESPONSE_KEY", "properties"),
+            })
+            i += 1
+        return endpoints
+
+    def analyze(self) -> List[Dict[str, Any]]:
+        """
+        Main entry point. Fetches properties and returns scored signals.
+        
+        Returns:
+            List of signal dicts matching canonical output shape.
+        """
+        signals = []
+        
+        for endpoint in self.api_endpoints:
+            try:
+                properties = self._fetch_from_endpoint(endpoint)
+                for prop in properties:
+                    signal = self._score_property(prop, endpoint["name"])
+                    if signal and signal["signal_strength"] >= self.MIN_SIGNAL_STRENGTH:
+                        signals.append(signal)
+            except Exception as e:
+                logger.error(f"[DistressedPropertyAgent] {endpoint['name']} failed: {e}")
+                continue
+
+        # Sort by signal strength descending
+        signals.sort(key=lambda x: x["signal_strength"], reverse=True)
+        
+        logger.info(f"[DistressedPropertyAgent] Emitting {len(signals)} signals")
+        return signals
+
+    def _fetch_from_endpoint(self, endpoint: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Fetch properties from a single API endpoint."""
+        headers = {}
+        if endpoint.get("key"):
+            headers["Authorization"] = f"Bearer {endpoint['key']}"
+
+        response = requests.get(
+            endpoint["url"],
+            headers=headers,
+            timeout=self.timeout
+        )
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        # Handle nested response keys (e.g., "data.properties")
+        result = data
+        for key in endpoint["response_key"].split("."):
+            result = result.get(key, [])
+        
+        return result if isinstance(result, list) else []
+
+    def _score_property(self, prop: Dict[str, Any], source: str) -> Optional[Dict[str, Any]]:
+        """
+        Score a property and determine signal type.
+        
+        Returns:
+            Signal dict if property meets threshold, None otherwise.
+        """
+        # Normalize field names (APIs vary)
+        price = self._extract_float(prop, ["price", "list_price", "asking_price"])
+        estimated_value = self._extract_float(prop, ["estimated_value", "zestimate", "avm", "market_value"])
+        
+        if not price or price <= 0:
+            return None
+
+        # Calculate metrics
+        discount_pct = 0.0
+        if estimated_value and estimated_value > 0:
+            discount_pct = (estimated_value - price) / estimated_value
+
+        days_to_auction = self._extract_int(prop, ["days_to_auction", "auction_days"])
+        price_change_pct = self._extract_float(prop, ["price_change_pct", "price_reduction"])
+        rental_yield = self._extract_float(prop, ["rental_yield", "cap_rate", "yield"])
+
+        # Determine signal type and strength
+        signal_type, signal_strength = self._classify_signal(
+            discount_pct=discount_pct,
+            days_to_auction=days_to_auction,
+            price_change_pct=price_change_pct,
+            rental_yield=rental_yield
+        )
+
+        if not signal_type:
+            return None
+
+        return {
+            "property_id": str(prop.get("id", prop.get("property_id", "unknown"))),
+            "address": self._extract_str(prop, ["address", "street_address", "street"]),
+            "city": self._extract_str(prop, ["city", "property_city"]),
+            "state": self._extract_str(prop, ["state", "state_code"]),
+            "signal_type": signal_type,
+            "signal_strength": round(signal_strength, 1),
+            "price": price,
+            "estimated_value": estimated_value or price,
+            "discount_pct": round(discount_pct * 100, 1),
+            "property_type": self._extract_str(prop, ["property_type", "type", "home_type"]) or "unknown",
+            "status": self._extract_str(prop, ["status", "foreclosure_status"]) or "unknown",
+            "days_on_market": self._extract_int(prop, ["days_on_market", "dom"]) or 0,
+            "source": source,
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }
+
+    def _classify_signal(
+        self,
+        discount_pct: float,
+        days_to_auction: Optional[int],
+        price_change_pct: Optional[float],
+        rental_yield: Optional[float]
+    ) -> tuple:
+        """
+        Classify signal type and calculate strength.
+        
+        Returns:
+            (signal_type, signal_strength) or (None, 0) if no signal.
+        """
+        signals = []
+
+        # Deep discount signal
+        if discount_pct >= self.DEEP_DISCOUNT_THRESHOLD:
+            strength = min(100, 50 + (discount_pct - self.DEEP_DISCOUNT_THRESHOLD) * 200)
+            signals.append(("deep_discount", strength))
+
+        # Auction imminent signal
+        if days_to_auction is not None and 0 < days_to_auction <= self.AUCTION_IMMINENT_DAYS:
+            strength = min(100, 100 - (days_to_auction * 7))
+            signals.append(("auction_imminent", strength))
+
+        # Price drop signal
+        if price_change_pct and abs(price_change_pct) >= self.PRICE_DROP_THRESHOLD:
+            strength = min(100, 50 + abs(price_change_pct) * 300)
+            signals.append(("price_drop", strength))
+
+        # High yield signal
+        if rental_yield and rental_yield >= self.HIGH_YIELD_THRESHOLD:
+            strength = min(100, 50 + (rental_yield - self.HIGH_YIELD_THRESHOLD) * 500)
+            signals.append(("high_yield", strength))
+
+        if not signals:
+            return None, 0
+
+        # Return strongest signal
+        return max(signals, key=lambda x: x[1])
+
+    def _extract_float(self, data: Dict, keys: List[str]) -> Optional[float]:
+        for key in keys:
+            if key in data and data[key] is not None:
+                try:
+                    return float(data[key])
+                except (ValueError, TypeError):
+                    continue
+        return None
+
+    def _extract_int(self, data: Dict, keys: List[str]) -> Optional[int]:
+        for key in keys:
+            if key in data and data[key] is not None:
+                try:
+                    return int(data[key])
+                except (ValueError, TypeError):
+                    continue
+        return None
+
+    def _extract_str(self, data: Dict, keys: List[str]) -> Optional[str]:
+        for key in keys:
+            if key in data and data[key]:
+                return str(data[key])
+        return None
+
+3. Manifest Entry
+Add to agents/manifest.yaml:
+yaml  - name: distressed_property
+    module: agents.distressed_property_agent
+    callable: "DistressedPropertyAgent.analyze"
+    eval_suite: eval/suites/distressed_property.jsonl
+    eval_adapter: eval.adapters:run_distressed_property_offline
+    sandbox_editable: true
+    execution_sensitive: false
+    telemetry_tag: distressed_property
+
+4. Offline Eval Adapter
+Add to eval/adapters.py:
+pythondef run_distressed_property_offline(case: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "property_id": "prop-12345",
+            "address": "123 Foreclosure Lane",
+            "city": "Phoenix",
+            "state": "AZ",
+            "signal_type": "deep_discount",
+            "signal_strength": 78.5,
+            "price": 185000.0,
+            "estimated_value": 250000.0,
+            "discount_pct": 26.0,
+            "property_type": "single_family",
+            "status": "foreclosure",
+            "days_on_market": 45,
+            "source": "fixture",
+            "timestamp": now()
+        },
+        {
+            "property_id": "prop-67890",
+            "address": "456 Auction Drive",
+            "city": "Las Vegas",
+            "state": "NV",
+            "signal_type": "auction_imminent",
+            "signal_strength": 86.0,
+            "price": 125000.0,
+            "estimated_value": 160000.0,
+            "discount_pct": 21.9,
+            "property_type": "condo",
+            "status": "auction",
+            "days_on_market": 30,
+            "source": "fixture",
+            "timestamp": now()
+        }
+    ]
+
+5. Eval Suite
+eval/suites/distressed_property.jsonl:
+json{"id":"distressed_smoke","input":{},"schema":{"type":"list","item":{"type":"dict","required_keys":["property_id","address","signal_type","signal_strength","price","status"]}}}
+{"id":"distressed_discount","input":{"filter":"deep_discount"},"schema":{"type":"list","item":{"type":"dict","required_keys":["property_id","discount_pct"]}}}
+{"id":"distressed_auction","input":{"filter":"auction_imminent"},"schema":{"type":"list","item":{"type":"dict","required_keys":["property_id","signal_strength"]}}}
+
+6. Environment Variables
+Add to your .env or Replit Secrets:
+bash# Distressed Property APIs
+PROPERTY_API_1_NAME=ATTOM
+PROPERTY_API_1_URL=https://api.attomdata.com/propertyapi/v1.0.0/property/foreclosure
+PROPERTY_API_1_KEY=your_attom_key
+PROPERTY_API_1_RESPONSE_KEY=property
+
+PROPERTY_API_2_NAME=AuctionDotCom
+PROPERTY_API_2_URL=https://api.auction.com/v2/listings
+PROPERTY_API_2_KEY=your_auction_key
+PROPERTY_API_2_RESPONSE_KEY=data.listings
+
+Summary
+AttributeValueAgentDistressedPropertyAgentCallableDistressedPropertyAgent.analyze()ReturnsList[Dict] — property signalsSignal Typesdeep_discount, auction_imminent, price_drop, high_yieldSandbox Editable✅ YesExecution Sensitive❌ NoTelemetry Tagdistressed_property
+This agent now:
+
+Fits your exact manifest/eval architecture
+Returns canonical output shape
+Has offline adapter for CI
+Is sandbox-editable for Meta-Agent tuning
+Integrates with your scheduler (60min interval already configured)

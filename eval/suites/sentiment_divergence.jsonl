@@ -1,0 +1,1 @@
+{"id":"sent_smoke","input":{},"schema":{"type":"list","item":{"type":"dict","required_keys":["symbol","price_sentiment_divergence","signal"]}}}

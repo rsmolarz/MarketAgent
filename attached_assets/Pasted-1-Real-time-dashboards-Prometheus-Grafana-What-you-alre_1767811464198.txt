@@ -1,0 +1,243 @@
+1) Real-time dashboards (Prometheus → Grafana)
+What you already have working
+
+Central execution path: _run_agent
+
+Central telemetry wrapper: run_with_telemetry
+
+Flask app context available
+
+We will:
+
+Expose /metrics
+
+Emit Prometheus metrics inside run_with_telemetry
+
+Let Grafana scrape it
+
+A) Add metrics endpoint (ONE place)
+
+Where: your Flask app factory / main app file (not this scheduler)
+
+Add once:
+
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from flask import Response
+
+@app.route("/metrics")
+def metrics():
+    return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
+
+
+No scheduler changes needed.
+
+B) Ensure Prometheus metrics are emitted
+
+You already call:
+
+run_with_telemetry(name, self._run_agent, name)
+
+
+Inside services/agent_run_wrapper.py, add:
+
+from telemetry.metrics import (
+    AGENT_RUNS, AGENT_ERRORS, AGENT_LATENCY_MS,
+    AGENT_COST_USD, AGENT_REWARD,
+    AGENT_LAST_REWARD, AGENT_LAST_COST_USD, AGENT_LAST_LATENCY_MS
+)
+
+
+and after execution:
+
+AGENT_RUNS.labels(agent_name).inc()
+AGENT_LATENCY_MS.labels(agent_name).observe(lat_ms)
+AGENT_LAST_LATENCY_MS.labels(agent_name).set(lat_ms)
+
+if error:
+    AGENT_ERRORS.labels(agent_name).inc()
+
+if cost_usd is not None:
+    AGENT_COST_USD.labels(agent_name).observe(cost_usd)
+    AGENT_LAST_COST_USD.labels(agent_name).set(cost_usd)
+
+AGENT_REWARD.labels(agent_name).observe(reward)
+AGENT_LAST_REWARD.labels(agent_name).set(reward)
+
+
+Result: Grafana can now chart:
+
+reward over time
+
+cost vs reward
+
+error spikes
+
+agent utilization
+
+2) Capital-weighted reward functions (execution-aware)
+
+Right now, reward is signal-based. We’ll augment, not replace it.
+
+A) Add capital context at the scheduler level
+
+In _run_agent, before calling agent.run():
+
+capital_context = {
+    "capital_usd": 25_000,          # default per agent or pull from config/db
+    "max_loss_usd": 300,
+    "fill_prob": 0.7,
+}
+
+
+Pass this into telemetry:
+
+findings = run_with_telemetry(
+    agent_name,
+    lambda: agent.run(),
+    agent_name,
+    capital_context=capital_context
+)
+
+B) Update run_with_telemetry to compute capital-weighted reward
+
+Inside run_with_telemetry:
+
+from telemetry.capital_reward import capital_weighted_reward
+
+reward = capital_weighted_reward(
+    agent=agent_name,
+    output=output,
+    capital_usd=capital_context["capital_usd"],
+    max_loss_usd=capital_context["max_loss_usd"],
+    fill_prob=capital_context["fill_prob"],
+)
+
+
+This automatically scales reward by:
+
+deployable capital
+
+downside risk
+
+execution realism
+
+3) Portfolio-level agent allocation (scheduler-aware)
+
+Right now, agents run on static intervals.
+
+We’ll make them adaptive, without removing APScheduler.
+
+A) Add allocator hook (non-disruptive)
+
+At the top of AgentScheduler:
+
+from meta.allocator import UCBAllocator
+
+
+In __init__:
+
+self.allocator = UCBAllocator()
+
+B) Reallocate schedules periodically
+
+Add a new job:
+
+def schedule_portfolio_allocation(self):
+    self.scheduler.add_job(
+        func=self._rebalance_agent_allocation,
+        trigger=CronTrigger(minute="*/15"),
+        id="agent_allocation",
+        replace_existing=True
+    )
+
+
+Call it in init_app().
+
+C) Allocation logic (safe)
+
+Add method:
+
+def _rebalance_agent_allocation(self):
+    from app import db
+
+    self.allocator.ingest_events()
+
+    agent_names = list(self.active_jobs.keys())
+
+    quotas, scores = self.allocator.allocate(
+        agents=agent_names,
+        min_runs={"MacroWatcherAgent": 1},
+        max_runs={"ArbitrageFinderAgent": 12},
+        total_budget_runs=30
+    )
+
+    with self.app.app_context():
+        for agent_name, runs in quotas.items():
+            status = AgentStatus.query.filter_by(agent_name=agent_name).first()
+            if not status:
+                continue
+
+            # Convert run quota → interval
+            new_interval = max(1, int(60 / max(runs, 1)))
+
+            if status.schedule_interval != new_interval:
+                self.update_agent_interval(agent_name, new_interval)
+
+    logger.info(f"Rebalanced agent allocation: {scores}")
+
+
+What this does
+
+High-reward agents run more often
+
+Low-reward agents slow down
+
+No agent is fully starved unless killed/retired
+
+4) Live trading guardrails (hard stop, zero trust)
+
+You already have three kill switches. We now add pre-trade guardrails.
+
+A) Where guardrails belong
+
+Only where alpha turns into execution — you already do that here:
+
+emit_alpha_signal(findings, agent_name)
+
+B) Enforce guardrails before emitting alpha
+
+Modify _run_agent:
+
+from trading.guardrails import TradeGuardrails, GuardrailConfig, KillSwitch
+
+guardrails = TradeGuardrails(
+    GuardrailConfig(paper_only=True),
+    KillSwitch()
+)
+
+if isinstance(findings, dict) and "ensemble_score_final" in findings:
+    ok, reason = guardrails.check({
+        "notional_usd": findings.get("notional_usd", 0),
+        "expected_edge_bps": findings.get("expected_edge_bps", 0),
+        "spread_bps": findings.get("spread_bps", 0),
+        "slippage_bps": findings.get("slippage_bps", 0),
+        "data_age_sec": findings.get("data_age_sec", 999),
+        "paper": True
+    })
+
+    if not ok:
+        logger.warning(f"Trade blocked by guardrails: {reason}")
+        return
+
+    emit_alpha_signal(findings, agent_name)
+
+
+This ensures:
+
+No trade without edge
+
+No trade with stale data
+
+No trade past loss limits
+
+Paper-only until you explicitly flip it

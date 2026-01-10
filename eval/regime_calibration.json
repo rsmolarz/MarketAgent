@@ -1,0 +1,5 @@
+{
+  "gpt": {"ema_brier": 0.22, "reliability": 0.78},
+  "claude": {"ema_brier": 0.20, "reliability": 0.80},
+  "gemini": {"ema_brier": 0.25, "reliability": 0.75}
+}

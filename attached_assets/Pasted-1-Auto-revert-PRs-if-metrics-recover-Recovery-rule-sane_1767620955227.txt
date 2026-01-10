@@ -1,0 +1,282 @@
+1) Auto-revert PRs if metrics recover
+Recovery rule (sane default)
+
+A strategy/agent can be auto-reverted (re-enabled) only if, over a rolling window (e.g., last 50–100 reconciled trades):
+
+CVaR(95) error is back under threshold, and
+
+mean abs_error_bps is under threshold, and
+
+min trade count is met (avoid flukes), and
+
+optional: 2 consecutive supervisor runs pass (debounce)
+
+What the PR does
+
+Changes meta_supervisor/strategy_kill_list.yaml from DISABLED → ACTIVE
+
+Adds re_enabled_at, re_enable_reason
+
+Opens PR: [AUTO-REVERT] Re-enable strategy: X
+
+Drop-in file: meta_supervisor/auto_revert.py
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+import yaml
+
+RECON = Path("alpha/reconciled.jsonl")
+KILL_LIST = Path("meta_supervisor/strategy_kill_list.yaml")
+STRAT_STATE = Path("meta_supervisor/state/strategy_attribution.json")  # your existing output
+
+def _now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+
+def _load_jsonl(p: Path):
+    if not p.exists():
+        return []
+    return [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+
+def _load_yaml(p: Path):
+    if not p.exists():
+        return {}
+    return yaml.safe_load(p.read_text()) or {}
+
+def cvar(values, alpha=0.95):
+    if not values:
+        return 0.0
+    vs = sorted(values)
+    cutoff = int(len(vs) * alpha)
+    tail = vs[cutoff:]
+    return sum(tail) / max(len(tail), 1)
+
+def compute_strategy_metrics(strategy: str, horizon_hours: int = 24, window: int = 120):
+    rows = [r for r in _load_jsonl(RECON) if int(r.get("horizon_hours",0)) == horizon_hours]
+    rows = [r for r in rows if (r.get("strategy_class") or "unknown") == strategy]
+    tail = rows[-window:]
+
+    pe = [float(r.get("pnl_error_bps", 0) or 0) for r in tail if r.get("pnl_error_bps") is not None]
+    ae = [float(r.get("abs_error_bps", 0) or 0) for r in tail if r.get("abs_error_bps") is not None]
+
+    return {
+        "n": len(ae),
+        "mean_abs_error_bps": round(sum(ae)/max(len(ae),1), 2) if ae else None,
+        "cvar95_error_bps": round(cvar(pe, 0.95), 2) if pe else None
+    }
+
+def find_reverts(
+    horizon_hours: int = 24,
+    window: int = 120,
+    min_n: int = 40,
+    max_mean_abs_error: float = 70.0,
+    max_cvar95_error: float = 120.0
+):
+    kill = _load_yaml(KILL_LIST)
+    to_revert = []
+
+    for strat, cfg in kill.items():
+        if (cfg or {}).get("status") != "DISABLED":
+            continue
+
+        m = compute_strategy_metrics(strat, horizon_hours=horizon_hours, window=window)
+        if (m["n"] or 0) < min_n:
+            continue
+        if m["mean_abs_error_bps"] is None or m["cvar95_error_bps"] is None:
+            continue
+
+        if m["mean_abs_error_bps"] <= max_mean_abs_error and m["cvar95_error_bps"] <= max_cvar95_error:
+            to_revert.append({
+                "strategy": strat,
+                "metrics": m,
+                "reason": f"Recovered: mean_abs_error={m['mean_abs_error_bps']} <= {max_mean_abs_error}, cvar95_error={m['cvar95_error_bps']} <= {max_cvar95_error}"
+            })
+    return to_revert
+
+def apply_reverts_to_yaml(reverts: list[dict]) -> str:
+    kill = _load_yaml(KILL_LIST)
+    for r in reverts:
+        s = r["strategy"]
+        kill.setdefault(s, {})
+        kill[s]["status"] = "ACTIVE"
+        kill[s]["re_enabled_at"] = _now()
+        kill[s]["re_enable_reason"] = r["reason"]
+    return yaml.dump(kill, default_flow_style=False)
+
+Wire it into your PR creator
+
+In maybe_create_pr(report):
+
+call find_reverts()
+
+if any, commit updated YAML and open PR titled [AUTO-REVERT] ...
+
+2) IC-style markdown tables in PRs
+
+Add a helper that returns markdown tables for:
+
+Promotions
+
+Retirements
+
+Strategy disables
+
+Strategy re-enables
+
+Drop-in table builder
+def md_table(headers, rows):
+    def esc(x):
+        s = "" if x is None else str(x)
+        return s.replace("\n"," ").replace("|","\\|")
+    out = []
+    out.append("| " + " | ".join(map(esc, headers)) + " |")
+    out.append("| " + " | ".join(["---"]*len(headers)) + " |")
+    for r in rows:
+        out.append("| " + " | ".join(esc(c) for c in r) + " |")
+    return "\n".join(out)
+
+
+Then, in PR body:
+
+if promote:
+    rows = []
+    for a in promote:
+        s = agents.get(a,{})
+        rows.append([a, s.get("pnl_sum_bps"), s.get("hit_rate"), s.get("avg_latency_ms"), s.get("cost_usd")])
+    body_parts.append("### ✅ PROMOTIONS (IC View)")
+    body_parts.append(md_table(["Agent","PnL (bps)","Hit","Latency (ms)","Cost ($)"], rows))
+    body_parts.append("")
+
+
+Do the same for disables/reverts.
+
+3) Capital-at-risk deltas per PR
+
+You already write allocation weights to:
+
+meta_supervisor/state/allocation.json
+
+Add:
+
+meta_supervisor/state/allocation_prev.json (last run snapshot)
+
+compute deltas
+
+Drop-in: meta_supervisor/capital_at_risk.py
+import json
+import os
+from pathlib import Path
+
+ALLOC = Path("meta_supervisor/state/allocation.json")
+PREV = Path("meta_supervisor/state/allocation_prev.json")
+
+def _load(p: Path):
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return {}
+
+def snapshot_prev():
+    if ALLOC.exists():
+        PREV.write_text(ALLOC.read_text())
+
+def capital_deltas(total_capital_usd: float):
+    cur = _load(ALLOC)
+    prev = _load(PREV)
+
+    agents = set(cur.keys()) | set(prev.keys())
+    rows = []
+    for a in sorted(agents):
+        w0 = float(prev.get(a, 0.0))
+        w1 = float(cur.get(a, 0.0))
+        d = w1 - w0
+        rows.append({
+            "agent": a,
+            "prev_w": round(w0, 4),
+            "cur_w": round(w1, 4),
+            "delta_w": round(d, 4),
+            "delta_capital_usd": round(d * total_capital_usd, 2),
+            "capital_usd": round(w1 * total_capital_usd, 2),
+        })
+    # most material first
+    rows.sort(key=lambda x: abs(x["delta_capital_usd"]), reverse=True)
+    return rows
+
+In PR body
+
+Read TOTAL_CAPITAL_USD from env (or config)
+
+Include top 10 deltas as a table
+
+Example:
+
+total_cap = float(os.environ.get("TOTAL_CAPITAL_USD", "100000"))
+deltas = capital_deltas(total_cap)
+body_parts.append("### 💰 CAPITAL-AT-RISK DELTAS")
+body_parts.append(md_table(
+    ["Agent","Prev W","Cur W","ΔW","ΔCapital ($)","Capital ($)"],
+    [[r["agent"], r["prev_w"], r["cur_w"], r["delta_w"], r["delta_capital_usd"], r["capital_usd"]] for r in deltas[:10]]
+))
+
+
+Also, at end of supervisor run, call snapshot_prev() after PR creation so next run has a baseline.
+
+4) Enforce two-person merge rules (this is GitHub settings, not Replit code)
+
+This is not enforceable from inside your repo code alone. It must be set via branch protection rules.
+
+Required GitHub settings (main branch)
+
+In GitHub → Settings → Branches → Branch protection rules for main:
+
+✅ Require a pull request before merging
+
+✅ Require approvals: set to 2
+
+✅ Dismiss stale approvals when new commits are pushed
+
+✅ Require status checks to pass (your meta supervisor + tests)
+
+✅ Restrict who can push to matching branches (only CI/bot if needed)
+
+Add CODEOWNERS (strongly recommended)
+
+Create .github/CODEOWNERS:
+
+* @your-org/quant-reviewers @your-org/security-reviewers
+meta_supervisor/ @your-org/quant-reviewers
+trading/ @your-org/exec-only
+
+
+This forces the right reviewers.
+
+Minimal integration sequence (fastest path)
+
+Add commit support (you already have PR creation; commit is missing)
+
+Add strategy disable commits (already discussed)
+
+Add auto-revert evaluation + PR
+
+Add IC tables in PR body
+
+Add capital-at-risk delta tables
+
+Turn on branch protection + CODEOWNERS
+
+One thing I need you to do (no back-and-forth)
+
+Set these env vars in Replit secrets:
+
+GITHUB_REPO=owner/repo
+
+GITHUB_TOKEN=...
+
+TOTAL_CAPITAL_USD=100000 (or your notional)
+
+(optional) META_BRANCH_PREFIX=meta/supervisor
+
+Then run:
+
+python meta_supervisor/github_pr.py

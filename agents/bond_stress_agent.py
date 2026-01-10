@@ -201,3 +201,100 @@ class BondStressAgent(BaseAgent):
             self.logger.error(f"Error analyzing credit spreads: {e}")
             
         return findings
+
+    def analyze_ctx(self, ctx) -> List[Dict[str, Any]]:
+        """
+        Backtest-compatible analysis using BacktestContext.
+        Called by backtest runner - does NOT call any network APIs.
+        """
+        findings = []
+        symbols = ctx.meta.get("symbols", list(self.bond_instruments.keys()))
+        
+        bond_data = {}
+        for symbol in symbols:
+            if symbol in self.bond_instruments:
+                df = ctx.frame(symbol)
+                if df is not None and not df.empty and len(df) > 5:
+                    bond_data[symbol] = {'data': df, 'info': self.bond_instruments[symbol]}
+        
+        for symbol, bond_info in bond_data.items():
+            findings.extend(self._analyze_bond_stress_ctx(symbol, bond_info))
+        
+        findings.extend(self._analyze_yield_curve_ctx(bond_data))
+        
+        return findings
+
+    def _analyze_bond_stress_ctx(self, symbol: str, bond_info: Dict) -> List[Dict[str, Any]]:
+        """Backtest version of bond stress analysis"""
+        findings = []
+        try:
+            data = bond_info['data']
+            info = bond_info['info']
+            
+            close = data['Close'].astype(float)
+            returns = close.pct_change().dropna()
+            
+            if len(returns) < 5:
+                return findings
+            
+            recent_vol = float(returns.tail(5).std())
+            historical_vol = float(returns.std())
+            
+            if historical_vol > 0 and recent_vol > historical_vol * 2:
+                findings.append(self.create_finding(
+                    title=f"High Volatility in {info['name']}",
+                    description=f"Volatility {recent_vol/historical_vol:.1f}x historical",
+                    severity='medium',
+                    confidence=0.7,
+                    symbol=symbol,
+                    market_type='bond',
+                    metadata={'recent_volatility': recent_vol, 'volatility_ratio': recent_vol / historical_vol}
+                ))
+            
+            if len(close) >= 5:
+                recent_change = (float(close.iloc[-1]) - float(close.iloc[-5])) / float(close.iloc[-5])
+                
+                if abs(recent_change) > 0.05:
+                    severity = 'high' if abs(recent_change) > 0.1 else 'medium'
+                    direction = 'increased' if recent_change > 0 else 'decreased'
+                    findings.append(self.create_finding(
+                        title=f"Significant Move in {info['name']}",
+                        description=f"Price {direction} {abs(recent_change)*100:.1f}%",
+                        severity=severity,
+                        confidence=0.8,
+                        symbol=symbol,
+                        market_type='bond',
+                        metadata={'price_change': recent_change, 'direction': direction}
+                    ))
+        except Exception as e:
+            self.logger.debug(f"Error in bond stress for {symbol}: {e}")
+        return findings
+
+    def _analyze_yield_curve_ctx(self, bond_data: Dict) -> List[Dict[str, Any]]:
+        """Backtest version of yield curve analysis"""
+        findings = []
+        try:
+            if '^TNX' in bond_data and 'TLT' in bond_data:
+                tnx_data = bond_data['^TNX']['data']
+                tlt_data = bond_data['TLT']['data']
+                
+                if len(tnx_data) >= 20 and len(tlt_data) >= 20:
+                    tnx_close = tnx_data['Close'].astype(float)
+                    tlt_close = tlt_data['Close'].astype(float)
+                    
+                    tnx_change = (float(tnx_close.iloc[-1]) - float(tnx_close.iloc[-20])) / float(tnx_close.iloc[-20])
+                    tlt_change = (float(tlt_close.iloc[-1]) - float(tlt_close.iloc[-20])) / float(tlt_close.iloc[-20])
+                    
+                    if abs(tnx_change) > 0.1:
+                        findings.append(self.create_finding(
+                            title="Significant Yield Movement",
+                            description=f"10Y yield changed {tnx_change*100:.1f}% in 20 days",
+                            severity='high',
+                            confidence=0.7,
+                            symbol='^TNX',
+                            market_type='bond',
+                            metadata={'yield_change': tnx_change, 'tlt_change': tlt_change}
+                        ))
+        except Exception as e:
+            self.logger.debug(f"Error in yield curve analysis: {e}")
+        return findings

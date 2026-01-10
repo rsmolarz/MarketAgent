@@ -1,0 +1,184 @@
+What we are adding (conceptually)
+Today (current behavior)
+
+Mean reward + UCB bonus
+
+Abrupt enable/disable via meta layer
+
+After this change
+
+Each agent gets a dynamic decay multiplier:
+
+effective_score =
+    (decayed_mean_reward)
+  + (decayed_exploration_bonus)
+
+
+Where decay depends on:
+
+Time since last good performance
+
+Recent negative rewards
+
+Global uncertainty decay multiplier (from LLM council)
+
+This prevents whipsaw and creates capital gravity.
+
+Exact code: upgraded meta/allocator.py
+✅ Replace your UCBAllocator with this version
+import json
+from pathlib import Path
+from math import log, sqrt, exp
+from collections import defaultdict, deque
+from datetime import datetime
+
+EVENTS = Path("telemetry/events.jsonl")
+
+
+class UCBAllocator:
+    """
+    Uncertainty-aware UCB allocator with agent decay curves.
+
+    Key properties:
+    - Capital fades smoothly when agents stop working
+    - Exploration is damped during uncertainty
+    - No abrupt disable unless upstream policy says so
+    """
+
+    def __init__(
+        self,
+        window=500,
+        exploration=1.5,
+        half_life=200,              # runs until performance halves
+        min_decay=0.15              # never fully zero unless killed
+    ):
+        self.window = window
+        self.exploration = exploration
+        self.half_life = half_life
+        self.min_decay = min_decay
+
+        self.rewards = defaultdict(lambda: deque(maxlen=window))
+        self.counts = defaultdict(int)
+        self.last_positive = defaultdict(lambda: None)
+
+        # injected externally by scheduler
+        self.global_decay_multiplier = 1.0
+
+    # ------------------------
+    # Data ingestion
+    # ------------------------
+
+    def ingest_events(self, last_n=5000):
+        if not EVENTS.exists():
+            return
+
+        for ln in EVENTS.read_text().splitlines()[-last_n:]:
+            try:
+                e = json.loads(ln)
+            except Exception:
+                continue
+
+            agent = e.get("agent")
+            reward = e.get("reward")
+
+            if agent and reward is not None:
+                r = float(reward)
+                self.rewards[agent].append(r)
+                self.counts[agent] += 1
+
+                if r > 0:
+                    self.last_positive[agent] = self.counts[agent]
+
+    # ------------------------
+    # Decay logic
+    # ------------------------
+
+    def _decay_factor(self, agent: str) -> float:
+        """
+        Exponential decay based on distance from last positive outcome.
+        """
+        last_good = self.last_positive.get(agent)
+        if last_good is None:
+            return self.min_decay
+
+        age = max(self.counts[agent] - last_good, 0)
+        decay = exp(-log(2) * age / max(self.half_life, 1))
+
+        return max(decay, self.min_decay)
+
+    # ------------------------
+    # Scoring
+    # ------------------------
+
+    def score(self, agent: str, total_pulls: int) -> float:
+        rs = self.rewards[agent]
+        n = max(self.counts[agent], 1)
+
+        mean = sum(rs) / len(rs) if rs else 0.0
+
+        # classic UCB bonus
+        bonus = self.exploration * sqrt(log(max(total_pulls, 2)) / n)
+
+        # apply agent decay + global uncertainty decay
+        decay = self._decay_factor(agent) * self.global_decay_multiplier
+
+        return decay * (mean + bonus)
+
+    # ------------------------
+    # Allocation
+    # ------------------------
+
+    def allocate(
+        self,
+        agents,
+        min_runs=None,
+        max_runs=None,
+        total_budget_runs=100,
+        uncertainty_decay=1.0
+    ):
+        """
+        uncertainty_decay:
+          passed from scheduler (e.g. 0.4 during shocks)
+        """
+        min_runs = min_runs or {}
+        max_runs = max_runs or {}
+
+        self.global_decay_multiplier = float(uncertainty_decay)
+
+        total_pulls = sum(self.counts[a] for a in agents) + 1
+        scores = {a: self.score(a, total_pulls) for a in agents}
+
+        quotas = {a: int(min_runs.get(a, 0)) for a in agents}
+        remaining = max(total_budget_runs - sum(quotas.values()), 0)
+
+        ranked = sorted(agents, key=lambda a: scores[a], reverse=True)
+
+        i = 0
+        while remaining > 0 and ranked:
+            a = ranked[i % len(ranked)]
+            if quotas[a] < int(max_runs.get(a, total_budget_runs)):
+                quotas[a] += 1
+                remaining -= 1
+            i += 1
+
+        return quotas, scores
+
+One-line scheduler integration (already compatible)
+
+In your scheduler, you already compute:
+
+decay_mult = _uncertainty_state["decay_multiplier"]
+
+
+Just pass it into allocate() (one change):
+
+quotas, scores = self.allocator.allocate(
+    agents=agent_names,
+    min_runs={"MacroWatcherAgent": 1},
+    max_runs={"ArbitrageFinderAgent": 12},
+    total_budget_runs=effective_budget,
+    uncertainty_decay=decay_mult
+)
+
+
+That’s it.

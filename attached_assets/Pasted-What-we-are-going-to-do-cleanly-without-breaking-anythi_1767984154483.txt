@@ -1,0 +1,188 @@
+What we are going to do (cleanly, without breaking anything)
+
+We will:
+
+Add two more LLM analyzers
+
+GPT-4.1 / GPT-4o (OpenAI)
+
+Gemini 1.5 Pro (Google)
+
+Create a Council Orchestrator
+
+Run all 3 analyses in parallel
+
+Normalize outputs
+
+Score agreement / disagreement
+
+Produce:
+
+consensus_decision
+
+confidence
+
+uncertainty_score
+
+Preserve backward compatibility
+
+Existing callers keep calling analyze_alert_with_chatgpt
+
+Under the hood → council
+
+Enable automatic escalation
+
+If severity == critical
+
+AND consensus == ACT
+
+→ auto-email whitelist
+
+→ allocator uncertainty flag
+
+→ cadence modulation
+
+Step 1 — Add the other two LLM analyzers
+OpenAI (GPT)
+import openai
+
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+def analyze_alert_with_gpt(finding_data: dict) -> dict:
+    prompt = build_alert_prompt(finding_data)
+
+    resp = openai_client.chat.completions.create(
+        model="gpt-4.1",
+        messages=[
+            {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.2
+    )
+
+    return {
+        "success": True,
+        "analysis": resp.choices[0].message.content,
+        "model": "gpt-4.1"
+    }
+
+Gemini
+import google.generativeai as genai
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+genai.configure(api_key=GEMINI_API_KEY)
+
+def analyze_alert_with_gemini(finding_data: dict) -> dict:
+    model = genai.GenerativeModel("gemini-1.5-pro")
+    prompt = ANALYSIS_SYSTEM_PROMPT + "\n\n" + build_alert_prompt(finding_data)
+
+    resp = model.generate_content(prompt)
+
+    return {
+        "success": True,
+        "analysis": resp.text,
+        "model": "gemini-1.5-pro"
+    }
+
+Step 2 — Council Orchestrator (this is the missing brain)
+
+Add this new function to ai_analysis.py:
+
+def analyze_alert_with_llm_council(finding_data: dict) -> dict:
+    results = []
+
+    for fn in [
+        analyze_alert_with_claude,
+        analyze_alert_with_gpt,
+        analyze_alert_with_gemini
+    ]:
+        try:
+            r = fn(finding_data)
+            if r.get("success"):
+                results.append(r)
+        except Exception as e:
+            logger.warning(f"LLM failed: {e}")
+
+    if len(results) < 2:
+        return {
+            "success": False,
+            "error": "insufficient_llm_responses"
+        }
+
+    decision_votes = []
+    for r in results:
+        txt = r["analysis"].lower()
+        if "highly actionable" in txt or "actionable: high" in txt:
+            decision_votes.append("ACT")
+        elif "medium" in txt:
+            decision_votes.append("WATCH")
+        else:
+            decision_votes.append("IGNORE")
+
+    consensus = max(set(decision_votes), key=decision_votes.count)
+    agreement = decision_votes.count(consensus) / len(decision_votes)
+    uncertainty = 1.0 - agreement
+
+    return {
+        "success": True,
+        "consensus": consensus,
+        "agreement": agreement,
+        "uncertainty": uncertainty,
+        "models_used": [r["model"] for r in results],
+        "analyses": results
+    }
+
+Step 3 — Wire it into existing calls (zero UI changes)
+
+Replace this function:
+
+def analyze_alert_with_chatgpt(finding_data: dict) -> dict:
+    return analyze_alert_with_claude(finding_data)
+
+With this:
+def analyze_alert_with_chatgpt(finding_data: dict) -> dict:
+    return analyze_alert_with_llm_council(finding_data)
+
+
+Nothing else breaks.
+
+Dashboard still calls the same endpoint
+
+Analyze button still works
+
+Now it’s a council
+
+Step 4 — Auto-trigger on CRITICAL findings (email + flags)
+
+In your agent execution path (scheduler or finding save):
+
+if finding.severity == "critical":
+    council = analyze_alert_with_llm_council(finding.to_dict())
+
+    if council["consensus"] == "ACT":
+        send_whitelist_email(
+            subject="CRITICAL SIGNAL — CONSENSUS ACTION",
+            payload=council
+        )
+
+        log_uncertainty_event(
+            finding_id=finding.id,
+            uncertainty=council["uncertainty"]
+        )
+
+Step 5 — Why this matters structurally
+
+You now have:
+
+True LLM disagreement detection
+
+Uncertainty as a first-class signal
+
+Allocator-aware AI confidence
+
+Regime transition early warning
+
+Audit trail (which LLM failed first)
+
+This is hedge-fund-grade architecture, not “AI feature glue”.

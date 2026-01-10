@@ -1,0 +1,190 @@
+1️⃣ Uncertainty-Conditioned Alerts
+
+“All signals provisional”
+
+Goal
+
+When regime uncertainty is high:
+
+downstream consumers (email, dashboard, API) are warned
+
+signals are not suppressed
+
+language + metadata clearly mark provisional state
+
+A. Global flag injection (single place)
+meta/uncertainty_state.py (extend)
+class UncertaintyState:
+    active: bool = False
+    last_update = None
+    entropy: float = 0.0
+    prob_var: float = 0.0
+    vote_split: int = 0
+
+    @classmethod
+    def banner(cls) -> str | None:
+        if not cls.active:
+            return None
+        return "⚠️ REGIME UNCERTAINTY: Signals are provisional"
+
+B. Attach banner to all findings automatically
+In models.py or finding persistence layer
+
+Add once, centrally:
+
+from meta.uncertainty_state import UncertaintyState
+
+def annotate_finding(finding: dict) -> dict:
+    banner = UncertaintyState.banner()
+    if banner:
+        finding["provisional"] = True
+        finding["disclaimer"] = banner
+    else:
+        finding["provisional"] = False
+    return finding
+
+
+Then, one-line hook where findings are saved:
+
+finding = annotate_finding(finding)
+
+Result
+
+API: { provisional: true }
+
+Dashboard: yellow banner
+
+Emails: prepend warning
+
+No agent modification required
+
+2️⃣ Uncertainty Decay Curve
+
+Capital fades back in gradually
+
+Goal
+
+Avoid binary on/off behavior.
+
+We use exponential recovery after uncertainty clears.
+
+A. Decay curve model
+meta/uncertainty_decay.py
+from datetime import datetime
+from meta.uncertainty_state import UncertaintyState
+
+DECAY_HALF_LIFE_MIN = 30  # capital recovers halfway every 30 min
+MIN_MULTIPLIER = 0.6     # worst-case exposure
+
+_last_clear_time: datetime | None = None
+
+def uncertainty_multiplier(now: datetime) -> float:
+    global _last_clear_time
+
+    if UncertaintyState.active:
+        _last_clear_time = None
+        return MIN_MULTIPLIER
+
+    if UncertaintyState.last_update is None:
+        return 1.0
+
+    if _last_clear_time is None:
+        _last_clear_time = UncertaintyState.last_update
+
+    dt_min = (now - _last_clear_time).total_seconds() / 60
+    recovery = 1 - (0.5 ** (dt_min / DECAY_HALF_LIFE_MIN))
+
+    return min(1.0, MIN_MULTIPLIER + recovery * (1.0 - MIN_MULTIPLIER))
+
+B. Allocator integration (1 line)
+In allocator:
+from meta.uncertainty_decay import uncertainty_multiplier
+from datetime import datetime
+
+final_size = raw_size * uncertainty_multiplier(datetime.utcnow())
+
+Behavior
+Time after uncertainty	Exposure
+During spike	60%
++30 min	~80%
++60 min	~90%
+Stable	100%
+
+No cliff risk. No whipsaw.
+
+3️⃣ Which Agents Fail First During Uncertainty
+
+Early regime transition detector
+
+This is extremely valuable.
+
+A. Define failure during uncertainty
+
+An agent is “failing” if:
+
+issued signals during uncertainty window
+
+forward return < 0 (or below benchmark)
+
+confidence > threshold (i.e., agent thought it was right)
+
+B. Failure tracker
+meta/uncertainty_failure.py
+from collections import defaultdict
+from datetime import datetime, timedelta
+
+FAIL_WINDOW_MIN = 90
+
+_failure_log = defaultdict(list)
+
+def record_agent_outcome(agent: str, pnl: float, ts: datetime, provisional: bool):
+    if provisional:
+        _failure_log[agent].append((ts, pnl))
+
+def failing_agents(now: datetime) -> dict:
+    cutoff = now - timedelta(minutes=FAIL_WINDOW_MIN)
+    stats = {}
+
+    for agent, rows in _failure_log.items():
+        recent = [p for (t, p) in rows if t >= cutoff]
+        if len(recent) >= 5:
+            stats[agent] = sum(p < 0 for p in recent) / len(recent)
+
+    return stats
+
+C. Early regime transition trigger
+In Meta-Agent loop:
+from meta.uncertainty_failure import failing_agents
+from datetime import datetime
+
+failures = failing_agents(datetime.utcnow())
+
+early_warning = {
+    a: rate for a, rate in failures.items()
+    if rate >= 0.7
+}
+
+
+If multiple unrelated agents fail first → regime shift incoming.
+
+D. Log this explicitly
+{
+  "event": "early_regime_transition",
+  "agents": ["MarketCorrectionAgent", "EquityMomentumAgent"],
+  "failure_rate": 0.83,
+  "timestamp": "..."
+}
+
+
+This becomes training data for the LLM council.
+
+What you now have (structurally)
+
+✅ Signals marked provisional
+✅ Capital fades smoothly
+✅ Agents degrade individually
+✅ Early warning before macro breaks
+✅ No agent edits
+✅ No scheduler rewrite
+
+This is institutional-grade meta-risk control.

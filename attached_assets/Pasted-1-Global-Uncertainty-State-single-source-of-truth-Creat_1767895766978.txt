@@ -1,0 +1,185 @@
+1️⃣ Global Uncertainty State (single source of truth)
+
+Create a tiny module:
+
+meta/uncertainty_state.py
+# meta/uncertainty_state.py
+from datetime import datetime
+from typing import Optional
+
+class UncertaintyState:
+    """
+    Global, read-only state updated by Regime Council.
+    """
+    active: bool = False
+    last_update: Optional[datetime] = None
+    entropy: float = 0.0
+    prob_var: float = 0.0
+    vote_split: int = 0
+
+    @classmethod
+    def update(cls, *, active: bool, entropy: float, prob_var: float, vote_split: int):
+        cls.active = bool(active)
+        cls.entropy = float(entropy)
+        cls.prob_var = float(prob_var)
+        cls.vote_split = int(vote_split)
+        cls.last_update = datetime.utcnow()
+
+
+This avoids globals scattered across scheduler/allocator.
+
+2️⃣ Regime Council → State Update (1 line change)
+
+At the end of RegimeCouncil.run() (from previous code), add:
+
+from meta.uncertainty_state import UncertaintyState
+
+UncertaintyState.update(
+    active=uncertainty_spike,
+    entropy=ent,
+    prob_var=prob_var,
+    vote_split=vote_split
+)
+
+
+That’s it.
+No scheduler dependency yet.
+
+3️⃣ Scheduler Hook — Increase Reporting Cadence (SOFT)
+Goal
+
+When uncertainty spikes:
+
+heartbeat / summary jobs run more frequently
+
+agents continue on their normal cadence
+
+Pattern
+
+We multiply cadence, not replace it.
+
+Example: in scheduler.py (or AgentScheduler)
+
+Add helper:
+
+from meta.uncertainty_state import UncertaintyState
+
+def cadence_multiplier() -> float:
+    """
+    Soft cadence modulation.
+    Never < 1.0.
+    """
+    if UncertaintyState.active:
+        return 0.5  # run twice as often
+    return 1.0
+
+
+Then, wherever you schedule reporting / summary jobs:
+
+base_interval = 30  # minutes
+interval = max(5, int(base_interval * cadence_multiplier()))
+
+scheduler.add_job(
+    self._send_daily_emails,
+    "interval",
+    minutes=interval,
+    id="daily_email"
+)
+
+
+✅ Agents untouched
+✅ Only reporting reacts
+✅ No oscillation (cadence floors applied)
+
+4️⃣ Capital Allocator — Reduce Aggressiveness (SOFT)
+
+This is the key: no agent weights are changed.
+
+We apply a global exposure multiplier.
+
+In your allocator (example)
+from meta.uncertainty_state import UncertaintyState
+
+def global_risk_multiplier() -> float:
+    """
+    Soft exposure dampener.
+    """
+    if not UncertaintyState.active:
+        return 1.0
+
+    # conservative but not flat
+    return 0.75
+
+
+Apply it at the final step:
+
+position_size = (
+    base_position
+    * agent_weight
+    * regime_weight
+    * global_risk_multiplier()
+)
+
+
+Effects:
+
+Capital fades
+
+Signals still flow
+
+Performance attribution remains intact
+
+5️⃣ Log an “Uncertainty Event” Row
+Option A — DB (preferred)
+
+If you already log events/findings:
+
+models.py
+class UncertaintyEvent(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, index=True)
+    entropy = db.Column(db.Float)
+    prob_var = db.Column(db.Float)
+    vote_split = db.Column(db.Integer)
+    source = db.Column(db.String(64))  # "regime_council"
+
+Insert on update:
+from models import UncertaintyEvent, db
+from meta.uncertainty_state import UncertaintyState
+
+def log_uncertainty_event():
+    evt = UncertaintyEvent(
+        timestamp=UncertaintyState.last_update,
+        entropy=UncertaintyState.entropy,
+        prob_var=UncertaintyState.prob_var,
+        vote_split=UncertaintyState.vote_split,
+        source="regime_council"
+    )
+    db.session.add(evt)
+    db.session.commit()
+
+
+Call this only when state flips false → true to avoid spam.
+
+Option B — JSON log (zero DB change)
+# logs/uncertainty_events.jsonl
+{
+  "timestamp": "...",
+  "entropy": 1.62,
+  "prob_var": 0.031,
+  "vote_split": 3
+}
+
+6️⃣ Safety Guards (important)
+
+Add hysteresis so you don’t flap:
+
+UNCERTAINTY_MIN_DURATION_MIN = 15
+UNCERTAINTY_CLEAR_DELAY_MIN = 30
+
+
+Only clear active=False if:
+
+no spike for 30 minutes
+
+This prevents cadence / capital oscillation.

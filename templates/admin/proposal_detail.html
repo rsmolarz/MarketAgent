@@ -1,0 +1,321 @@
+{% extends "admin_layout.html" %}
+
+{% block title %}Proposal {{ proposal.id[:8] }} - Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{{ url_for('admin_proposals.list_proposals') }}">Proposals</a></li>
+                    <li class="breadcrumb-item active">{{ proposal.id[:8] }}...</li>
+                </ol>
+            </nav>
+            <h1 class="h3 mb-0">{{ proposal.title }}</h1>
+            <p class="text-muted">Branch: <code>{{ proposal.branch_name }}</code></p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Summary</h5>
+                    <div>
+                        {% if proposal.status == 'PROPOSED' %}
+                        <span class="badge bg-warning text-dark">Proposed</span>
+                        {% elif proposal.status == 'APPROVED' %}
+                        <span class="badge bg-success">Approved</span>
+                        {% elif proposal.status == 'REJECTED' %}
+                        <span class="badge bg-danger">Rejected</span>
+                        {% elif proposal.status == 'MERGED' %}
+                        <span class="badge bg-primary">Merged</span>
+                        {% elif proposal.status == 'APPLIED' %}
+                        <span class="badge bg-info">Applied</span>
+                        {% elif proposal.status == 'BLOCKED' %}
+                        <span class="badge bg-dark">Blocked</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card-body">
+                    <p>{{ proposal.summary or 'No summary provided.' }}</p>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Code Diff</h5>
+                    <form action="{{ url_for('admin_proposals.refresh_diff', proposal_id=proposal.id) }}" method="POST" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">
+                            Refresh Diff
+                        </button>
+                    </form>
+                </div>
+                <div class="card-body">
+                    {% if proposal.diff_text %}
+                    <pre class="bg-dark text-light p-3 rounded" style="max-height: 500px; overflow: auto; font-size: 12px;"><code>{{ proposal.diff_text }}</code></pre>
+                    {% else %}
+                    <p class="text-muted">No diff available. Click "Refresh Diff" to load.</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Why This Change</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>Summary</strong></p>
+                    <p>{{ proposal.summary or 'No summary provided.' }}</p>
+                    
+                    {% if proposal.rationale %}
+                    <p><strong>Rationale</strong></p>
+                    <p>{{ proposal.rationale }}</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if proposal.file_risk %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">File Risk Analysis</h5>
+                </div>
+                <div class="card-body p-0">
+                    <ul class="list-group list-group-flush">
+                        {% for file, score in proposal.file_risk.items() %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <code>{{ file }}</code>
+                            <span class="badge 
+                                {% if score < 0.3 %}bg-success
+                                {% elif score < 0.6 %}bg-warning text-dark
+                                {% else %}bg-danger{% endif %}">
+                                {{ "%.2f"|format(score) }}
+                            </span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% endif %}
+
+            {% if proposal.test_report %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Test Report</h5>
+                </div>
+                <div class="card-body">
+                    <pre class="bg-light p-3 rounded" style="max-height: 300px; overflow: auto; font-size: 12px;">{{ proposal.test_report }}</pre>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Approval History</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Action</th>
+                                    <th>Actor</th>
+                                    <th>Rationale</th>
+                                    <th>Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for event in events %}
+                                <tr>
+                                    <td>
+                                        {% if event.action == 'APPROVE' %}
+                                        <span class="badge bg-success">Approved</span>
+                                        {% elif event.action == 'REJECT' %}
+                                        <span class="badge bg-danger">Rejected</span>
+                                        {% elif event.action == 'MERGE' %}
+                                        <span class="badge bg-primary">Merged</span>
+                                        {% elif event.action == 'BLOCK' %}
+                                        <span class="badge bg-dark">Blocked</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ event.action }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ event.actor_email }}</td>
+                                    <td>{{ event.rationale or '-' }}</td>
+                                    <td>{{ event.created_at.strftime('%Y-%m-%d %H:%M') if event.created_at else 'N/A' }}</td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted py-3">No approval events yet.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Risk Assessment</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="me-3">
+                            {% if proposal.risk_tier == 'LOW' %}
+                            <span class="badge bg-success fs-5">LOW</span>
+                            {% elif proposal.risk_tier == 'MED' %}
+                            <span class="badge bg-warning text-dark fs-5">MED</span>
+                            {% elif proposal.risk_tier == 'HIGH' %}
+                            <span class="badge bg-danger fs-5">HIGH</span>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <strong>Score: {{ proposal.risk_score }}/100</strong>
+                        </div>
+                    </div>
+                    {% if proposal.risk_reason %}
+                    <p class="small text-muted mb-0">{{ proposal.risk_reason }}</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Tests</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex align-items-center mb-3">
+                        {% if proposal.tests_passed %}
+                        <span class="text-success me-2"><i class="bi bi-check-circle-fill fs-4"></i></span>
+                        <span>Tests Passed</span>
+                        {% else %}
+                        <span class="text-muted me-2"><i class="bi bi-dash-circle fs-4"></i></span>
+                        <span class="text-muted">Not Run / Failed</span>
+                        {% endif %}
+                    </div>
+                    <form action="{{ url_for('admin_proposals.run_tests', proposal_id=proposal.id) }}" method="POST">
+                        <button type="submit" class="btn btn-outline-primary btn-sm w-100">
+                            Run Tests in Sandbox
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Actions</h5>
+                </div>
+                <div class="card-body">
+                    {% if proposal.status in ('PROPOSED', 'PENDING', 'BLOCKED') %}
+                    <form action="{{ url_for('admin_proposals.approve_proposal', proposal_id=proposal.id) }}" method="POST" class="mb-3">
+                        <div class="mb-2">
+                            <textarea name="rationale" class="form-control form-control-sm" rows="2" placeholder="Approval rationale (optional)"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">
+                            Approve
+                        </button>
+                    </form>
+
+                    <form action="{{ url_for('admin_proposals.reject_proposal', proposal_id=proposal.id) }}" method="POST" class="mb-3">
+                        <div class="mb-2">
+                            <textarea name="rationale" class="form-control form-control-sm" rows="2" placeholder="Rejection reason (required)" required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-danger w-100">
+                            Reject
+                        </button>
+                    </form>
+
+                    {% if proposal.status == 'PROPOSED' %}
+                    <form action="{{ url_for('admin_proposals.block_proposal', proposal_id=proposal.id) }}" method="POST">
+                        <div class="mb-2">
+                            <textarea name="rationale" class="form-control form-control-sm" rows="2" placeholder="Block reason (optional)"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-dark w-100">
+                            Block
+                        </button>
+                    </form>
+                    {% endif %}
+                    {% endif %}
+
+                    {% if proposal.status in ('APPROVED', 'PENDING', 'PROPOSED') %}
+                    <form action="{{ url_for('admin_proposals.apply_proposal', proposal_id=proposal.id) }}" method="POST" class="mb-3">
+                        <div class="alert alert-info mb-2">
+                            <i class="bi bi-lightning"></i> <strong>Quick Apply:</strong> Apply these code changes directly to the codebase.
+                        </div>
+                        <button type="submit" class="btn btn-warning w-100">
+                            <i class="bi bi-play-fill"></i> Apply Changes Now
+                        </button>
+                    </form>
+                    {% endif %}
+
+                    {% if proposal.status == 'APPROVED' %}
+                    <form action="{{ url_for('admin_proposals.merge_proposal', proposal_id=proposal.id) }}" method="POST">
+                        {% if proposal.risk_tier == 'HIGH' %}
+                        <div class="alert alert-danger mb-2">
+                            <strong>High Risk:</strong> This merge requires explicit confirmation.
+                        </div>
+                        <div class="mb-2">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="override" value="true" id="overrideCheck" required>
+                                <label class="form-check-label" for="overrideCheck">
+                                    I confirm this high-risk merge
+                                </label>
+                            </div>
+                        </div>
+                        <div class="mb-2">
+                            <textarea name="rationale" class="form-control form-control-sm" rows="2" placeholder="Merge rationale (required for HIGH risk)" required></textarea>
+                        </div>
+                        {% else %}
+                        <div class="mb-2">
+                            <textarea name="rationale" class="form-control form-control-sm" rows="2" placeholder="Merge rationale (optional)"></textarea>
+                        </div>
+                        {% endif %}
+                        <button type="submit" class="btn btn-primary w-100">
+                            Merge to Main
+                        </button>
+                    </form>
+                    {% endif %}
+
+                    {% if proposal.status == 'MERGED' %}
+                    <div class="alert alert-success mb-0">
+                        This proposal has been merged.
+                    </div>
+                    {% endif %}
+
+                    {% if proposal.status == 'APPLIED' %}
+                    <div class="alert alert-warning mb-0">
+                        <i class="bi bi-check-circle"></i> This proposal has been applied to the codebase.
+                    </div>
+                    {% endif %}
+
+                    {% if proposal.status == 'REJECTED' %}
+                    <div class="alert alert-danger mb-0">
+                        This proposal was rejected.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Details</h5>
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-4">Created</dt>
+                        <dd class="col-sm-8">{{ proposal.created_at[:16] if proposal.created_at else 'N/A' }}</dd>
+                        <dt class="col-sm-4">Branch</dt>
+                        <dd class="col-sm-8"><code>{{ proposal.branch_name }}</code></dd>
+                        <dt class="col-sm-4">ID</dt>
+                        <dd class="col-sm-8"><code>{{ proposal.id }}</code></dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

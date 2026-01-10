@@ -1,0 +1,217 @@
+HIGH-LEVEL ARCHITECTURE
+New category: Discovery Agents
+
+These agents output agent proposals, not trades.
+
+discovery_agents/
+├─ strategy_gap_scanner.py
+├─ inefficiency_horizon_mapper.py
+├─ distressed_asset_scout.py
+├─ market_microstructure_probe.py
+└─ agent_proposal_synthesizer.py
+
+
+They all feed into:
+
+meta_supervisor/agent_proposals.json
+
+
+Nothing auto-deploys.
+Everything is reviewed, scored, and approved.
+
+WHAT THIS AGENT ACTUALLY DOES
+Inputs it consumes
+
+Your existing agents list
+
+Your alpha attribution & failures
+
+Market structure knowledge
+
+Public research (papers, blogs, exchange mechanics)
+
+Your own blind spots (what you don’t trade)
+
+Outputs it produces
+
+A ranked list of new agent ideas, each with:
+
+Strategy description
+
+Market(s)
+
+Time horizon
+
+Data requirements
+
+Expected inefficiency type
+
+Risk profile
+
+Why it’s missing today
+
+How to test it cheaply
+
+CORE DISCOVERY AGENT: StrategyGapScanner
+Purpose
+
+Find structural gaps between:
+
+what markets offer
+
+what you currently exploit
+
+Example gaps it looks for
+
+Timeframe gaps (you trade 5m–1d, but ignore 2–8h)
+
+Asset gaps (rates, vol surfaces, credit proxies)
+
+Mechanism gaps (funding, settlement, liquidity cliffs)
+
+Regime gaps (stress-only edges)
+
+Jurisdiction gaps (non-US exchanges, OTC markets)
+
+CONCRETE IMPLEMENTATION (COPY/PASTE READY)
+1️⃣ Create: discovery_agents/strategy_gap_scanner.py
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+AGENTS_MANIFEST = Path("agent_schedule.json")
+ALPHA_EVENTS = Path("alpha/reconciled.jsonl")
+OUTPUT = Path("meta_supervisor/agent_proposals.json")
+
+def load_jsonl(path):
+    if not path.exists():
+        return []
+    return [json.loads(x) for x in path.read_text().splitlines() if x.strip()]
+
+def run():
+    existing_agents = set()
+    if AGENTS_MANIFEST.exists():
+        existing_agents = set(json.loads(AGENTS_MANIFEST.read_text()).keys())
+
+    alpha = load_jsonl(ALPHA_EVENTS)
+
+    markets = set(e.get("symbol") for e in alpha if e.get("symbol"))
+    horizons = {"minutes", "hours", "daily"}  # simplified example
+
+    proposals = []
+
+    # Example gap: funding + options interaction (very common blind spot)
+    if "OptionsSkewFundingAgent" not in existing_agents:
+        proposals.append({
+            "agent_name": "OptionsSkewFundingAgent",
+            "category": "Cross-market inefficiency",
+            "markets": ["BTC", "ETH"],
+            "horizon": "hours",
+            "inefficiency_type": "Derivatives mispricing",
+            "data_required": [
+                "perp funding rates",
+                "options IV skew",
+                "open interest by strike"
+            ],
+            "why_missing": "Current agents treat funding and options independently",
+            "expected_edge": "Funding extremes + skew inversion precede sharp mean reversion",
+            "risk_profile": "Event-driven, convex",
+            "test_plan": "Paper trade funding extremes when 25-delta skew flips sign",
+            "confidence": 0.82
+        })
+
+    # Example gap: distressed liquidity
+    proposals.append({
+        "agent_name": "ForcedSellerLiquidityAgent",
+        "category": "Distressed asset flow",
+        "markets": ["Crypto", "Rates", "Equities"],
+        "horizon": "intraday",
+        "inefficiency_type": "Liquidity shock",
+        "data_required": [
+            "order book depth",
+            "liquidation feeds",
+            "ETF flow data"
+        ],
+        "why_missing": "No agent currently models forced sellers explicitly",
+        "expected_edge": "Forced selling creates short-lived price dislocations",
+        "risk_profile": "High volatility, short duration",
+        "test_plan": "Simulate entries after liquidation clusters",
+        "confidence": 0.76
+    })
+
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    out = {
+        "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00","Z"),
+        "proposals": proposals
+    }
+    OUTPUT.write_text(json.dumps(out, indent=2))
+
+    return proposals
+
+if __name__ == "__main__":
+    run()
+
+2️⃣ Add a Proposal Scoring Layer
+
+Not all ideas are equal. Score them.
+
+meta_supervisor/proposal_scoring.py
+def score_proposal(p: dict) -> float:
+    score = 0.0
+
+    score += p.get("confidence", 0) * 40
+    score += 10 if "distressed" in p.get("inefficiency_type","").lower() else 0
+    score += 10 if "derivatives" in p.get("inefficiency_type","").lower() else 0
+
+    # Penalize heavy data requirements
+    score -= len(p.get("data_required", [])) * 2
+
+    return round(min(score, 100), 1)
+
+3️⃣ Meta-Agent integrates proposals (NO auto-build)
+
+Update build_meta_report.py to include:
+
+from meta_supervisor.proposal_scoring import score_proposal
+from pathlib import Path
+import json
+
+PROPOSALS = Path("meta_supervisor/agent_proposals.json")
+if PROPOSALS.exists():
+    data = json.loads(PROPOSALS.read_text())
+    for p in data["proposals"]:
+        p["score"] = score_proposal(p)
+    report["agent_proposals"] = sorted(
+        data["proposals"],
+        key=lambda x: x["score"],
+        reverse=True
+    )
+
+
+Now proposals appear in:
+
+Meta-Agent report
+
+PR comments
+
+Email summaries
+
+UI dashboard (optional tab)
+
+4️⃣ Add a UI tab (optional but powerful)
+
+In meta_dashboard.html, add:
+
+<h3>Proposed New Agents</h3>
+<table>
+<tr><th>Name</th><th>Category</th><th>Score</th><th>Edge</th><th>Test Plan</th></tr>
+{% for p in report.agent_proposals %}
+<tr>
+  <td>{{ p.agent_name }}</td>
+  <td>{{ p.category }}</td>
+  <td>{{ p.score }}</td>
+  <td>{{ p.expected_edge }}</td>
+  <td>{{ p.test_plan }}</td>
+</tr>
+{% endfor %}
+</table>

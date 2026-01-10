@@ -1,0 +1,151 @@
+1️⃣ Define regimes (simple, extensible)
+
+Create regime/definitions.py:
+
+REGIMES = {
+    "risk_on": {
+        "spy_trend": "up",
+        "volatility": "low",
+        "rates_trend": "down_or_flat"
+    },
+    "risk_off": {
+        "spy_trend": "down",
+        "volatility": "high",
+        "rates_trend": "up"
+    },
+    "inflation": {
+        "rates_trend": "up",
+        "commodities": "up"
+    },
+    "deflation": {
+        "rates_trend": "down",
+        "commodities": "down"
+    }
+}
+
+2️⃣ Regime probability engine (≈15 lines)
+
+Create regime/confidence.py:
+
+import numpy as np
+
+def regime_confidence(features: dict, scores: dict, prev_regime=None):
+    """
+    features: current market features
+    scores: regime → raw score
+    prev_regime: last active regime
+    """
+
+    # Softmax → probabilities
+    vals = np.array(list(scores.values()))
+    probs = np.exp(vals) / np.exp(vals).sum()
+
+    regime_probs = dict(zip(scores.keys(), probs))
+
+    # Confidence = max probability
+    active = max(regime_probs, key=regime_probs.get)
+    confidence = regime_probs[active]
+
+    # Hysteresis (stick unless clearly broken)
+    if prev_regime and regime_probs.get(prev_regime, 0) > 0.35:
+        active = prev_regime
+        confidence = regime_probs[prev_regime]
+
+    transition = confidence < 0.6
+
+    return {
+        "active_regime": active,
+        "confidence": float(confidence),
+        "transition": transition,
+        "distribution": regime_probs
+    }
+
+3️⃣ Feature extraction (minimal + robust)
+
+Create regime/features.py:
+
+def extract_features(spy_df, vix_df, rates_df):
+    spy_return_20d = spy_df["Close"].iloc[-1] / spy_df["Close"].iloc[-20] - 1
+    vix_level = vix_df["Close"].iloc[-1]
+    rates_change = rates_df["Close"].iloc[-1] - rates_df["Close"].iloc[-20]
+
+    return {
+        "spy_trend": "up" if spy_return_20d > 0 else "down",
+        "volatility": "high" if vix_level > 25 else "low",
+        "rates_trend": "up" if rates_change > 0 else "down"
+    }
+
+4️⃣ Scoring logic (transparent, explainable)
+
+Create regime/scoring.py:
+
+from .definitions import REGIMES
+
+def score_regimes(features):
+    scores = {}
+
+    for regime, rules in REGIMES.items():
+        score = 0
+        for k, v in rules.items():
+            if features.get(k) == v:
+                score += 1
+        scores[regime] = score
+
+    return scores
+
+5️⃣ One endpoint: /api/regime_state
+
+Add to dashboard routes:
+
+@dashboard_bp.route("/api/regime_state")
+def regime_state():
+    spy, vix, tnx = load_market_frames()  # already exists
+
+    features = extract_features(spy, vix, tnx)
+    scores = score_regimes(features)
+
+    state = regime_confidence(
+        features,
+        scores,
+        prev_regime=get_cached_regime()
+    )
+
+    cache_regime(state["active_regime"])
+
+    return jsonify(state)
+
+6️⃣ Frontend indicator (tiny but powerful)
+
+Add to dashboard.html:
+
+<script>
+fetch("/api/regime_state")
+  .then(r => r.json())
+  .then(r => {
+    document.getElementById("regime-label").innerText =
+      `${r.active_regime.toUpperCase()} (${Math.round(r.confidence*100)}%)`;
+
+    document.getElementById("regime-label").style.opacity =
+      r.transition ? 0.5 : 1.0;
+  });
+</script>
+
+<div id="regime-label"
+     style="font-size:18px;font-weight:bold;margin:10px 0;">
+</div>
+
+🧠 What you now have (important)
+
+You now distinguish:
+
+Regime detected
+
+Regime confidence
+
+Regime transition state
+
+This enables:
+
+✔ delayed rotations
+✔ partial capital shifts
+✔ explainable overrides

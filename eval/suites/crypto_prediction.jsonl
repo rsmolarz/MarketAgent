@@ -1,0 +1,1 @@
+{"id":"crypto_smoke","input":{},"schema":{"type":"list","item":{"type":"dict","required_keys":["symbol","prediction","confidence"]}}}

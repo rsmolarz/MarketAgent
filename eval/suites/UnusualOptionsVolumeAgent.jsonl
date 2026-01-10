@@ -1,0 +1,2 @@
+{"id": "basic_spike_detection", "input_fixture": {"historical_avg_volume": 10000, "intraday_volume": 35000, "time_elapsed_ratio": 0.5}, "expected_schema": {"type": "list", "item_required_keys": ["title", "severity", "confidence", "metadata", "symbol", "market_type"]}}
+{"id": "no_spike_below_threshold", "input_fixture": {"historical_avg_volume": 15000, "intraday_volume": 20000, "time_elapsed_ratio": 0.5}, "expected_schema": {"type": "list", "item_required_keys": []}}

@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-01-10T08:25:19.165040Z",
+  "dominant_regime": "MIXED",
+  "proposals": [
+    {
+      "agent_name": "RegimeClassifierEnhancerAgent",
+      "strategy_class": "meta_regime",
+      "edge_hypothesis": "Improve regime detection to reduce cross-regime losses",
+      "markets": [
+        "crypto",
+        "equities",
+        "rates"
+      ],
+      "horizon": "daily",
+      "data_required": [
+        "volatility",
+        "correlations",
+        "breadth",
+        "rates stress"
+      ],
+      "test_plan": "Compare new classifier vs current on failure_forensics windows",
+      "confidence": 0.68
+    }
+  ]
+}

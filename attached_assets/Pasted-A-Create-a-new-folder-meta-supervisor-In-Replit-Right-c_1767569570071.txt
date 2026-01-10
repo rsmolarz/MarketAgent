@@ -1,0 +1,159 @@
+A. Create a new folder: meta_supervisor/
+
+In Replit:
+
+Right-click in the file tree
+
+New Folder
+
+Name it exactly:
+
+meta_supervisor
+
+
+Inside it, you will add these files:
+
+meta_supervisor/
+├─ build_meta_report.py        ← generates meta_report.json
+├─ pr_comment.py               ← renders GitHub PR comment
+├─ promotion_gate.py           ← promotion eligibility logic
+├─ portfolio.py                ← portfolio-level attribution
+├─ retirement.py               ← agent retirement scoring
+├─ policy_promotion.json       ← promotion thresholds
+├─ reports/                    ← output folder (auto-created)
+└─ state/                      ← killed agents, etc.
+
+
+None of these exist yet. That is expected.
+
+B. Create alpha/ (top-level)
+
+Same process → New Folder:
+
+alpha/
+
+
+Add:
+
+alpha/
+├─ emit.py          ← logs alpha events
+└─ events.jsonl     ← auto-created at runtime
+
+C. Create telemetry/ (top-level)
+telemetry/
+├─ collector.py
+├─ context.py
+└─ events.jsonl     ← auto-created
+
+3. Where each new component fits in your system
+
+Here is the mental model, mapped to your repo:
+
+scheduler.py
+   |
+   |-- run_with_telemetry(...)     ← telemetry/context.py
+   |
+   |-- _run_agent()
+        |
+        |-- agent.run()
+        |
+        |-- emit_alpha_signal()    ← alpha/emit.py
+        |
+        |-- store findings
+
+
+Separately:
+
+meta_supervisor/
+   |
+   |-- build_meta_report.py
+         |
+         |-- reads telemetry/events.jsonl
+         |-- reads alpha/events.jsonl
+         |-- reads eval/results/*
+         |
+         |-- outputs meta_supervisor/reports/meta_report.json
+
+
+Then:
+
+GitHub Actions
+   |
+   |-- pr_comment.py         ← comments on PR
+   |-- promotion_gate.py    ← creates PR sandbox → prod
+
+
+Nothing here interferes with runtime execution.
+
+4. Exact answers to “where can I find these?”
+Component	Where it is
+Meta-Agent report	You create meta_supervisor/build_meta_report.py
+PR comment template	You create meta_supervisor/pr_comment.py
+Auto-promotion logic	You create meta_supervisor/promotion_gate.py
+Agent retirement scoring	You create meta_supervisor/retirement.py
+Portfolio attribution	You create meta_supervisor/portfolio.py
+Alpha ledger	You create alpha/emit.py
+Telemetry hooks	You create telemetry/context.py, collector.py
+
+They are not hiding anywhere. They are new layers.
+
+5. Minimal “do this now” checklist (10 minutes)
+
+In Replit:
+
+Create folders:
+
+meta_supervisor/
+
+alpha/
+
+telemetry/
+
+Copy/paste these files (in this order):
+
+telemetry/context.py
+
+telemetry/collector.py
+
+alpha/emit.py
+
+meta_supervisor/portfolio.py
+
+meta_supervisor/retirement.py
+
+meta_supervisor/pr_comment.py
+
+meta_supervisor/promotion_gate.py
+
+Add one line in scheduler.py (already shown) for:
+
+telemetry wrapper
+
+kill-switch check
+
+alpha emission
+
+Run once:
+
+python meta_supervisor/build_meta_report.py
+
+
+If it produces meta_supervisor/reports/meta_report.json, you’re done.
+
+6. Hard truth (important)
+
+What you are building is not part of the app.
+
+It is:
+
+governance
+
+safety
+
+capital protection
+
+institutional discipline
+
+That is why it lives next to your app, not inside services/ or routes/.
+
+Most teams never do this. That’s why they lose track of why systems stop working.

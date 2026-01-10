@@ -1,0 +1,106 @@
+{
+  "agent": {
+    "class_name": "IntradayVolatilitySpikeAgent",
+    "module_slug": "intraday_volatility_spike",
+    "description": "Detects unusual intraday volatility spikes in equities by analyzing minute-level price data to identify potential market inefficiencies caused by sudden liquidity shocks or news events.",
+    "category": "equities",
+    "data_sources": [
+      {
+        "name": "EquityMinuteBarClient",
+        "type": "existing_client",
+        "details": "Fetches minute-level OHLCV data for equities to compute intraday volatility metrics."
+      }
+    ],
+    "detection_logic": [
+      "Fetch minute-level price data for each equity symbol over the last trading day.",
+      "Calculate rolling intraday volatility (e.g., standard deviation of returns) over short windows (e.g., 15 minutes).",
+      "Identify volatility spikes where the rolling volatility exceeds a threshold multiple (e.g., 3x) of the average intraday volatility for that symbol.",
+      "Filter out spikes occurring during known market-wide events or regular market open/close volatility periods to reduce false positives.",
+      "Generate findings for each detected spike including symbol, time of spike, magnitude of volatility increase, and contextual metadata."
+    ],
+    "parameters": {
+      "thresholds": {
+        "volatility_spike_multiplier": 3,
+        "rolling_window_minutes": 15,
+        "min_spike_duration_minutes": 5
+      },
+      "cadence_minutes_default": 120
+    },
+    "output_examples": [
+      {
+        "title": "Intraday Volatility Spike Detected for AAPL",
+        "description": "AAPL experienced a 4.2x increase in 15-minute rolling volatility at 10:30 AM, indicating a sudden liquidity shock or news event.",
+        "severity": "medium",
+        "confidence": 0.85,
+        "metadata": {
+          "timestamp": "2026-01-07T10:30:00Z",
+          "volatility_multiplier": 4.2,
+          "rolling_window_minutes": 15
+        },
+        "symbol": "AAPL",
+        "market_type": "equities"
+      }
+    ]
+  },
+  "eval": {
+    "suite_name": "IntradayVolatilitySpikeAgent_smoke",
+    "cases": [
+      {
+        "id": "volatility_spike_basic",
+        "input_fixture": {
+          "minute_bars": [
+            {
+              "timestamp": "2026-01-07T10:00:00Z",
+              "open": 100,
+              "high": 101,
+              "low": 99,
+              "close": 100.5,
+              "volume": 1000
+            },
+            {
+              "timestamp": "2026-01-07T10:01:00Z",
+              "open": 100.5,
+              "high": 110,
+              "low": 100.5,
+              "close": 109,
+              "volume": 5000
+            },
+            {
+              "timestamp": "2026-01-07T10:02:00Z",
+              "open": 109,
+              "high": 111,
+              "low": 108,
+              "close": 110,
+              "volume": 3000
+            }
+          ],
+          "symbol": "TEST",
+          "market_type": "equities"
+        },
+        "expected_schema": {
+          "type": "list",
+          "item_required_keys": [
+            "title",
+            "severity",
+            "confidence",
+            "metadata",
+            "symbol",
+            "market_type"
+          ]
+        }
+      }
+    ],
+    "offline_adapter_plan": "Use pre-recorded minute bar fixtures to simulate intraday price data in CI. Mock EquityMinuteBarClient to return these fixtures. Validate that analyze() returns findings with correct schema and detects volatility spikes deterministically."
+  },
+  "safety": {
+    "no_execution": true,
+    "protected_paths": [
+      ".github/",
+      "trading/",
+      "secrets/",
+      "infra/"
+    ],
+    "max_files_changed": 4,
+    "max_lines_changed": 250
+  }
+}

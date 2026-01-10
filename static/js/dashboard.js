@@ -68,7 +68,10 @@ class Dashboard {
                 this.loadDashboardStats(),
                 this.loadRecentFindings(),
                 this.loadMarketData(),
-                this.loadFindingsChart()
+                this.loadFindingsChart(),
+                this.loadUncertaintyDecay(),
+                this.loadSubstitutionStatus(),
+                this.loadUncertaintyBanner()
             ]);
         } catch (error) {
             console.error('Error loading dashboard data:', error);
@@ -78,7 +81,7 @@ class Dashboard {
     
     async loadDashboardStats() {
         try {
-            const response = await fetch(`/api/dashboard/stats?hours=${this.timeWindowHours}`);
+            const response = await fetch(`/dashboard/api/stats?hours=${this.timeWindowHours}`);
             if (!response.ok) throw new Error('Failed to fetch stats');
             
             const stats = await response.json();
@@ -96,7 +99,7 @@ class Dashboard {
     
     async loadRecentFindings() {
         try {
-            const response = await fetch('/api/findings/recent?limit=10');
+            const response = await fetch('/dashboard/api/findings/recent?limit=10');
             if (!response.ok) throw new Error('Failed to fetch findings');
             
             const findings = await response.json();
@@ -111,7 +114,7 @@ class Dashboard {
     async loadMarketData() {
         try {
             console.log('Loading market data...');
-            const response = await fetch(`/api/market_data?hours=${this.timeWindowHours}`);
+            const response = await fetch(`/dashboard/api/market_data?hours=${this.timeWindowHours}`);
             console.log('Market data response status:', response.status);
             
             if (!response.ok) throw new Error(`Failed to fetch market data: ${response.status}`);
@@ -128,7 +131,7 @@ class Dashboard {
     
     async loadFindingsChart() {
         try {
-            const response = await fetch('/api/findings/chart_data?days=7');
+            const response = await fetch('/dashboard/api/chart_data?days=7');
             if (!response.ok) throw new Error('Failed to fetch chart data');
             
             const chartData = await response.json();
@@ -575,37 +578,40 @@ class Dashboard {
         feather.replace();
         
         try {
-            const requestBody = finding.id 
-                ? { finding_id: finding.id }
-                : { finding_data: finding };
-            
-            const response = await fetch('/api/analyze_alert', {
+            const response = await fetch('/api/analyze', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(requestBody)
+                body: JSON.stringify({
+                    finding_id: finding.id,
+                    force: false
+                })
             });
             
             const result = await response.json();
             
-            if (result.success) {
+            if (result.reason === 'already_analyzed') {
                 if (loadingDiv) loadingDiv.style.display = 'none';
                 if (contentDiv) contentDiv.style.display = 'block';
                 
                 if (alertTitle) alertTitle.textContent = finding.title || 'Market Alert';
-                if (analysisText) analysisText.innerHTML = this.formatAnalysisText(result.analysis);
+                const freshFinding = await this.fetchFindingDetails(finding.id);
+                if (analysisText) analysisText.innerHTML = this.formatExistingAnalysis(freshFinding || finding);
+                feather.replace();
+            } else if (result.ok) {
+                if (loadingDiv) loadingDiv.style.display = 'none';
+                if (contentDiv) contentDiv.style.display = 'block';
+                
+                if (alertTitle) alertTitle.textContent = finding.title || 'Market Alert';
+                if (analysisText) analysisText.innerHTML = this.formatTripleConfirmation(result, finding);
                 feather.replace();
             } else {
                 if (loadingDiv) loadingDiv.style.display = 'none';
                 if (errorDiv) errorDiv.style.display = 'block';
                 
                 if (errorMessage) {
-                    if (result.error === 'budget_exceeded') {
-                        errorMessage.textContent = result.message || 'Cloud budget exceeded. Please upgrade to continue.';
-                    } else {
-                        errorMessage.textContent = result.message || 'Failed to analyze alert. Please try again.';
-                    }
+                    errorMessage.textContent = result.reason || result.error || 'Failed to analyze alert. Please try again.';
                 }
                 feather.replace();
             }
@@ -616,6 +622,405 @@ class Dashboard {
             const errMsg = error.message || 'Unknown error';
             if (errorMessage) errorMessage.textContent = `Error: ${errMsg}. Please try again.`;
             feather.replace();
+        }
+    }
+    
+    formatTripleConfirmation(result, finding) {
+        const esc = (t) => this.escapeHtml(t);
+        const ta = result.ta || {};
+        const council = result.council || {};
+        
+        let html = '';
+        
+        if (result.triple_confirmed) {
+            html += `<div class="alert alert-success mb-3">
+                <i data-feather="check-circle" class="me-2"></i>
+                <strong>Triple Confirmed:</strong> All three gates (severity, LLM council, TA) agree. 
+                ${result.alerted ? 'Auto-alert sent to whitelist.' : ''}
+            </div>`;
+        }
+        
+        if (council.disagreement) {
+            html += `<div class="alert alert-warning mb-3">
+                <i data-feather="alert-triangle" class="me-2"></i>
+                <strong>Disagreement Detected:</strong> LLMs did not reach full consensus.
+            </div>`;
+        }
+        
+        const consensusColors = { 'ACT': 'success', 'WATCH': 'warning', 'IGNORE': 'secondary' };
+        const consensusAction = council.action || council.consensus || 'WATCH';
+        const councilColor = consensusColors[consensusAction] || 'info';
+        const councilConf = Math.round((council.confidence || 0) * 100);
+        
+        html += `<div class="card mb-3 border-${councilColor}">
+            <div class="card-header bg-${councilColor} text-white d-flex justify-content-between align-items-center">
+                <span><strong>LLM Council:</strong> ${esc(consensusAction)}</span>
+                <span class="badge bg-light text-dark">${councilConf}% Confidence</span>
+            </div>
+            <div class="card-body">`;
+        
+        if (council.votes) {
+            html += '<ul class="mb-0">';
+            for (const [model, vote] of Object.entries(council.votes)) {
+                html += `<li><strong>${esc(model)}:</strong> ${esc(vote)}</li>`;
+            }
+            html += '</ul>';
+        }
+        html += '</div></div>';
+        
+        const taVote = ta.vote || 'N/A';
+        const taColor = consensusColors[taVote] || 'info';
+        const taScore = Math.round((ta.score || 0.5) * 100);
+        
+        html += `<div class="card mb-3 border-${taColor}">
+            <div class="card-header bg-${taColor} text-white d-flex justify-content-between align-items-center">
+                <span><strong>Technical Analysis:</strong> ${esc(taVote)}</span>
+                <span class="badge bg-light text-dark">${taScore}% Score</span>
+            </div>
+            <div class="card-body">
+                <p class="mb-0">${esc(ta.reason || 'RSI and moving average analysis')}</p>
+            </div>
+        </div>`;
+        
+        html += `<div class="mt-3 small text-muted">
+            <strong>Finding:</strong> ${esc(finding.title || '')} | 
+            <strong>Agent:</strong> ${esc(finding.agent_name || '')} | 
+            <strong>Severity:</strong> ${esc(finding.severity || '')}
+        </div>`;
+        
+        return html;
+    }
+    
+    formatExistingAnalysis(finding) {
+        const esc = (t) => this.escapeHtml(t);
+        const consensusColors = { 'ACT': 'success', 'WATCH': 'warning', 'IGNORE': 'secondary' };
+        
+        const action = finding.consensus_action || 'N/A';
+        const actionColor = consensusColors[action] || 'info';
+        const conf = Math.round((finding.consensus_confidence || 0) * 100);
+        
+        let html = `<div class="alert alert-info mb-3">
+            <i data-feather="info" class="me-2"></i>
+            This finding was previously analyzed.
+        </div>`;
+        
+        html += `<div class="card mb-3 border-${actionColor}">
+            <div class="card-header bg-${actionColor} text-white d-flex justify-content-between align-items-center">
+                <span><strong>LLM Council:</strong> ${esc(action)}</span>
+                <span class="badge bg-light text-dark">${conf}% Confidence</span>
+            </div>
+            <div class="card-body">`;
+        
+        if (finding.llm_votes) {
+            html += '<ul class="mb-0">';
+            for (const [model, vote] of Object.entries(finding.llm_votes)) {
+                html += `<li><strong>${esc(model)}:</strong> ${esc(vote)}</li>`;
+            }
+            html += '</ul>';
+        }
+        html += '</div></div>';
+        
+        if (finding.ta_regime) {
+            const taColor = consensusColors[finding.ta_regime] || 'info';
+            html += `<div class="card mb-3 border-${taColor}">
+                <div class="card-header bg-${taColor} text-white">
+                    <strong>TA Regime:</strong> ${esc(finding.ta_regime)}
+                </div>
+            </div>`;
+        }
+        
+        if (finding.alerted) {
+            html += `<div class="alert alert-success mt-3">
+                <i data-feather="mail" class="me-2"></i>
+                Email alert was sent for this finding.
+            </div>`;
+        }
+        
+        if (finding.analyzed_at) {
+            html += `<div class="mt-3 small text-muted">
+                <strong>Analyzed:</strong> ${new Date(finding.analyzed_at).toLocaleString()}
+            </div>`;
+        }
+        
+        return html;
+    }
+    
+    async fetchFindingDetails(findingId) {
+        try {
+            const resp = await fetch(`/api/findings?limit=1000`);
+            if (!resp.ok) return null;
+            const findings = await resp.json();
+            return findings.find(f => f.id === findingId) || null;
+        } catch (e) {
+            console.error('Error fetching finding details:', e);
+            return null;
+        }
+    }
+    
+    escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = String(text);
+        return div.innerHTML;
+    }
+    
+    formatCouncilAnalysis(result) {
+        const consensus = result.consensus;
+        if (!consensus) {
+            return '<p class="text-muted">No consensus available from LLM council.</p>';
+        }
+        
+        const esc = (t) => this.escapeHtml(t);
+        
+        const verdictColors = {
+            'ACT': 'success',
+            'WATCH': 'warning',
+            'IGNORE': 'secondary'
+        };
+        const verdict = esc(consensus.verdict);
+        const verdictColor = verdictColors[consensus.verdict] || 'info';
+        const confidencePct = Math.round((consensus.confidence || 0) * 100);
+        
+        let html = '';
+        
+        if (result.uncertainty_spike) {
+            html += `<div class="alert alert-warning mb-3">
+                <i data-feather="alert-triangle" class="me-2"></i>
+                <strong>Uncertainty Detected:</strong> LLMs disagreed on this analysis. Confidence has been adjusted.
+            </div>`;
+        }
+        
+        html += `<div class="card mb-3 border-${verdictColor}">
+            <div class="card-header bg-${verdictColor} text-white d-flex justify-content-between align-items-center">
+                <span><strong>Consensus Verdict:</strong> ${verdict}</span>
+                <span class="badge bg-light text-dark">${confidencePct}% Confidence</span>
+            </div>
+            <div class="card-body">
+                <p><strong>Time Horizon:</strong> ${esc(consensus.time_horizon || 'N/A')}</p>
+                <p><strong>Positioning:</strong> ${esc(consensus.positioning?.bias || 'neutral')}</p>
+                <p>${esc(consensus.one_paragraph_summary || '')}</p>
+            </div>
+        </div>`;
+        
+        if (consensus.key_drivers && consensus.key_drivers.length > 0) {
+            html += `<div class="mb-3">
+                <h6>Key Drivers</h6>
+                <ul>${consensus.key_drivers.map(d => `<li>${esc(d)}</li>`).join('')}</ul>
+            </div>`;
+        }
+        
+        if (consensus.what_to_verify && consensus.what_to_verify.length > 0) {
+            html += `<div class="mb-3">
+                <h6>What to Verify</h6>
+                <ul>${consensus.what_to_verify.map(v => `<li>${esc(v)}</li>`).join('')}</ul>
+            </div>`;
+        }
+        
+        if (consensus.positioning?.suggested_actions && consensus.positioning.suggested_actions.length > 0) {
+            html += `<div class="mb-3">
+                <h6>Suggested Actions</h6>
+                <ul>${consensus.positioning.suggested_actions.map(a => `<li>${esc(a)}</li>`).join('')}</ul>
+            </div>`;
+        }
+        
+        if (result.models && result.models.length > 0) {
+            html += `<hr><h6 class="mt-3">Model Responses</h6>
+            <div class="row">`;
+            
+            for (const model of result.models) {
+                const statusBadge = model.ok 
+                    ? '<span class="badge bg-success">OK</span>'
+                    : `<span class="badge bg-danger">Error</span>`;
+                const latency = model.latency_ms ? `${model.latency_ms}ms` : 'N/A';
+                
+                html += `<div class="col-md-4 mb-2">
+                    <div class="card h-100">
+                        <div class="card-header py-1 d-flex justify-content-between align-items-center">
+                            <strong>${esc(model.model)}</strong>
+                            ${statusBadge}
+                        </div>
+                        <div class="card-body py-2 small">
+                            <p class="mb-1"><strong>Latency:</strong> ${latency}</p>`;
+                
+                if (model.ok && model.parsed) {
+                    html += `<p class="mb-1"><strong>Verdict:</strong> ${esc(model.parsed.verdict || 'N/A')}</p>
+                             <p class="mb-0"><strong>Conf:</strong> ${Math.round((model.parsed.confidence || 0) * 100)}%</p>`;
+                } else if (model.error) {
+                    html += `<p class="text-danger mb-0">${esc(model.error)}</p>`;
+                }
+                
+                html += `</div></div></div>`;
+            }
+            
+            html += `</div>`;
+        }
+        
+        const majority = consensus.majority || {};
+        html += `<div class="mt-3 small text-muted">
+            <strong>Vote Distribution:</strong> 
+            ACT: ${majority.ACT || 0}, WATCH: ${majority.WATCH || 0}, IGNORE: ${majority.IGNORE || 0}
+        </div>`;
+        
+        return html;
+    }
+    
+    async loadUncertaintyDecay() {
+        try {
+            const response = await fetch('/api/agents/decay');
+            if (!response.ok) return;
+            
+            const data = await response.json();
+            const container = document.getElementById('uncertainty-decay-container');
+            const badge = document.getElementById('overall-uncertainty-badge');
+            
+            if (!container) return;
+            
+            if (!data.agents || data.agents.length === 0) {
+                container.innerHTML = '<p class="text-muted text-center">No uncertainty data available yet</p>';
+                return;
+            }
+            
+            const maxU = Math.max(...data.agents.map(a => a.uncertainty));
+            if (badge) {
+                const statusClass = maxU < 0.3 ? 'bg-success' : (maxU < 0.7 ? 'bg-warning text-dark' : 'bg-danger');
+                badge.className = `badge ${statusClass}`;
+                badge.textContent = `Max: ${(maxU * 100).toFixed(0)}%`;
+            }
+            
+            let html = `<div class="small text-muted mb-2">Regime: ${data.regime}</div>`;
+            html += '<div class="row">';
+            
+            for (const agent of data.agents) {
+                const colorClass = agent.status === 'stable' ? 'bg-success' : 
+                                   (agent.status === 'degrading' ? 'bg-warning' : 'bg-danger');
+                html += `
+                    <div class="col-md-6 mb-2">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <span class="text-truncate" style="max-width: 140px;">${agent.agent.replace('Agent', '')}</span>
+                            <div>
+                                <span class="badge ${colorClass}">${(agent.decay * 100).toFixed(0)}%</span>
+                            </div>
+                        </div>
+                        <div class="progress" style="height: 4px;">
+                            <div class="progress-bar ${colorClass}" style="width: ${agent.decay * 100}%"></div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            container.innerHTML = html;
+        } catch (error) {
+            console.error('Error loading uncertainty decay:', error);
+        }
+    }
+    
+    async loadSubstitutionStatus() {
+        try {
+            const response = await fetch('/api/substitution/status');
+            if (!response.ok) return;
+            
+            const data = await response.json();
+            const container = document.getElementById('substitution-status-container');
+            
+            if (!container) return;
+            
+            if (!data.agents || data.agents.length === 0) {
+                container.innerHTML = '<p class="text-muted text-center">No substitution data available</p>';
+                return;
+            }
+            
+            const demoted = data.agents.filter(a => a.demoted);
+            
+            let html = '';
+            if (demoted.length === 0) {
+                html = '<div class="text-center text-success"><i data-feather="check-circle" class="me-2"></i>All agents operating normally</div>';
+            } else {
+                html = '<div class="list-group list-group-flush">';
+                for (const agent of demoted) {
+                    html += `
+                        <div class="list-group-item px-0">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <span class="text-danger">${agent.agent.replace('Agent', '')}</span>
+                                    <span class="badge bg-danger ms-2">${(agent.uncertainty * 100).toFixed(0)}% uncertain</span>
+                                </div>
+                            </div>
+                            <small class="text-muted">Backups: ${agent.backups.join(', ') || 'None'}</small>
+                        </div>
+                    `;
+                }
+                html += '</div>';
+            }
+            
+            container.innerHTML = html;
+            if (typeof feather !== 'undefined') feather.replace();
+        } catch (error) {
+            console.error('Error loading substitution status:', error);
+        }
+    }
+    
+    async loadUncertaintyBanner() {
+        try {
+            const [latestRes, transitionRes] = await Promise.all([
+                fetch('/api/uncertainty/latest'),
+                fetch('/api/uncertainty/transition')
+            ]);
+            
+            const banner = document.getElementById('uncertaintyBanner');
+            const txt = document.getElementById('uncertaintyText');
+            const badge = document.getElementById('uncertaintyBadge');
+            const transitionWarn = document.getElementById('transitionWarning');
+            
+            if (!banner) return;
+            
+            let showBanner = false;
+            
+            if (latestRes.ok) {
+                const data = await latestRes.json();
+                const level = Number(data.level || 0);
+                
+                if (data.provisional || level >= 0.7 || (data.label && data.label !== 'normal' && data.label !== 'calm')) {
+                    showBanner = true;
+                    
+                    banner.className = 'alert mb-4';
+                    if (level >= 0.8) {
+                        banner.classList.add('alert-danger');
+                    } else if (level >= 0.6) {
+                        banner.classList.add('alert-warning');
+                    } else {
+                        banner.classList.add('alert-info');
+                    }
+                    
+                    if (txt) {
+                        txt.textContent = `— uncertainty=${level.toFixed(2)} (${data.label || 'elevated'}), regime=${data.regime || 'unknown'}`;
+                    }
+                    
+                    if (badge) {
+                        badge.className = level >= 0.7 ? 'badge bg-danger' : 'badge bg-warning text-dark';
+                        badge.textContent = `${(level * 100).toFixed(0)}%`;
+                    }
+                }
+            }
+            
+            if (transitionRes.ok) {
+                const trans = await transitionRes.json();
+                if (trans.transition && transitionWarn) {
+                    showBanner = true;
+                    transitionWarn.style.display = 'inline';
+                    transitionWarn.textContent = trans.severity === 'high' 
+                        ? 'Regime Transition Imminent' 
+                        : 'Regime Transition Likely';
+                } else if (transitionWarn) {
+                    transitionWarn.style.display = 'none';
+                }
+            }
+            
+            banner.style.display = showBanner ? 'block' : 'none';
+            if (typeof feather !== 'undefined') feather.replace();
+            
+        } catch (error) {
+            console.error('Error loading uncertainty banner:', error);
         }
     }
     

@@ -1,7 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import current_user
-from app import db
-from models import Whitelist, User
+from models import Whitelist, User, db
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -134,3 +133,57 @@ def send_daily_summary():
         flash(f'Error sending daily summary: {str(e)}', 'danger')
     
     return redirect(url_for('admin.index'))
+
+
+@admin_bp.route('/meta')
+def meta_dashboard():
+    """Meta supervisor dashboard showing agent performance and allocation"""
+    import json
+    from pathlib import Path
+    p = Path("meta_supervisor/reports/meta_report.json")
+    report = json.loads(p.read_text()) if p.exists() else {}
+    return render_template('meta_dashboard.html', report=report)
+
+
+@admin_bp.route('/agents')
+def agents_oversight():
+    """AI Oversight - View all agents, their status, and performance metrics"""
+    from models import AgentStatus
+    import json
+    from pathlib import Path
+    
+    agents = AgentStatus.query.order_by(AgentStatus.agent_name).all()
+    
+    # Load telemetry data if available
+    telemetry = {}
+    tel_path = Path("telemetry/agent_runs.json")
+    if tel_path.exists():
+        try:
+            telemetry = json.loads(tel_path.read_text())
+        except:
+            pass
+    
+    # Load quarantine data
+    quarantine = {}
+    q_path = Path("meta/quarantine_state.json")
+    if q_path.exists():
+        try:
+            quarantine = json.loads(q_path.read_text())
+        except:
+            pass
+    
+    return render_template('admin/agents_oversight.html', 
+                          agents=agents, telemetry=telemetry, quarantine=quarantine)
+
+
+@admin_bp.route('/approvals')
+def approvals():
+    """Approvals - View pending and historical approval events"""
+    from models import ApprovalEvent
+    
+    pending = ApprovalEvent.query.filter_by(status='pending').order_by(ApprovalEvent.created_at.desc()).all()
+    approved = ApprovalEvent.query.filter_by(status='approved').order_by(ApprovalEvent.created_at.desc()).limit(20).all()
+    rejected = ApprovalEvent.query.filter_by(status='rejected').order_by(ApprovalEvent.created_at.desc()).limit(20).all()
+    
+    return render_template('admin/approvals.html', 
+                          pending=pending, approved=approved, rejected=rejected)

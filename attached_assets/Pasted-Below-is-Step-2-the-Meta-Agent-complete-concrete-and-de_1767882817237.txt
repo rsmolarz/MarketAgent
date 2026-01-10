@@ -1,0 +1,207 @@
+Below is Step 2: the Meta-Agent — complete, concrete, and designed to sit on top of what you already built.
+
+This does not change live agents, does not break scheduling, and directly leverages backtests once you run them.
+
+Meta-Agent: Ranking, Weighting, Auto-Disable
+What this does (mechanically)
+
+Labels each Finding with realized forward returns
+
+Aggregates performance by agent
+
+Ranks agents
+
+Writes enable/disable + weight decisions
+
+Scheduler respects it automatically
+
+This turns your system from signal generator → adaptive capital allocator.
+
+Architecture (clean separation)
+backtest/
+├── evaluator.py        ← computes returns per finding
+├── metrics.py          ← aggregates per-agent stats
+├── meta_agent.py       ← ranking + decisions
+├── registry.py         ← reads/writes agent_schedule.json
+
+
+Live agents remain untouched.
+
+1️⃣ Forward-Return Labeling (Evaluator)
+backtest/evaluator.py
+from typing import List, Dict
+import pandas as pd
+
+FORWARD_WINDOWS = [5, 10, 20, 60]  # trading days
+
+def label_forward_returns(
+    findings: List[Dict],
+    price_frames: Dict[str, pd.DataFrame],
+) -> List[Dict]:
+    """
+    Adds forward returns to each finding.
+    Assumes df index is datetime, Close column exists.
+    """
+
+    out = []
+
+    for f in findings:
+        symbol = f.get("symbol")
+        if not symbol or symbol not in price_frames:
+            continue
+
+        df = price_frames[symbol]
+        ts = pd.to_datetime(f["timestamp"])
+
+        if ts not in df.index:
+            continue
+
+        entry_price = float(df.loc[ts]["Close"])
+        labels = {}
+
+        for w in FORWARD_WINDOWS:
+            future_idx = df.index.searchsorted(ts) + w
+            if future_idx < len(df):
+                future_price = float(df.iloc[future_idx]["Close"])
+                labels[f"ret_{w}d"] = (future_price / entry_price) - 1.0
+
+        f = dict(f)
+        f["forward_returns"] = labels
+        out.append(f)
+
+    return out
+
+2️⃣ Per-Agent Metrics
+backtest/metrics.py
+from collections import defaultdict
+import numpy as np
+
+def aggregate_agent_metrics(labeled_findings):
+    """
+    Returns per-agent performance summary.
+    """
+
+    buckets = defaultdict(list)
+
+    for f in labeled_findings:
+        agent = f["agent"]
+        fr = f.get("forward_returns", {})
+        if not fr:
+            continue
+        buckets[agent].append(fr)
+
+    stats = {}
+
+    for agent, rows in buckets.items():
+        agg = {}
+        for k in rows[0].keys():
+            vals = [r[k] for r in rows if k in r]
+            if not vals:
+                continue
+            agg[k] = {
+                "mean": float(np.mean(vals)),
+                "median": float(np.median(vals)),
+                "hit_rate": float(sum(v > 0 for v in vals) / len(vals)),
+                "count": len(vals),
+            }
+        stats[agent] = agg
+
+    return stats
+
+3️⃣ Meta-Agent Logic (Rank + Disable)
+backtest/meta_agent.py
+from backtest.metrics import aggregate_agent_metrics
+
+MIN_SIGNALS = 25
+MIN_HIT_RATE = 0.45
+MIN_MEAN_RET = 0.0
+
+def rank_agents(agent_metrics):
+    """
+    Produces agent decisions:
+    enable / disable / weight
+    """
+
+    decisions = {}
+
+    for agent, stats in agent_metrics.items():
+        r20 = stats.get("ret_20d")
+        if not r20 or r20["count"] < MIN_SIGNALS:
+            decisions[agent] = {"enabled": False, "weight": 0.0, "reason": "insufficient data"}
+            continue
+
+        if r20["hit_rate"] < MIN_HIT_RATE or r20["mean"] < MIN_MEAN_RET:
+            decisions[agent] = {"enabled": False, "weight": 0.0, "reason": "underperforming"}
+            continue
+
+        # Weight proportional to mean return × hit rate
+        weight = max(0.1, r20["mean"] * r20["hit_rate"] * 10)
+
+        decisions[agent] = {
+            "enabled": True,
+            "weight": round(weight, 3),
+            "reason": "approved",
+        }
+
+    return decisions
+
+4️⃣ Registry: Write to agent_schedule.json
+backtest/registry.py
+import json
+from pathlib import Path
+
+SCHEDULE_PATH = Path("config/agent_schedule.json")
+
+def update_schedule(decisions):
+    if SCHEDULE_PATH.exists():
+        schedule = json.loads(SCHEDULE_PATH.read_text())
+    else:
+        schedule = {}
+
+    for agent, d in decisions.items():
+        schedule.setdefault(agent, {})
+        schedule[agent]["enabled"] = d["enabled"]
+        schedule[agent]["weight"] = d["weight"]
+        schedule[agent]["reason"] = d["reason"]
+
+    SCHEDULE_PATH.write_text(json.dumps(schedule, indent=2))
+    return schedule
+
+5️⃣ Scheduler Enforcement (NON-BREAKING)
+Minimal change in scheduler.py
+from config import AgentSchedule
+
+def should_run(agent_name):
+    cfg = AgentSchedule.get(agent_name)
+    return cfg.get("enabled", True)
+
+
+Where AgentSchedule.get() simply reads agent_schedule.json.
+
+No agent code touched.
+No backtest code referenced in live execution.
+
+6️⃣ End-to-End Run
+# backtest/run_meta.py
+
+from backtest.evaluator import label_forward_returns
+from backtest.metrics import aggregate_agent_metrics
+from backtest.meta_agent import rank_agents
+from backtest.registry import update_schedule
+
+labeled = label_forward_returns(findings, price_frames)
+metrics = aggregate_agent_metrics(labeled)
+decisions = rank_agents(metrics)
+update_schedule(decisions)
+
+What you now have (structurally)
+
+Agents become hypotheses
+
+Meta-Agent becomes selection pressure
+
+Scheduler becomes execution engine
+
+Dashboard becomes human sanity check
+
+This is how real trading desks evolve signal research.

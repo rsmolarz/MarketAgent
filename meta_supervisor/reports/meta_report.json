@@ -1,0 +1,385 @@
+{
+  "agents": {
+    "HeartbeatAgent": {
+      "runs": 22000,
+      "avg_latency_ms": 160.8,
+      "tokens": 0,
+      "alpha_signals": 0,
+      "reconciled_signals": 0,
+      "pnl_sum_bps": 0,
+      "hit_rate": 0,
+      "error_rate": 0.0,
+      "cost_usd": 0.0,
+      "var_95_bps": 0,
+      "cvar_95_bps": 0,
+      "max_dd_bps": 0,
+      "last_regime": null,
+      "regime_multiplier": 1.0,
+      "retirement_score": 65,
+      "retirement_action": "DEPRECATE",
+      "decision": "HOLD"
+    },
+    "ArbitrageFinderAgent": {
+      "runs": 10917,
+      "avg_latency_ms": 4272.8,
+      "tokens": 0,
+      "alpha_signals": 0,
+      "reconciled_signals": 0,
+      "pnl_sum_bps": 0,
+      "hit_rate": 0,
+      "error_rate": 0.0,
+      "cost_usd": 0.0,
+      "var_95_bps": 0,
+      "cvar_95_bps": 0,
+      "max_dd_bps": 0,
+      "last_regime": null,
+      "regime_multiplier": 1.0,
+      "retirement_score": 65,
+      "retirement_action": "DEPRECATE",
+      "decision": "HOLD"
+    },
+    "WhaleWalletWatcherAgent": {
+      "runs": 4230,
+      "avg_latency_ms": 186.7,
+      "tokens": 0,
+      "alpha_signals": 0,
+      "reconciled_signals": 0,
+      "pnl_sum_bps": 0,
+      "hit_rate": 0,
+      "error_rate": 0.0,
+      "cost_usd": 0.0,
+      "var_95_bps": 0,
+      "cvar_95_bps": 0,
+      "max_dd_bps": 0,
+      "last_regime": null,
+      "regime_multiplier": 1.0,
+      "retirement_score": 65,
+      "retirement_action": "DEPRECATE",
+      "decision": "HOLD"
+    },
+    "MacroWatcherAgent": {
+      "runs": 4230,
+      "avg_latency_ms": 873.0,
+      "tokens": 0,
+      "alpha_signals": 0,
+      "reconciled_signals": 0,
+      "pnl_sum_bps": 0,
+      "hit_rate": 0,
+      "error_rate": 0.0,
+      "cost_usd": 0.0,
+      "var_95_bps": 0,
+      "cvar_95_bps": 0,
+      "max_dd_bps": 0,
+      "last_regime": null,
+      "regime_multiplier": 1.0,
+      "retirement_score": 65,
+      "retirement_action": "DEPRECATE",
+      "decision": "HOLD"
+    },
+    "AltDataSignalAgent": {
+      "runs": 4230,
+      "avg_latency_ms": 749.0,
+      "tokens": 0,
+      "alpha_signals": 0,
+      "reconciled_signals": 0,
+      "pnl_sum_bps": 0,
+      "hit_rate": 0,
+      "error_rate": 0.0,
+      "cost_usd": 0.0,
+      "var_95_bps": 0,
+      "cvar_95_bps": 0,
+      "max_dd_bps": 0,
+      "last_regime": null,
+      "regime_multiplier": 1.0,
+      "retirement_score": 65,
+      "retirement_action": "DEPRECATE",
+      "decision": "HOLD"
+    },
+    "SentimentDivergenceAgent": {
+      "runs": 4229,
+      "avg_latency_ms": 1936.5,
+      "tokens": 0,
+      "alpha_signals": 0,
+      "reconciled_signals": 0,
+      "pnl_sum_bps": 0,
+      "hit_rate": 0,
+      "error_rate": 0.0,
+      "cost_usd": 0.0,
+      "var_95_bps": 0,
+      "cvar_95_bps": 0,
+      "max_dd_bps": 0,
+      "last_regime": null,
+      "regime_multiplier": 1.0,
+      "retirement_score": 65,
+      "retirement_action": "DEPRECATE",
+      "decision": "HOLD"
+    },
+    "EquityMomentumAgent": {
+      "runs": 4230,
+      "avg_latency_ms": 1443.7,
+      "tokens": 0,
+      "alpha_signals": 0,
+      "reconciled_signals": 0,
+      "pnl_sum_bps": 0,
+      "hit_rate": 0,
+      "error_rate": 0.0,
+      "cost_usd": 0.0,
+      "var_95_bps": 0,
+      "cvar_95_bps": 0,
+      "max_dd_bps": 0,
+      "last_regime": null,
+      "regime_multiplier": 1.0,
+      "retirement_score": 65,
+      "retirement_action": "DEPRECATE",
+      "decision": "HOLD"
+    },
+    "GreatestTradeAgent": {
+      "runs": 4226,
+      "avg_latency_ms": 362.2,
+      "tokens": 0,
+      "alpha_signals": 0,
+      "reconciled_signals": 0,
+      "pnl_sum_bps": 0,
+      "hit_rate": 0,
+      "error_rate": 0.0,
+      "cost_usd": 0.0,
+      "var_95_bps": 0,
+      "cvar_95_bps": 0,
+      "max_dd_bps": 0,
+      "last_regime": null,
+      "regime_multiplier": 1.0,
+      "retirement_score": 65,
+      "retirement_action": "DEPRECATE",
+      "decision": "HOLD"
+    },
+    "GeopoliticalRiskAgent": {
+      "runs": 4229,
+      "avg_latency_ms": 747.6,
+      "tokens": 0,
+      "alpha_signals": 0,
+      "reconciled_signals": 0,
+      "pnl_sum_bps": 0,
+      "hit_rate": 0,
+      "error_rate": 0.0,
+      "cost_usd": 0.0,
+      "var_95_bps": 0,
+      "cvar_95_bps": 0,
+      "max_dd_bps": 0,
+      "last_regime": null,
+      "regime_multiplier": 1.0,
+      "retirement_score": 65,
+      "retirement_action": "DEPRECATE",
+      "decision": "HOLD"
+    },
+    "BondStressAgent": {
+      "runs": 4229,
+      "avg_latency_ms": 1192.1,
+      "tokens": 0,
+      "alpha_signals": 0,
+      "reconciled_signals": 0,
+      "pnl_sum_bps": 0,
+      "hit_rate": 0,
+      "error_rate": 0.0,
+      "cost_usd": 0.0,
+      "var_95_bps": 0,
+      "cvar_95_bps": 0,
+      "max_dd_bps": 0,
+      "last_regime": null,
+      "regime_multiplier": 1.0,
+      "retirement_score": 65,
+      "retirement_action": "DEPRECATE",
+      "decision": "HOLD"
+    },
+    "MarketCorrectionAgent": {
+      "runs": 4227,
+      "avg_latency_ms": 1251.8,
+      "tokens": 0,
+      "alpha_signals": 0,
+      "reconciled_signals": 0,
+      "pnl_sum_bps": 0,
+      "hit_rate": 0,
+      "error_rate": 0.0,
+      "cost_usd": 0.0,
+      "var_95_bps": 0,
+      "cvar_95_bps": 0,
+      "max_dd_bps": 0,
+      "last_regime": null,
+      "regime_multiplier": 1.0,
+      "retirement_score": 65,
+      "retirement_action": "DEPRECATE",
+      "decision": "HOLD"
+    },
+    "CryptoFundingRateAgent": {
+      "runs": 4229,
+      "avg_latency_ms": 1954.7,
+      "tokens": 0,
+      "alpha_signals": 0,
+      "reconciled_signals": 0,
+      "pnl_sum_bps": 0,
+      "hit_rate": 0,
+      "error_rate": 0.0,
+      "cost_usd": 0.0,
+      "var_95_bps": 0,
+      "cvar_95_bps": 0,
+      "max_dd_bps": 0,
+      "last_regime": null,
+      "regime_multiplier": 1.0,
+      "retirement_score": 65,
+      "retirement_action": "DEPRECATE",
+      "decision": "HOLD"
+    },
+    "DailyPredictionAgent": {
+      "runs": 258,
+      "avg_latency_ms": 454.7,
+      "tokens": 0,
+      "alpha_signals": 0,
+      "reconciled_signals": 0,
+      "pnl_sum_bps": 0,
+      "hit_rate": 0,
+      "error_rate": 0.023,
+      "cost_usd": 0.0,
+      "var_95_bps": 0,
+      "cvar_95_bps": 0,
+      "max_dd_bps": 0,
+      "last_regime": null,
+      "regime_multiplier": 1.0,
+      "retirement_score": 65,
+      "retirement_action": "DEPRECATE",
+      "decision": "HOLD"
+    },
+    "CryptoPredictionAgent": {
+      "runs": 258,
+      "avg_latency_ms": 1284.2,
+      "tokens": 0,
+      "alpha_signals": 0,
+      "reconciled_signals": 0,
+      "pnl_sum_bps": 0,
+      "hit_rate": 0,
+      "error_rate": 0.023,
+      "cost_usd": 0.0,
+      "var_95_bps": 0,
+      "cvar_95_bps": 0,
+      "max_dd_bps": 0,
+      "last_regime": null,
+      "regime_multiplier": 1.0,
+      "retirement_score": 65,
+      "retirement_action": "DEPRECATE",
+      "decision": "HOLD"
+    }
+  },
+  "fleet": {
+    "portfolio_pnl_bps": 0,
+    "portfolio_hit_rate": 0,
+    "portfolio_max_drawdown_bps": 0,
+    "total_signals": 0,
+    "sharpe_approx": 0
+  },
+  "meta": {
+    "generated_at": "2026-01-07T18:15:52.789704Z",
+    "severity": "low",
+    "regime_multipliers": {}
+  },
+  "allocation": {
+    "method": "cvar_95",
+    "weights": {},
+    "confidence_state": {
+      "version": 1,
+      "generated_at": "2026-01-07T18:15:52.789830Z",
+      "multipliers": {}
+    }
+  },
+  "agent_proposals": [
+    {
+      "agent_name": "OptionsSkewFundingAgent",
+      "category": "Cross-market inefficiency",
+      "markets": [
+        "BTC",
+        "ETH"
+      ],
+      "horizon": "hours",
+      "inefficiency_type": "Derivatives mispricing",
+      "data_required": [
+        "perp funding rates",
+        "options IV skew",
+        "open interest by strike"
+      ],
+      "why_missing": "Current agents treat funding and options independently",
+      "expected_edge": "Funding extremes + skew inversion precede sharp mean reversion",
+      "risk_profile": "Event-driven, convex",
+      "test_plan": "Paper trade funding extremes when 25-delta skew flips sign",
+      "confidence": 0.82,
+      "score": 36.8
+    },
+    {
+      "agent_name": "ForcedSellerLiquidityAgent",
+      "category": "Distressed asset flow",
+      "markets": [
+        "Crypto",
+        "Rates",
+        "Equities"
+      ],
+      "horizon": "intraday",
+      "inefficiency_type": "Liquidity shock",
+      "data_required": [
+        "order book depth",
+        "liquidation feeds",
+        "ETF flow data"
+      ],
+      "why_missing": "No agent currently models forced sellers explicitly",
+      "expected_edge": "Forced selling creates short-lived price dislocations",
+      "risk_profile": "High volatility, short duration",
+      "test_plan": "Simulate entries after liquidation clusters",
+      "confidence": 0.76,
+      "score": 24.4
+    }
+  ],
+  "research": {
+    "literature_scan": {
+      "generated_at": "2026-01-07T08:25:01.241641Z",
+      "items_count": 16,
+      "insights": {
+        "error": "The api_key client option must be set either by passing api_key to the client or by setting the OPENAI_API_KEY environment variable"
+      }
+    },
+    "failure_forensics": {
+      "generated_at": "2026-01-07T08:30:00.591820Z",
+      "horizon_hours": 24,
+      "worst_runs": [],
+      "by_agent": []
+    }
+  },
+  "regime_proposals": {
+    "generated_at": "2026-01-07T08:25:01.918830Z",
+    "dominant_regime": "MIXED",
+    "proposals": [
+      {
+        "agent_name": "RegimeClassifierEnhancerAgent",
+        "strategy_class": "meta_regime",
+        "edge_hypothesis": "Improve regime detection to reduce cross-regime losses",
+        "markets": [
+          "crypto",
+          "equities",
+          "rates"
+        ],
+        "horizon": "daily",
+        "data_required": [
+          "volatility",
+          "correlations",
+          "breadth",
+          "rates stress"
+        ],
+        "test_plan": "Compare new classifier vs current on failure_forensics windows",
+        "confidence": 0.68
+      }
+    ]
+  },
+  "capital": {},
+  "strategy_cvar": {},
+  "auto_kill": {
+    "killed": [],
+    "changed": false
+  },
+  "lineage": {
+    "agents": {}
+  }
+}

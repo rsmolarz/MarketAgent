@@ -1,0 +1,187 @@
+Step B — Align GeopoliticalRiskAgent to the Backtest Engine
+
+(without polluting live behavior or faking history)
+
+You already did the right thing conceptually with analyze_ctx in MarketCorrectionAgent. We will do the same here, but with constraints.
+
+First: hard truth (important)
+
+GeopoliticalRiskAgent cannot be “price-truth backtested” from 2007 using live APIs.
+
+If anyone tells you otherwise, they are lying.
+
+Why:
+
+News APIs do not give deterministic historical snapshots
+
+Sentiment models evolve
+
+RSS feeds reorder
+
+Keyword frequency drifts
+
+So we do event-impact backtesting, not fantasy NLP replay.
+
+Correct Backtesting Model for This Agent
+
+We split it into two layers:
+
+Layer 1 — Signal replay (what happened)
+
+Historical geopolitical event dates
+
+Region
+
+Severity score
+
+Layer 2 — Market reaction (truth)
+
+SPY / VIX / sector forward returns
+
+Volatility expansion
+
+Correlation spikes
+
+This preserves causality.
+
+What we do now (no new datasets yet)
+
+We make the agent backtest-compatible by:
+
+Disabling network calls
+
+Accepting preloaded historical events via ctx.meta
+
+Emitting the same finding schema
+
+Minimal, correct changes
+✅ ZERO changes to live analyze()
+✅ Add analyze_ctx(ctx) only
+✅ Reuses evaluation engine you already have
+Add this to GeopoliticalRiskAgent
+1️⃣ Add backtest-compatible method
+def analyze_ctx(self, ctx) -> List[Dict[str, Any]]:
+    """
+    Backtest-compatible geopolitical risk analysis.
+    Uses preloaded historical events from ctx.meta["geo_events"].
+    No network calls. Deterministic.
+    """
+    findings = []
+
+    events = ctx.meta.get("geo_events", [])
+    if not events:
+        return findings
+
+    asof = ctx.asof.date()
+
+    for event in events:
+        event_date = event.get("date")
+        if event_date != asof:
+            continue
+
+        region = event.get("region")
+        risk_score = event.get("risk_score", 0)
+        keywords = event.get("keywords", [])
+
+        if risk_score < self.risk_threshold:
+            continue
+
+        severity = self._determine_severity(risk_score)
+
+        findings.append(self.create_finding(
+            title=f"Geopolitical Risk Alert: {region}",
+            description=f"Historical geopolitical escalation detected. Keywords: {', '.join(keywords)}",
+            severity=severity,
+            confidence=min(risk_score / 100.0, 1.0),
+            symbol="SPY",
+            market_type="geopolitical",
+            metadata={
+                "region": region,
+                "risk_score": risk_score,
+                "keywords": keywords,
+                "source": "historical_event"
+            }
+        ))
+
+    return findings
+
+2️⃣ What ctx.meta["geo_events"] looks like
+
+This is what you’ll load later from:
+
+GDELT
+
+ACLED
+
+ICEWS
+
+curated CSV
+
+Example:
+
+ctx.meta["geo_events"] = [
+    {
+        "date": date(2014, 3, 18),
+        "region": "Ukraine",
+        "risk_score": 85,
+        "keywords": ["Invasion", "Troops"]
+    },
+    {
+        "date": date(2022, 2, 24),
+        "region": "Ukraine",
+        "risk_score": 95,
+        "keywords": ["War", "Missile", "Sanctions"]
+    }
+]
+
+Result: what this unlocks immediately
+
+Your existing evaluation engine will now compute:
+
+SPY forward returns after geopolitical shocks
+
+VIX response magnitude
+
+Drawdown probability conditional on severity
+
+Agent hit-rate vs randomness
+
+No lies. No leakage. No fake backtests.
+
+Step C — Dashboard Overlay (next, fast)
+
+After this agent is aligned, we add:
+
+Overlay features (≈30–40 LOC)
+
+SPY price chart
+
+Vertical signal markers
+
+Color by severity:
+
+🟡 medium
+
+🟠 high
+
+🔴 critical
+
+This is visual alpha validation.
+
+Step D — Meta-Agent (this is where it gets real)
+
+Once two agents are backtested:
+
+The Meta-Agent will:
+
+Rank agents by realized forward returns
+
+Penalize false positives
+
+Decay stale agents
+
+Auto-disable weak agents
+
+Weight capital attention toward winners
+
+This turns your system from signal generator → learning organism.

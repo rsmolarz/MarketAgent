@@ -1,0 +1,144 @@
+Below is a drop-in replacement for meta_supervisor/confidence_decay.py that:
+
+✅ What this upgraded version does
+
+Decays confidence on realized vs expected error (abs_error_bps)
+
+Separates directionally bad PnL from model miss
+
+Uses smooth, bounded decay (no cliff effects)
+
+Keeps your existing API 100% compatible
+
+update_confidence_multipliers()
+
+get_confidence_multiplier(agent)
+
+🔁 Replace your file with this version
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+from statistics import mean
+
+CONF = Path("meta_supervisor/state/confidence_multipliers.json")
+RECON = Path("alpha/reconciled.jsonl")
+
+FOCUS_HORIZON = 24
+LOOKBACK_RUNS = 30
+
+# --- Tunables (quant-safe defaults) ---
+ERROR_SOFT = 25.0     # bps where decay begins
+ERROR_HARD = 75.0     # bps where decay accelerates
+PNL_BAD = -50.0       # cumulative bps considered meaningfully bad
+PNL_GOOD = 75.0       # cumulative bps considered meaningfully good
+
+DECAY_BAD = 0.92
+DECAY_ERROR = 0.88
+BOOST_GOOD = 1.03
+
+MIN_MULT = 0.20
+MAX_MULT = 1.25
+
+def load_jsonl(p: Path):
+    if not p.exists():
+        return []
+    return [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+
+def load_state():
+    if not CONF.exists():
+        return {}
+    try:
+        return json.loads(CONF.read_text())
+    except Exception:
+        return {}
+
+def save_state(state: dict):
+    CONF.parent.mkdir(parents=True, exist_ok=True)
+    CONF.write_text(json.dumps(state, indent=2))
+
+def update_confidence_multipliers():
+    recon = [
+        r for r in load_jsonl(RECON)
+        if int(r.get("horizon_hours", 0)) == FOCUS_HORIZON
+    ]
+    state = load_state()
+
+    by_agent = {}
+    for r in recon:
+        by_agent.setdefault(r.get("agent", "unknown"), []).append(r)
+
+    for agent, rows in by_agent.items():
+        rows = rows[-LOOKBACK_RUNS:]
+
+        realized = [float(r.get("realized_pnl_bps", 0.0)) for r in rows]
+        abs_err = [float(r.get("abs_error_bps", 0.0)) for r in rows if r.get("abs_error_bps") is not None]
+
+        mult = float(state.get(agent, {}).get("confidence_multiplier", 1.0))
+
+        # ---- PnL-based decay / reward ----
+        recent_pnl = sum(realized[-5:]) if realized else 0.0
+
+        if recent_pnl < PNL_BAD:
+            mult *= DECAY_BAD
+        elif recent_pnl > PNL_GOOD:
+            mult *= BOOST_GOOD
+
+        # ---- Model error-based decay (primary) ----
+        if abs_err:
+            avg_err = mean(abs_err[-5:])  # recent error
+            if avg_err > ERROR_HARD:
+                mult *= DECAY_ERROR
+            elif avg_err > ERROR_SOFT:
+                # soft decay proportional to error
+                factor = 1.0 - min(0.10, (avg_err - ERROR_SOFT) / ERROR_SOFT * 0.10)
+                mult *= factor
+
+        # ---- Clamp ----
+        mult = max(MIN_MULT, min(mult, MAX_MULT))
+
+        state[agent] = {
+            "confidence_multiplier": round(mult, 4),
+            "updated_at": datetime.now(timezone.utc)
+                .isoformat()
+                .replace("+00:00", "Z"),
+            "horizon_hours": FOCUS_HORIZON,
+            "recent_pnl_bps": round(recent_pnl, 2),
+            "avg_abs_error_bps": round(mean(abs_err[-5:]), 2) if abs_err else None,
+        }
+
+    save_state(state)
+    return state
+
+def get_confidence_multiplier(agent: str) -> float:
+    state = load_state()
+    return float(state.get(agent, {}).get("confidence_multiplier", 1.0))
+
+if __name__ == "__main__":
+    print(json.dumps(update_confidence_multipliers(), indent=2))
+
+🧠 Why this is quant-correct
+Old behavior
+
+Penalized only directional loss
+
+Could not distinguish:
+
+bad market
+
+bad model
+
+Over-rewarded lucky noise
+
+New behavior
+
+Penalizes model error first
+
+Separates:
+
+“we were wrong” vs “market moved against us”
+
+Smooth decay → stable allocations
+
+Fully replayable + auditable
+
+This matches how real multi-PM platforms manage conviction decay.

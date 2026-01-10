@@ -1,0 +1,24 @@
+{
+  "module": "agents.equity_momentum_agent",
+  "callable": "EquityMomentumAgent.analyze",
+  "suite": "eval/suites/equity_momentum.jsonl",
+  "results": [
+    {
+      "id": "equity_smoke",
+      "ok": true,
+      "latency_s": 0.0,
+      "output": [
+        {
+          "symbol": "AAPL",
+          "momentum_score": 0.85,
+          "signal": "strong_buy",
+          "rsi": 62.5,
+          "macd_signal": "bullish",
+          "timestamp": "2026-01-07T23:38:07.032873Z"
+        }
+      ],
+      "error": null,
+      "reward": 0.1
+    }
+  ]
+}

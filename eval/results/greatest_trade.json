@@ -1,0 +1,27 @@
+{
+  "module": "agents.greatest_trade_agent",
+  "callable": "GreatestTradeAgent.analyze",
+  "suite": "eval/suites/greatest_trade.jsonl",
+  "results": [
+    {
+      "id": "gt_smoke",
+      "ok": true,
+      "latency_s": 0.0,
+      "output": [
+        {
+          "signal_type": "bubble_risk",
+          "sector": "real_estate",
+          "risk_level": "elevated",
+          "confidence": 0.68,
+          "evidence": [
+            "yield spread widening",
+            "CDS pricing anomaly"
+          ],
+          "timestamp": "2026-01-07T23:38:07.033352Z"
+        }
+      ],
+      "error": null,
+      "reward": 0.1
+    }
+  ]
+}

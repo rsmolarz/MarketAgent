@@ -1,0 +1,26 @@
+{
+  "module": "agents.market_correction_agent",
+  "callable": "MarketCorrectionAgent.analyze",
+  "suite": "eval/suites/market_correction.jsonl",
+  "results": [
+    {
+      "id": "mc_smoke",
+      "ok": true,
+      "latency_s": 0.0,
+      "output": [
+        {
+          "signal": "correction_warning",
+          "probability": 0.45,
+          "indicators": [
+            "RSI overbought",
+            "VIX elevated"
+          ],
+          "severity": "moderate",
+          "timestamp": "2026-01-07T23:38:07.033713Z"
+        }
+      ],
+      "error": null,
+      "reward": 0.1
+    }
+  ]
+}

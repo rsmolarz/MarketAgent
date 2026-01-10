@@ -1,0 +1,1 @@
+{"id":"gt_smoke","input":{},"schema":{"type":"list","item":{"type":"dict","required_keys":["signal_type","sector","risk_level"]}}}

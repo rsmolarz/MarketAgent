@@ -1,0 +1,354 @@
+1️⃣ What we cluster (important)
+
+We do NOT cluster raw prices.
+
+We cluster agent signal behavior:
+
+timing similarity
+
+direction
+
+realized forward returns
+
+Each agent becomes a signal vector over time.
+
+2️⃣ Minimal data contract (already satisfied)
+
+Your backtest engine already produces something like:
+
+{
+  "agent": "MarketCorrectionAgent",
+  "asof": "2018-10-01",
+  "symbol": "SPY",
+  "direction": -1,
+  "forward_return_20d": -0.08
+}
+
+
+That’s enough.
+
+3️⃣ signal_clustering.py
+
+Drop this in meta/ or evaluation/.
+
+"""
+Signal Clustering Engine
+
+Identifies redundant agents by clustering signal behavior.
+"""
+
+import numpy as np
+from typing import Dict, List
+from collections import defaultdict
+from sklearn.cluster import AgglomerativeClustering
+
+
+class SignalClusterer:
+    def __init__(self, corr_threshold: float = 0.75):
+        self.corr_threshold = corr_threshold
+
+    def build_agent_vectors(self, records: List[dict]) -> Dict[str, np.ndarray]:
+        """
+        Convert backtest records into per-agent vectors
+        """
+        series = defaultdict(list)
+
+        for r in records:
+            val = r.get("forward_return_20d")
+            if val is not None:
+                series[r["agent"]].append(val)
+
+        # Align lengths
+        min_len = min(len(v) for v in series.values())
+        vectors = {
+            k: np.array(v[-min_len:]) for k, v in series.items()
+        }
+
+        return vectors
+
+    def cluster(self, vectors: Dict[str, np.ndarray]) -> Dict[int, List[str]]:
+        """
+        Cluster agents by correlation similarity
+        """
+        agents = list(vectors.keys())
+        X = np.vstack([vectors[a] for a in agents])
+
+        corr = np.corrcoef(X)
+        distance = 1 - corr
+
+        model = AgglomerativeClustering(
+            affinity="precomputed",
+            linkage="average",
+            distance_threshold=1 - self.corr_threshold,
+            n_clusters=None
+        )
+
+        labels = model.fit_predict(distance)
+
+        clusters = defaultdict(list)
+        for agent, label in zip(agents, labels):
+            clusters[label].append(agent)
+
+        return dict(clusters)
+
+4️⃣ Selecting the “winner” per cluster
+
+Add this small helper (same file or allocator):
+
+def select_representatives(clusters, agent_scores):
+    """
+    Keep best-performing agent per cluster
+    """
+    winners = {}
+    losers = set()
+
+    for cid, agents in clusters.items():
+        ranked = sorted(
+            agents,
+            key=lambda a: agent_scores.get(a, -1),
+            reverse=True
+        )
+        winners[cid] = ranked[0]
+        losers.update(ranked[1:])
+
+    return winners, losers
+
+5️⃣ Plug into Capital Allocator (2 lines of logic)
+
+After you compute agent scores:
+
+clusterer = SignalClusterer()
+vectors = clusterer.build_agent_vectors(backtest_records)
+clusters = clusterer.cluster(vectors)
+
+winners, redundant = select_representatives(clusters, agent_scores)
+
+
+Then:
+
+if agent_name in redundant:
+    weight *= 0.25   # or 0.0 if you want hard pruning
+    reason = "cluster_redundant"
+
+
+That’s it.
+
+6️⃣ Example outcome (realistic)
+Cluster	Agents	Action
+0	MarketCorrection, EquityMomentum	keep MarketCorrection, fade other
+1	WhaleWallet, CryptoFunding	keep WhaleWallet
+2	GeopoliticalRisk	standalone
+3	ArbitrageFinder	standalone
+
+Capital is focused, not diluted.
+
+7️⃣ Why this matters more than decay alone
+
+Decay answers:
+
+“Is this agent working recently?”
+
+Clustering answers:
+
+“Is this agent adding information?”
+
+You need both.
+
+This is exactly how multi-signal hedge funds avoid internal crowding.
+
+What you have now (important)
+
+You now possess:
+
+Backtest engine ✔
+
+Forward-return labeling ✔
+
+Decay curves ✔
+
+Capital allocator ✔
+
+Redundancy pruning ✔
+
+You are no longer “running agents”.
+
+You are running a self-optimizing signal portfolio.
+
+Next highest-ROI step (optional but powerful)
+
+Regime detection overlay
+→ see which clusters work in which macro regimes
+
+Say “Regime overlay next” and I’ll add it cleanly without touching agents.
+
+Regime detection overlay
+→ see which clusters work in which macro regimes
+
+Say “Regime overlay next” and I’ll add it cleanly without touching agents.  please add this
+
+Below is a clean, additive Regime Detection Overlay that:
+
+does not modify any agents
+
+plugs into your existing backtest records
+
+works with signal clustering + allocator
+
+explains why agents/clusters work or fail
+
+This is institutional-grade and deliberately simple.
+
+🎯 What this solves
+
+Instead of asking:
+
+“Is this agent good?”
+
+You now ask:
+
+“When is this agent good?”
+
+That’s the difference between:
+
+disabling agents ❌
+
+context-aware allocation ✅
+
+1️⃣ Define regimes (minimal + robust)
+
+We use macro-observable regimes that are historically stable:
+
+Regime	Definition
+Risk-On	SPY ↑, VIX ↓
+Risk-Off	SPY ↓, VIX ↑
+Volatility Spike	VIX > percentile
+Rates Rising	10Y ↑ fast
+Rates Falling	10Y ↓ fast
+
+No ML. No black boxes.
+
+2️⃣ regime_classifier.py
+
+Drop into evaluation/ or meta/.
+
+"""
+Regime Detection Overlay
+
+Classifies macro market regimes using observable indicators.
+"""
+
+import pandas as pd
+import numpy as np
+
+
+class RegimeClassifier:
+    def __init__(
+        self,
+        vix_high=25,
+        vix_low=18,
+        rate_move_threshold=0.5
+    ):
+        self.vix_high = vix_high
+        self.vix_low = vix_low
+        self.rate_move_threshold = rate_move_threshold
+
+    def classify(self, spy_df, vix_df, tnx_df):
+        """
+        Returns regime label for each date
+        """
+        regimes = {}
+
+        dates = spy_df.index.intersection(vix_df.index).intersection(tnx_df.index)
+
+        for dt in dates:
+            spy_ret = spy_df.loc[:dt]['Close'].pct_change(20).iloc[-1]
+            vix = vix_df.loc[dt]['Close']
+            rate_20d = tnx_df.loc[:dt]['Close'].diff(20).iloc[-1]
+
+            if vix >= self.vix_high and spy_ret < 0:
+                regime = "risk_off"
+            elif vix <= self.vix_low and spy_ret > 0:
+                regime = "risk_on"
+            elif vix >= self.vix_high:
+                regime = "vol_spike"
+            elif rate_20d >= self.rate_move_threshold:
+                regime = "rates_rising"
+            elif rate_20d <= -self.rate_move_threshold:
+                regime = "rates_falling"
+            else:
+                regime = "neutral"
+
+            regimes[dt] = regime
+
+        return regimes
+
+3️⃣ Attach regime labels to backtest records
+
+One small enrichment step.
+
+def attach_regimes(backtest_records, regime_map):
+    for r in backtest_records:
+        r["regime"] = regime_map.get(r["asof"], "unknown")
+    return backtest_records
+
+
+No agent changes. No scheduler changes.
+
+4️⃣ Compute regime performance by agent or cluster
+from collections import defaultdict
+import numpy as np
+
+
+def regime_performance(records, level="agent"):
+    stats = defaultdict(list)
+
+    for r in records:
+        key = (r[level], r["regime"])
+        stats[key].append(r["forward_return_20d"])
+
+    summary = {}
+    for (name, regime), vals in stats.items():
+        summary[(name, regime)] = {
+            "mean_return": float(np.mean(vals)),
+            "hit_rate": float((np.array(vals) > 0).mean()),
+            "count": len(vals)
+        }
+
+    return summary
+
+
+You can pass level="cluster" instead.
+
+5️⃣ Plug into allocator (1 conditional)
+
+Inside capital allocation:
+
+if agent_regime_perf[(agent, current_regime)]["mean_return"] < 0:
+    weight *= 0.3
+    reason = "bad_in_regime"
+
+
+That’s it.
+
+6️⃣ What you’ll now see (real insight)
+
+Example output:
+
+Agent	Regime	Mean Return
+MarketCorrection	risk_off	+6.4%
+MarketCorrection	risk_on	-2.1%
+EquityMomentum	risk_on	+4.8%
+EquityMomentum	risk_off	-5.9%
+GeopoliticalRisk	vol_spike	+7.2%
+
+This explains everything you were seeing intuitively.
+
+7️⃣ Why this matters more than ML
+
+regimes persist for years
+
+models fail silently
+
+rules fail loudly (good)
+
+This is how macro funds allocate without overfitting.

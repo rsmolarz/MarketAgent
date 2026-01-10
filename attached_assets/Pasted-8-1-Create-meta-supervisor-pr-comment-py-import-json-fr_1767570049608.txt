@@ -1,0 +1,241 @@
+8.1 Create: meta_supervisor/pr_comment.py
+import json
+from pathlib import Path
+from datetime import datetime
+
+def render_pr_comment(report: dict) -> str:
+    meta = report.get("meta", {})
+    agents = report.get("agents", {})
+    fleet = report.get("fleet", {})
+
+    lines = []
+    lines.append("## 🤖 Meta-Agent Review")
+    lines.append(f"_Generated: {meta.get('generated_at','')} | Severity: **{meta.get('severity','low')}**_")
+    lines.append("")
+
+    if fleet:
+        lines.append("### Portfolio")
+        lines.append(
+            f"- PnL (bps): **{fleet.get('portfolio_pnl_bps')}** | "
+            f"Hit rate: **{fleet.get('portfolio_hit_rate')}** | "
+            f"Max DD (bps): **{fleet.get('portfolio_max_drawdown_bps')}**"
+        )
+        lines.append("")
+
+    lines.append("### Agents")
+    lines.append("| Agent | Runs | Avg Latency (ms) | Alpha Signals | Decision |")
+    lines.append("|------|------|------------------|---------------|----------|")
+
+    for name, a in agents.items():
+        lines.append(
+            f"| `{name}` | {a.get('runs',0)} | {a.get('avg_latency_ms','')} | "
+            f"{a.get('alpha_signals',0)} | {a.get('decision','HOLD')} |"
+        )
+
+    lines.append("")
+    lines.append("<details><summary>Raw Meta Report</summary>\n```json")
+    lines.append(json.dumps(report, indent=2))
+    lines.append("```\n</details>")
+
+    return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    report = json.loads(Path("meta_supervisor/reports/meta_report.json").read_text())
+    print(render_pr_comment(report))
+
+8.2 GitHub Action to post comment
+
+Create: .github/workflows/meta_pr_comment.yml
+
+name: Meta-Agent PR Comment
+
+on:
+  pull_request:
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: |
+          python meta_supervisor/build_meta_report.py
+          python meta_supervisor/pr_comment.py > pr_comment.txt
+
+      - name: Post PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body-file pr_comment.txt
+
+
+✅ Result: every PR gets a Meta-Agent review comment.
+
+PHASE 9 — PROMOTION GATES (sandbox → prod)
+
+No auto-merge. PR only when safe.
+
+9.1 Create: meta_supervisor/promotion_gate.py
+def promotion_allowed(report: dict) -> tuple[bool, list[str]]:
+    reasons = []
+    fleet = report.get("fleet", {})
+    agents = report.get("agents", {})
+
+    if fleet.get("portfolio_pnl_bps", 0) <= 0:
+        reasons.append("Portfolio PnL ≤ 0")
+
+    for name, a in agents.items():
+        if a.get("decision") == "KILL":
+            reasons.append(f"{name} marked KILL")
+
+    return (len(reasons) == 0), reasons
+
+9.2 Promotion workflow
+
+Create: .github/workflows/auto_promote.yml
+
+name: Auto Promote sandbox → prod
+
+on:
+  push:
+    branches: [ sandbox ]
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - run: |
+          python meta_supervisor/build_meta_report.py
+
+      - name: Gate promotion
+        id: gate
+        run: |
+          python - << 'EOF'
+          import json
+          from meta_supervisor.promotion_gate import promotion_allowed
+          r=json.load(open("meta_supervisor/reports/meta_report.json"))
+          ok,reasons=promotion_allowed(r)
+          print("eligible=",ok)
+          print("reasons=",reasons)
+          with open("$GITHUB_OUTPUT","a") as f:
+              f.write(f"eligible={str(ok).lower()}\n")
+          EOF
+
+      - name: Create PR
+        if: steps.gate.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr create \
+            --base prod \
+            --head sandbox \
+            --title "Auto-promotion: Meta-Agent gates passed" \
+            --body "Meta-Agent gates passed."
+
+PHASE 10 — AGENT RETIREMENT SCORING
+
+This feeds KILL and DELETE decisions.
+
+10.1 Create: meta_supervisor/retirement.py
+def retirement_score(agent: dict) -> float:
+    score = 0.0
+
+    if agent.get("alpha_signals", 0) == 0:
+        score += 25
+
+    if agent.get("avg_latency_ms", 0) > 5000:
+        score += 20
+
+    if agent.get("runs", 0) > 50 and agent.get("alpha_signals", 0) < 3:
+        score += 40
+
+    return min(score, 100.0)
+
+def retirement_label(score: float) -> str:
+    if score >= 80:
+        return "RETIRE"
+    if score >= 50:
+        return "DEPRECATE"
+    return "KEEP"
+
+10.2 Integrate into build_meta_report.py
+
+Add after computing agent stats:
+
+from meta_supervisor.retirement import retirement_score, retirement_label
+
+score = retirement_score(report["agents"][agent])
+report["agents"][agent]["retirement_score"] = score
+report["agents"][agent]["retirement_action"] = retirement_label(score)
+
+if score >= 80:
+    report["agents"][agent]["decision"] = "KILL"
+
+PHASE 11 — PORTFOLIO-LEVEL ATTRIBUTION
+
+This aggregates alpha across agents.
+
+11.1 Create: meta_supervisor/portfolio.py
+def portfolio_from_alpha(events: list[dict]) -> dict:
+    if not events:
+        return {
+            "portfolio_pnl_bps": 0,
+            "portfolio_hit_rate": 0,
+            "portfolio_max_drawdown_bps": 0,
+        }
+
+    pnl = []
+    for e in events:
+        pnl.append(float(e.get("realized_pnl_bps", 0)))
+
+    total = sum(pnl)
+    hit = sum(1 for p in pnl if p > 0) / max(len(pnl), 1)
+
+    eq = 0
+    peak = 0
+    max_dd = 0
+    for p in pnl:
+        eq += p
+        peak = max(peak, eq)
+        max_dd = min(max_dd, eq - peak)
+
+    return {
+        "portfolio_pnl_bps": round(total, 2),
+        "portfolio_hit_rate": round(hit, 3),
+        "portfolio_max_drawdown_bps": round(max_dd, 2),
+    }
+
+11.2 Integrate into Meta report
+
+In build_meta_report.py:
+
+from meta_supervisor.portfolio import portfolio_from_alpha
+
+fleet = portfolio_from_alpha(alpha)
+report["fleet"] = fleet
+report["meta"] = {
+    "generated_at": datetime.utcnow().isoformat()+"Z",
+    "severity": "high" if fleet["portfolio_pnl_bps"] < 0 else "low"
+}

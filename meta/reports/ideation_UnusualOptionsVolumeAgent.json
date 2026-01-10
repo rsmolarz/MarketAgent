@@ -1,0 +1,94 @@
+{
+  "agent": {
+    "class_name": "UnusualOptionsVolumeAgent",
+    "module_slug": "unusual_options_volume_agent",
+    "description": "Detects unusual spikes in options trading volume relative to historical averages for equities, signaling potential informed trading or impending price moves.",
+    "category": "equities",
+    "data_sources": [
+      {
+        "name": "OptionsVolumeClient",
+        "type": "existing_client",
+        "details": "Fetches historical and intraday options volume data per symbol."
+      }
+    ],
+    "detection_logic": [
+      "For each equity symbol, retrieve historical average daily options volume over the past 30 trading days.",
+      "Retrieve current day intraday options volume aggregated up to the current time.",
+      "Calculate the ratio of current intraday options volume to the expected volume based on historical average scaled to the same intraday time window.",
+      "Flag symbols where this ratio exceeds a configurable threshold (e.g., 3x).",
+      "Filter out symbols with low average volume to reduce noise.",
+      "Generate findings with metadata including volume ratio, current volume, historical average, and timestamp."
+    ],
+    "parameters": {
+      "thresholds": {
+        "volume_spike_ratio": 3,
+        "min_historical_avg_volume": 1000
+      },
+      "cadence_minutes_default": 60
+    },
+    "output_examples": [
+      {
+        "title": "Unusual Options Volume Spike Detected for AAPL",
+        "description": "Options trading volume for AAPL is currently 4.5 times higher than its historical average intraday volume, indicating potential informed trading activity.",
+        "severity": "medium",
+        "confidence": 0.85,
+        "metadata": {
+          "volume_ratio": 4.5,
+          "current_volume": 45000,
+          "historical_avg_volume": 10000,
+          "timestamp": "2026-01-07T15:30:00Z"
+        },
+        "symbol": "AAPL",
+        "market_type": "equities"
+      }
+    ]
+  },
+  "eval": {
+    "suite_name": "UnusualOptionsVolumeAgent_smoke",
+    "cases": [
+      {
+        "id": "basic_spike_detection",
+        "input_fixture": {
+          "historical_avg_volume": 10000,
+          "intraday_volume": 35000,
+          "time_elapsed_ratio": 0.5
+        },
+        "expected_schema": {
+          "type": "list",
+          "item_required_keys": [
+            "title",
+            "severity",
+            "confidence",
+            "metadata",
+            "symbol",
+            "market_type"
+          ]
+        }
+      },
+      {
+        "id": "no_spike_below_threshold",
+        "input_fixture": {
+          "historical_avg_volume": 15000,
+          "intraday_volume": 20000,
+          "time_elapsed_ratio": 0.5
+        },
+        "expected_schema": {
+          "type": "list",
+          "item_required_keys": []
+        }
+      }
+    ],
+    "offline_adapter_plan": "Use file fixtures with historical and intraday options volume data to simulate volume ratios. Mock OptionsVolumeClient to return these fixtures during CI tests."
+  },
+  "safety": {
+    "no_execution": true,
+    "protected_paths": [
+      ".github/",
+      "trading/",
+      "secrets/",
+      "infra/"
+    ],
+    "max_files_changed": 4,
+    "max_lines_changed": 250
+  }
+}

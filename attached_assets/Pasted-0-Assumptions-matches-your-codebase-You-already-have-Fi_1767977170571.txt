@@ -1,0 +1,404 @@
+0) Assumptions (matches your codebase)
+
+You already have:
+
+Finding + AgentStatus in DB
+
+Scheduler running inside app.py (APSscheduler)
+
+Whitelist email infrastructure (services.daily_email_service, notifiers/email_meta.py, etc.)
+
+You want:
+
+When uncertainty is high, show “provisional” banner
+
+If critical finding AND council consensus = ACT, send email to whitelist
+
+Detect regime transition early when uncertainty spikes
+
+Learn “who fails first” under uncertainty/regime change
+
+Everything below is additive and doesn’t require rewriting agents.
+
+1️⃣ Uncertainty-conditioned alerts
+1A) Data model: store uncertainty events
+
+Add a table (simple, durable). In models.py add:
+
+class UncertaintyEvent(db.Model):
+    __tablename__ = "uncertainty_event"
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+    level = db.Column(db.Float, default=0.0)  # 0..1 overall system
+    label = db.Column(db.String(64), default="normal")  # normal/risk_off/transition/shock
+    details = db.Column(db.JSON, default={})  # per-agent uncertainty, council votes, etc.
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "created_at": self.created_at.isoformat(),
+            "level": float(self.level),
+            "label": self.label,
+            "details": self.details or {}
+        }
+
+
+Run your DB init/migration approach (since you’re using db.create_all() style, it should create this table automatically).
+
+1B) “All signals provisional” banner on dashboard
+Add a lightweight endpoint
+
+In app.py (or your dashboard blueprint), add:
+
+from models import UncertaintyEvent
+
+@app.route("/api/uncertainty/latest")
+def latest_uncertainty():
+    ev = UncertaintyEvent.query.order_by(UncertaintyEvent.created_at.desc()).first()
+    if not ev:
+        return {"level": 0.0, "label": "normal", "created_at": None}
+    return ev.to_dict()
+
+Update dashboard template
+
+In templates/dashboard.html, add near the top:
+
+<div id="uncertaintyBanner" style="display:none; padding:10px; border-radius:8px; margin-bottom:12px;">
+  <strong>All signals provisional</strong>
+  <span id="uncertaintyText"></span>
+</div>
+
+<script>
+async function loadUncertaintyBanner() {
+  const r = await fetch("/api/uncertainty/latest");
+  const data = await r.json();
+
+  const banner = document.getElementById("uncertaintyBanner");
+  const txt = document.getElementById("uncertaintyText");
+
+  const level = Number(data.level || 0);
+  if (level >= 0.7 || (data.label && data.label !== "normal")) {
+    banner.style.display = "block";
+    banner.style.background = "rgba(255, 165, 0, 0.15)";
+    banner.style.border = "1px solid rgba(255, 165, 0, 0.35)";
+    txt.textContent = ` — uncertainty=${level.toFixed(2)} (${data.label || "elevated"})`;
+  } else {
+    banner.style.display = "none";
+  }
+}
+loadUncertaintyBanner();
+setInterval(loadUncertaintyBanner, 15000);
+</script>
+
+1C) Email flag when ACT consensus on critical finding
+
+We need a council runner (3 LLMs + consensus), then on ACT + critical => email to whitelist.
+
+Define a consensus result schema
+
+Create: services/llm_council.py
+
+from typing import Dict, Any, List
+import time
+
+# You will implement these using your existing LLM client wrappers:
+from services.llm_clients import analyze_with_gpt, analyze_with_claude, analyze_with_gemini
+
+def consensus_decision(votes: List[str]) -> str:
+    """
+    votes: list of {"ACT","WATCH","IGNORE"}
+    """
+    counts = {"ACT": 0, "WATCH": 0, "IGNORE": 0}
+    for v in votes:
+        if v in counts:
+            counts[v] += 1
+    # majority
+    if counts["ACT"] >= 2:
+        return "ACT"
+    if counts["WATCH"] >= 2:
+        return "WATCH"
+    return "IGNORE"
+
+def council_analyze_finding(finding_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Returns:
+      {
+        "decision": "ACT|WATCH|IGNORE",
+        "uncertainty": float(0..1),
+        "votes": [{"model":"...", "vote":"ACT", "confidence":0.72, "rationale":"..."}],
+        "latency_ms": int
+      }
+    """
+    t0 = time.time()
+
+    gpt = analyze_with_gpt(finding_payload)
+    claude = analyze_with_claude(finding_payload)
+    gemini = analyze_with_gemini(finding_payload)
+
+    votes = [gpt["vote"], claude["vote"], gemini["vote"]]
+    decision = consensus_decision(votes)
+
+    # uncertainty = 1 - agreement_ratio
+    # 3/3 agree => 0.0 uncertainty, 2/3 agree => 0.33, all different => 0.67
+    uniq = len(set(votes))
+    if uniq == 1:
+        uncertainty = 0.0
+    elif uniq == 2:
+        uncertainty = 1.0/3.0
+    else:
+        uncertainty = 2.0/3.0
+
+    latency_ms = int((time.time() - t0) * 1000)
+
+    return {
+        "decision": decision,
+        "uncertainty": float(uncertainty),
+        "votes": [
+            {"model": "gpt", "vote": gpt["vote"], "confidence": gpt.get("confidence", 0.5), "rationale": gpt.get("rationale", "")},
+            {"model": "claude", "vote": claude["vote"], "confidence": claude.get("confidence", 0.5), "rationale": claude.get("rationale", "")},
+            {"model": "gemini", "vote": gemini["vote"], "confidence": gemini.get("confidence", 0.5), "rationale": gemini.get("rationale", "")},
+        ],
+        "latency_ms": latency_ms,
+    }
+
+Implement minimal client wrappers
+
+Create services/llm_clients.py with placeholders that call your actual integrations:
+
+def analyze_with_gpt(payload):
+    # call your GPT analysis endpoint
+    return {"vote": "WATCH", "confidence": 0.6, "rationale": "placeholder"}
+
+def analyze_with_claude(payload):
+    return {"vote": "WATCH", "confidence": 0.6, "rationale": "placeholder"}
+
+def analyze_with_gemini(payload):
+    return {"vote": "WATCH", "confidence": 0.6, "rationale": "placeholder"}
+
+Auto-run council when a critical finding is saved
+
+In scheduler.py inside _run_agent() after storing findings (right before db.session.commit() or immediately after commit), add:
+
+from services.llm_council import council_analyze_finding
+from services.alerts import maybe_send_act_email
+from models import UncertaintyEvent
+
+
+After you db.session.add(finding) loop, once committed, fetch the critical findings created in that run and run council:
+
+db.session.commit()
+
+# Auto council analysis on critical findings
+critical = Finding.query.filter_by(agent_name=agent_name).order_by(Finding.timestamp.desc()).limit(10).all()
+critical = [f for f in critical if (f.severity or "").lower() == "critical"]
+
+for f in critical[:3]:  # cap per run
+    payload = {
+        "id": f.id,
+        "title": f.title,
+        "description": f.description,
+        "severity": f.severity,
+        "symbol": f.symbol,
+        "market_type": f.market_type,
+        "metadata": f.finding_metadata or {},
+        "timestamp": f.timestamp.isoformat() if f.timestamp else None,
+        "agent": f.agent_name,
+    }
+    res = council_analyze_finding(payload)
+
+    # persist uncertainty event
+    ue = UncertaintyEvent(
+        level=res["uncertainty"],
+        label="transition" if res["uncertainty"] >= 0.67 else "normal",
+        details={"finding_id": f.id, "agent": agent_name, "council": res}
+    )
+    db.session.add(ue)
+    db.session.commit()
+
+    # ACT consensus => email whitelist
+    maybe_send_act_email(f, res)
+
+Email sender
+
+Create services/alerts.py:
+
+from notifiers.email_meta import send_meta_email
+
+def maybe_send_act_email(finding, council_result):
+    if (finding.severity or "").lower() != "critical":
+        return
+    if council_result.get("decision") != "ACT":
+        return
+
+    subject = f"ACT: {finding.title} ({finding.symbol or 'N/A'})"
+    text = (
+        f"Critical finding triggered ACT consensus.\n\n"
+        f"Title: {finding.title}\n"
+        f"Symbol: {finding.symbol}\n"
+        f"Market: {finding.market_type}\n"
+        f"Severity: {finding.severity}\n\n"
+        f"Description:\n{finding.description}\n\n"
+        f"Council:\n{council_result}\n"
+    )
+    html = "<pre>" + text + "</pre>"
+    send_meta_email(subject, text, html)
+
+2️⃣ Regime transition early-warning detector
+
+Goal: detect “uncertainty spike” BEFORE regime flip.
+
+2A) Simple detector
+
+Create regime/transition_detector.py:
+
+from datetime import datetime, timedelta
+from models import UncertaintyEvent
+
+def detect_transition(window_minutes=60, spike_threshold=0.5) -> dict:
+    """
+    If uncertainty jumped materially in the last hour, flag transition.
+    """
+    cutoff = datetime.utcnow() - timedelta(minutes=window_minutes)
+    evs = UncertaintyEvent.query.filter(UncertaintyEvent.created_at >= cutoff).order_by(UncertaintyEvent.created_at.asc()).all()
+    if len(evs) < 3:
+        return {"ok": True, "transition": False, "reason": "insufficient_events"}
+
+    levels = [float(e.level or 0.0) for e in evs]
+    delta = max(levels) - min(levels)
+
+    transition = delta >= spike_threshold or (levels[-1] >= 0.67)
+    return {
+        "ok": True,
+        "transition": bool(transition),
+        "delta": float(delta),
+        "current": float(levels[-1]),
+        "n": len(levels),
+    }
+
+2B) Schedule it
+
+In scheduler.init_app() add:
+
+self.schedule_regime_transition_watch()
+
+
+Add method:
+
+def schedule_regime_transition_watch(self):
+    try:
+        self.scheduler.add_job(
+            func=self._run_regime_transition_watch,
+            trigger=IntervalTrigger(minutes=5),
+            id="regime_transition_watch",
+            replace_existing=True
+        )
+        logger.info("Scheduled regime transition watch every 5 minutes")
+    except Exception as e:
+        logger.error(f"Error scheduling regime transition watch: {e}")
+
+def _run_regime_transition_watch(self):
+    with self.app.app_context():
+        from regime.transition_detector import detect_transition
+        res = detect_transition(window_minutes=60, spike_threshold=0.5)
+        if res.get("transition"):
+            logger.warning(f"REGIME TRANSITION EARLY WARNING: {res}")
+
+
+If you also want email on transition warning, reuse send_meta_email and add a threshold (recommended if delta>0.7).
+
+3️⃣ LLM council meta-learning: “who fails first”
+
+We define “failure” as: agent produces a finding that later gets council decision = IGNORE (false alarm) OR ACT that didn’t pay (if you wire realized returns later). For now, we do the council-based version since it’s available immediately.
+
+3A) Store per-agent council outcomes
+
+Add model AgentCouncilStat (models.py):
+
+class AgentCouncilStat(db.Model):
+    __tablename__ = "agent_council_stat"
+    id = db.Column(db.Integer, primary_key=True)
+    agent_name = db.Column(db.String(128), index=True)
+    regime = db.Column(db.String(64), index=True, default="unknown")
+    votes_act = db.Column(db.Integer, default=0)
+    votes_watch = db.Column(db.Integer, default=0)
+    votes_ignore = db.Column(db.Integer, default=0)
+    last_updated = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.UniqueConstraint("agent_name", "regime", name="uq_agent_regime"),
+    )
+
+3B) Update stats after each council result
+
+Create meta/council_learning.py:
+
+from datetime import datetime
+from models import AgentCouncilStat, db
+from regime.confidence import get_cached_regime
+
+def record_council_outcome(agent_name: str, decision: str):
+    regime = get_cached_regime() or "unknown"
+    row = AgentCouncilStat.query.filter_by(agent_name=agent_name, regime=regime).first()
+    if not row:
+        row = AgentCouncilStat(agent_name=agent_name, regime=regime)
+        db.session.add(row)
+
+    if decision == "ACT":
+        row.votes_act += 1
+    elif decision == "WATCH":
+        row.votes_watch += 1
+    else:
+        row.votes_ignore += 1
+
+    row.last_updated = datetime.utcnow()
+    db.session.commit()
+
+def fail_first_ranking(min_n=10):
+    """
+    Returns agents most likely to be ignored in this regime.
+    """
+    regime = get_cached_regime() or "unknown"
+    rows = AgentCouncilStat.query.filter_by(regime=regime).all()
+    ranked = []
+    for r in rows:
+        n = r.votes_act + r.votes_watch + r.votes_ignore
+        if n < min_n:
+            continue
+        fail_rate = r.votes_ignore / n
+        ranked.append((fail_rate, n, r.agent_name))
+    ranked.sort(reverse=True)
+    return [{"agent": a, "fail_rate": fr, "n": n} for fr, n, a in ranked]
+
+
+Now in your _run_agent() council block, call:
+
+from meta.council_learning import record_council_outcome
+record_council_outcome(agent_name, res["decision"])
+
+3C) Use “fail-first” to degrade weights under uncertainty
+
+In your regime/rotation application, when uncertainty is high, apply a penalty to agents with high ignore-rate.
+
+Add to meta/substitution.py or a new file meta/fail_first_penalty.py:
+
+from meta.council_learning import fail_first_ranking
+
+def apply_fail_first_penalty(weights: dict, uncertainty_level: float) -> dict:
+    if uncertainty_level < 0.67:
+        return weights
+
+    ranking = fail_first_ranking(min_n=10)
+    # penalize top 3 most failure-prone
+    for item in ranking[:3]:
+        a = item["agent"]
+        if a in weights:
+            weights[a] *= 0.5
+    return weights
+
+
+Wire inside _update_regime_weights() after substitution:
+
+from meta.fail_first_penalty import apply_fail_first_penalty
+
+system_uncertainty = max(uncertainty.values()) if uncertainty else 0.0
+_regime_weights = apply_fail_first_penalty(_regime_weights, system_uncertainty)

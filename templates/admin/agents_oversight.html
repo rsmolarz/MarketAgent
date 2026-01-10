@@ -1,0 +1,114 @@
+{% extends "admin_layout.html" %}
+
+{% block title %}AI Oversight - Admin{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="mb-0">
+                <i data-feather="cpu" class="me-2"></i>
+                AI Agent Oversight
+            </h2>
+            <p class="text-muted">Monitor and manage all AI agents</p>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body text-center">
+                    <h3>{{ agents|length }}</h3>
+                    <p class="mb-0">Total Agents</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body text-center">
+                    <h3>{{ agents|selectattr('is_active')|list|length }}</h3>
+                    <p class="mb-0">Active</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-dark">
+                <div class="card-body text-center">
+                    <h3>{{ quarantine|length if quarantine else 0 }}</h3>
+                    <p class="mb-0">Quarantined</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-secondary text-white">
+                <div class="card-body text-center">
+                    <h3>{{ telemetry|length if telemetry else 0 }}</h3>
+                    <p class="mb-0">With Telemetry</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header">
+            <h5 class="mb-0">Agent Registry</h5>
+        </div>
+        <div class="card-body">
+            {% if agents %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Agent Name</th>
+                            <th>Status</th>
+                            <th>Last Run</th>
+                            <th>Findings</th>
+                            <th>Interval</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for agent in agents %}
+                        <tr class="{% if agent.agent_name in quarantine %}table-warning{% endif %}">
+                            <td>
+                                <strong>{{ agent.agent_name }}</strong>
+                                {% if agent.agent_name in quarantine %}
+                                <span class="badge bg-warning ms-2">Quarantined</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if agent.is_active %}
+                                <span class="badge bg-success">Active</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if agent.last_run %}
+                                <small>{{ agent.last_run.strftime('%Y-%m-%d %H:%M') }}</small>
+                                {% else %}
+                                <small class="text-muted">Never</small>
+                                {% endif %}
+                            </td>
+                            <td>{{ agent.total_findings or 0 }}</td>
+                            <td>{{ agent.interval_minutes or '-' }} min</td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-info" disabled>
+                                    <i data-feather="activity"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5 text-muted">
+                <i data-feather="inbox" style="width: 48px; height: 48px;"></i>
+                <p class="mt-3">No agents registered yet.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

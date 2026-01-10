@@ -1,0 +1,403 @@
+1) Ensemble voting inside agent clusters
+Goal
+
+If agents are clustered (redundant / correlated), you don’t want 10 separate signals. You want one cluster-level vote (ACT / WATCH / IGNORE) with an aggregated confidence.
+
+services/cluster_ensemble.py
+from collections import Counter, defaultdict
+from typing import Dict, List, Any
+
+def _vote_to_score(v: str) -> float:
+    v = (v or "").upper()
+    if v == "ACT": return 1.0
+    if v == "WATCH": return 0.5
+    return 0.0  # IGNORE / unknown
+
+def ensemble_cluster_votes(
+    per_agent: Dict[str, Dict[str, Any]],
+    clusters: Dict[str, str],
+    agent_weights: Dict[str, float] | None = None
+) -> Dict[str, Dict[str, Any]]:
+    """
+    per_agent: {agent: {"vote":"ACT|WATCH|IGNORE", "confidence":0..1, "analysis": str}}
+    clusters: {agent: cluster_id}
+    agent_weights: optional weighting (e.g. regime weight * allocator weight)
+
+    Returns: {cluster_id: {"vote", "confidence", "members", "vote_breakdown"}}
+    """
+    agent_weights = agent_weights or {}
+    bucket = defaultdict(list)
+
+    for agent, payload in per_agent.items():
+        cid = clusters.get(agent, "unclustered")
+        w = float(agent_weights.get(agent, 1.0))
+        vote = (payload.get("vote") or "IGNORE").upper()
+        conf = float(payload.get("confidence") or 0.5)
+        bucket[cid].append((agent, vote, conf, w))
+
+    out = {}
+    for cid, rows in bucket.items():
+        # Weighted vote scoring
+        total_w = sum(w for _, _, _, w in rows) or 1.0
+        score = sum(_vote_to_score(vote) * conf * w for _, vote, conf, w in rows) / total_w
+
+        if score >= 0.72:
+            final_vote = "ACT"
+        elif score >= 0.45:
+            final_vote = "WATCH"
+        else:
+            final_vote = "IGNORE"
+
+        breakdown = Counter(v for _, v, _, _ in rows)
+        out[cid] = {
+            "vote": final_vote,
+            "confidence": round(score, 4),
+            "members": [a for a, _, _, _ in rows],
+            "vote_breakdown": dict(breakdown),
+        }
+    return out
+
+Where clusters come from
+
+If you already built correlation clustering: expose it as {agent_name: cluster_id} via /api/clusters or a cached file (e.g., meta/clusters.json). If not, you can start with “unclustered” and still work.
+
+2) Portfolio drawdown governor
+Goal
+
+If portfolio drawdown breaches a limit, you don’t want individual agents fighting it. You want a global risk governor that:
+
+reduces aggressiveness (soft)
+
+can hard-stop alpha emission (hard)
+
+logs a governance event
+
+services/drawdown_governor.py
+import json
+from pathlib import Path
+from datetime import datetime, timedelta
+
+EVENTS = Path("telemetry/events.jsonl")
+
+def load_portfolio_equity(window_n=5000):
+    if not EVENTS.exists():
+        return []
+
+    eq = 0.0
+    curve = []
+    for ln in EVENTS.read_text().splitlines()[-window_n:]:
+        try:
+            e = json.loads(ln)
+        except:
+            continue
+        # reward should be portfolio-PnL proxy (your system already logs reward)
+        r = e.get("reward")
+        ts = e.get("ts") or e.get("timestamp")
+        if r is None:
+            continue
+        eq += float(r)
+        curve.append({"t": ts, "equity": eq})
+    return curve
+
+def max_drawdown(curve):
+    peak = None
+    mdd = 0.0
+    for p in curve:
+        x = p["equity"]
+        if peak is None or x > peak:
+            peak = x
+        dd = x - peak
+        if dd < mdd:
+            mdd = dd
+    return mdd
+
+def drawdown_governor(dd_limit=-3.0):
+    """
+    dd_limit: in same units as reward-equity (e.g., bps or % equivalent).
+    Returns dict with:
+      - ok (bool)
+      - dd (float)
+      - risk_multiplier (0..1) soft throttle
+      - halt (bool) hard stop
+    """
+    curve = load_portfolio_equity()
+    if len(curve) < 50:
+        return {"ok": True, "dd": 0.0, "risk_multiplier": 1.0, "halt": False}
+
+    dd = max_drawdown(curve)
+
+    if dd <= dd_limit * 1.5:
+        # catastrophe
+        return {"ok": False, "dd": dd, "risk_multiplier": 0.0, "halt": True}
+
+    if dd <= dd_limit:
+        # soft throttle
+        # linearly scale from dd_limit..1.5*dd_limit
+        span = abs(dd_limit * 0.5) or 1.0
+        over = abs(dd) - abs(dd_limit)
+        mult = max(0.2, 1.0 - (over / span))
+        return {"ok": False, "dd": dd, "risk_multiplier": mult, "halt": False}
+
+    return {"ok": True, "dd": dd, "risk_multiplier": 1.0, "halt": False}
+
+Wire into scheduler (non-invasive)
+
+In AgentScheduler._run_agent, right before emit_alpha_signal(findings, agent_name):
+
+from services.drawdown_governor import drawdown_governor
+
+gov = drawdown_governor(dd_limit=-3.0)
+if gov["halt"]:
+    logger.warning(f"Portfolio HALT (drawdown={gov['dd']:.2f}). Blocking alpha emission.")
+    return
+
+
+And inside portfolio rebalancing (_rebalance_agent_allocation) pass gov["risk_multiplier"] into sizing (see optimizer below).
+
+3) Signal compression → single thesis
+Goal
+
+Convert many findings into one clean actionable thesis (what, why, what to do). This should run:
+
+for a symbol (SPY)
+
+for “last N minutes”
+
+or for cluster-level ensemble
+
+services/thesis_compressor.py
+from datetime import datetime, timedelta
+from models import Finding
+from services.council import call_llm  # you’ll implement call_llm in your council module
+
+THESIS_SYSTEM = """You are an IC memo writer.
+Given multiple alerts, produce ONE actionable thesis with:
+- Thesis (1–2 sentences)
+- Evidence (bullets: top 3 signals)
+- Action (ACT/WATCH/IGNORE + brief why)
+- Risk (1–2 bullets)
+Keep it tight. No fluff."""
+
+def build_thesis_for_findings(findings):
+    lines = []
+    for f in findings:
+        lines.append(
+            f"- [{f.severity.upper()}|{(f.confidence or 0.5):.2f}] {f.agent_name}: {f.title} ({f.symbol})"
+        )
+    prompt = "Recent alerts:\n" + "\n".join(lines)
+
+    # Use a single best model for memo writing (or LLM council later)
+    txt = call_llm(model="gpt", system=THESIS_SYSTEM, user=prompt, max_tokens=600)
+    return txt
+
+def fetch_recent_findings(db_session, hours=1, symbol=None):
+    q = db_session.query(Finding).filter(
+        Finding.timestamp >= datetime.utcnow() - timedelta(hours=hours)
+    ).order_by(Finding.timestamp.desc())
+    if symbol:
+        q = q.filter(Finding.symbol == symbol)
+    return q.limit(50).all()
+
+
+Optional: store thesis in DB table ThesisMemo if you want it on the dashboard; otherwise, return it from an API.
+
+4) Capital allocation optimizer (weights → sizing)
+Goal
+
+Convert:
+
+Meta weights (agent_schedule.json weight)
+
+Regime rotation weight (_regime_weights)
+
+Uncertainty/Drawdown multipliers
+into a final notional per agent.
+
+meta/capital_optimizer.py
+from typing import Dict
+
+def normalize(w: Dict[str, float]) -> Dict[str, float]:
+    s = sum(max(0.0, v) for v in w.values())
+    if s <= 0:
+        return {k: 0.0 for k in w}
+    return {k: max(0.0, v) / s for k, v in w.items()}
+
+def capital_allocate(
+    base_weights: Dict[str, float],
+    regime_weights: Dict[str, float],
+    allocator_scores: Dict[str, float] | None = None,
+    uncertainty_mult: float = 1.0,
+    drawdown_mult: float = 1.0,
+    total_notional: float = 100000.0,
+    min_ticket: float = 0.0
+) -> Dict[str, float]:
+    """
+    Returns: {agent: notional_usd}
+    """
+    allocator_scores = allocator_scores or {}
+
+    # Combine weights multiplicatively
+    combined = {}
+    for a, bw in base_weights.items():
+        rw = float(regime_weights.get(a, 0.0))
+        score_boost = 1.0 + max(-0.5, min(0.5, float(allocator_scores.get(a, 0.0))))
+        combined[a] = float(bw) * rw * score_boost
+
+    # Apply global governors
+    combined = {a: v * uncertainty_mult * drawdown_mult for a, v in combined.items()}
+    combined = normalize(combined)
+
+    notional = {a: combined[a] * total_notional for a in combined}
+    if min_ticket > 0:
+        notional = {a: (v if v >= min_ticket else 0.0) for a, v in notional.items()}
+        # renormalize after dropping small tickets
+        notional = normalize(notional)
+        notional = {a: notional[a] * total_notional for a in notional}
+
+    return notional
+
+Wire into scheduler rebalancing
+
+Inside _rebalance_agent_allocation, after quotas, scores = allocator.allocate(...):
+
+from meta.capital_optimizer import capital_allocate
+from services.drawdown_governor import drawdown_governor
+from services.uncertainty_state import current_uncertainty_multiplier  # you’ll add tiny helper
+
+gov = drawdown_governor(dd_limit=-3.0)
+unc_mult = current_uncertainty_multiplier()  # e.g., 0.6 on spikes, else 1.0
+
+# base_weights from agent_schedule.json already loaded earlier in your regime rotation
+# If you don’t have it here, load once and cache.
+base_weights = {}
+with open("agent_schedule.json","r") as f:
+    sched = json.load(f)
+for a, cfg in sched.items():
+    if isinstance(cfg, dict):
+        base_weights[a] = cfg.get("weight", 1.0) if cfg.get("enabled", True) else 0.0
+    else:
+        base_weights[a] = 1.0
+
+notional_map = capital_allocate(
+    base_weights=base_weights,
+    regime_weights=_regime_weights,
+    allocator_scores=scores,
+    uncertainty_mult=unc_mult,
+    drawdown_mult=gov["risk_multiplier"],
+    total_notional=100000.0
+)
+
+# optional: write notional_map to DB or telemetry for explainability
+logger.info(f"Capital allocation (top): {sorted(notional_map.items(), key=lambda x: x[1], reverse=True)[:5]}")
+
+5) LLM council self-weighting by regime
+Goal
+
+Your council should learn “which model to trust in which regime” based on realized outcomes.
+
+You already store:
+
+LLMCouncilResult
+
+UncertaintyEvent
+
+regimes in your regime module
+
+Add one table to track model performance per regime.
+
+models.py (add)
+class LLMModelRegimeStat(db.Model):
+    __tablename__ = "llm_model_regime_stat"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    model: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    regime: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+
+    n: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    correct: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    last_updated: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("model","regime", name="uq_model_regime"),)
+
+    @property
+    def accuracy(self) -> float:
+        return self.correct / self.n if self.n else 0.5
+
+services/council_weights.py
+from models import db, LLMModelRegimeStat
+
+def get_model_weight(model: str, regime: str) -> float:
+    s = LLMModelRegimeStat.query.filter_by(model=model, regime=regime).first()
+    if not s:
+        return 1.0
+    # map accuracy 0..1 -> weight 0.5..1.5
+    return 0.5 + s.accuracy
+
+def update_model_stat(model: str, regime: str, correct: bool):
+    s = LLMModelRegimeStat.query.filter_by(model=model, regime=regime).first()
+    if not s:
+        s = LLMModelRegimeStat(model=model, regime=regime, n=0, correct=0)
+        db.session.add(s)
+    s.n += 1
+    if correct:
+        s.correct += 1
+    db.session.commit()
+
+How “correct” is computed
+
+You already ingest reward per agent into telemetry. Use sign alignment:
+
+If council voted ACT and later reward positive → correct
+
+If council voted IGNORE and later reward negative → correct
+
+Otherwise incorrect
+
+You can do this in your existing reconciliation job (alpha.reconcile) or a new periodic job.
+
+Wiring: Council vote uses weights (Claude+GPT+Gemini)
+
+Update your run_llm_council so vote aggregation is weighted by get_model_weight(model, active_regime).
+
+Pseudo pattern inside council:
+
+w = get_model_weight(model_name, active_regime)
+weighted_score += w * vote_score * confidence
+total_w += w
+
+Minimal extra hooks you should add (2)
+A) Uncertainty multiplier helper (used by optimizer + cadence modulation)
+services/uncertainty_state.py
+from models import UncertaintyEvent
+
+def current_uncertainty_multiplier() -> float:
+    e = UncertaintyEvent.query.order_by(UncertaintyEvent.timestamp.desc()).first()
+    if not e:
+        return 1.0
+    if e.spike:
+        return 0.6
+    if e.score >= 0.6:
+        return 0.8
+    return 1.0
+
+B) Cadence modulation (already requested earlier)
+
+Where you compute intervals from quotas, multiply:
+
+new_interval = max(1, int((60 / max(runs, 1)) / unc_mult))
+
+
+(so spikes slow things down)
+
+What you get immediately
+
+Cluster ensemble: fewer duplicated signals, one decision per cluster
+
+Drawdown governor: global safety layer that overrides agent noise
+
+Signal compression: “one thesis” output (dashboard + email-ready)
+
+Capital optimizer: weights → notional sizing with regime + uncertainty + drawdown baked in
+
+Self-weighting council: models become regime specialists automatically

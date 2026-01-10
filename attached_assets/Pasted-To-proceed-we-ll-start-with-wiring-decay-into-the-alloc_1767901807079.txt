@@ -1,0 +1,88 @@
+To proceed, we'll start with wiring decay into the allocator multiplier and then move on to overlaying decay on the SPY chart for visual intuition.
+
+1) Wire Decay into Allocator Multiplier (5 lines)
+
+We'll modify the UCBAllocator class to use decayed scores for the allocation.
+
+In your existing UCBAllocator class, modify the allocate method like this:
+
+from meta.decay import AgentDecay
+_decay = AgentDecay()  # Initialize decay
+
+class UCBAllocator:
+    # existing methods...
+
+    def allocate(self, agents, min_runs=None, max_runs=None, total_budget_runs=100):
+        min_runs = min_runs or {}
+        max_runs = max_runs or {}
+
+        total_pulls = sum(self.counts[a] for a in agents) + 1
+        scores = {a: self.score(a, total_pulls) * _decay.get(a) for a in agents}  # Decay multiplier added here
+
+        quotas = {a: int(min_runs.get(a, 0)) for a in agents}
+        remaining = max(total_budget_runs - sum(quotas.values()), 0)
+
+        ranked = sorted(agents, key=lambda a: scores[a], reverse=True)
+        i = 0
+        while remaining > 0 and ranked:
+            a = ranked[i % len(ranked)]
+            if quotas[a] < int(max_runs.get(a, total_budget_runs)):
+                quotas[a] += 1
+                remaining -= 1
+            i += 1
+
+        return quotas, scores
+
+2) Overlay Decay on SPY Chart (Visual Intuition)
+
+Next, we'll overlay the decay curve onto the SPY chart using Matplotlib. Here's how we can implement this:
+
+Fetch SPY data (already covered in previous code)
+
+Get decay scores from AgentDecay
+
+Plot both on the same chart
+
+Code snippet for overlaying the decay curve:
+
+import matplotlib.pyplot as plt
+import yfinance as yf
+
+# Fetch SPY data
+spy = yf.download("SPY", start="2020-01-01", end="2026-01-01")
+
+# Get decay data
+from meta.decay import AgentDecay
+_decay = AgentDecay()
+agents = list(_decay.state.keys())
+
+# Fetch and align decay scores to SPY's date range
+decay_scores = {
+    agent: [_decay.get(agent) for _ in range(len(spy))]
+    for agent in agents
+}
+
+# Create the plot
+fig, ax = plt.subplots(figsize=(12, 6))
+
+# Plot SPY
+ax.plot(spy.index, spy['Close'], label='SPY Price', color='blue', alpha=0.6)
+
+# Plot decay scores for each agent (you can select specific agents here)
+for agent, scores in decay_scores.items():
+    ax.plot(spy.index, scores, label=f"Decay: {agent}", alpha=0.7)
+
+# Adding labels and legend
+ax.set_title('SPY Price vs Agent Decay')
+ax.set_xlabel('Date')
+ax.set_ylabel('Price / Decay')
+ax.legend()
+
+# Display the plot
+plt.show()
+
+Steps Summary
+
+Decay integrated into allocator: Agent decay now influences portfolio size through allocation scores.
+
+Visual decay on SPY chart: The decay curve is plotted alongside SPY, showing the decay of agents over time.

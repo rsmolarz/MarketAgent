@@ -1,0 +1,679 @@
+1) Public “Evaluate My Dispute” UI (no login)
+1.1 Template: templates/public_evaluate.html
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Evaluate My Dispute</title>
+  <style>
+    body { font-family: system-ui; max-width: 860px; margin: 40px auto; padding: 0 16px; }
+    textarea { width: 100%; height: 220px; padding: 10px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; margin-top:12px; }
+    input { padding:10px; width: 160px; }
+    button { padding: 10px 14px; cursor:pointer; }
+    pre { background:#0b1020; color:#d7e0ff; padding:14px; border-radius:12px; overflow:auto; }
+    .note { color:#555; font-size: 13px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Evaluate My Dispute</h1>
+  <div class="note">
+    Educational screening only. No legal advice. No enforcement promises.
+  </div>
+
+  <textarea id="contractText" placeholder="Paste the relevant document text here..."></textarea>
+
+  <div class="row">
+    <input id="partyA" placeholder="Party A state (e.g., TX)">
+    <input id="partyB" placeholder="Party B state (e.g., VI)">
+    <button onclick="evaluate()">Evaluate</button>
+  </div>
+
+  <div id="out" style="margin-top:16px; display:none;">
+    <pre id="json"></pre>
+  </div>
+
+<script>
+async function evaluate() {
+  const body = {
+    contract_text: document.getElementById("contractText").value,
+    party_a_state: document.getElementById("partyA").value.trim().toUpperCase(),
+    party_b_state: document.getElementById("partyB").value.trim().toUpperCase()
+  };
+
+  const res = await fetch("/public/evaluate", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(body)
+  });
+
+  const data = await res.json();
+  document.getElementById("out").style.display = "block";
+  document.getElementById("json").textContent = JSON.stringify(data, null, 2);
+}
+</script>
+</body>
+</html>
+
+1.2 Public routes: app/public_routes.py
+from flask import Blueprint, request, jsonify, render_template
+from app.contract_extractor_service import extract_contract_clauses
+from app.jurisdiction_service import resolve_jurisdiction
+
+public_bp = Blueprint("public", __name__, url_prefix="/public")
+
+@public_bp.get("/evaluate-ui")
+def evaluate_ui():
+    return render_template("public_evaluate.html")
+
+@public_bp.post("/evaluate")
+def evaluate():
+    data = request.get_json(force=True) or {}
+    text = (data.get("contract_text") or "").strip()
+    if len(text) < 75:
+        return jsonify({"ok": False, "error": "Paste more document text for evaluation."}), 400
+
+    clauses = extract_contract_clauses(text)
+
+    jurisdiction = resolve_jurisdiction(
+        (data.get("party_a_state") or "").strip().upper(),
+        (data.get("party_b_state") or "").strip().upper(),
+        governing_law_clause_text=clauses.get("governing_law", {}).get("excerpt")
+    )
+
+    decision = {
+        "notarial_protest_possible": bool(clauses.get("negotiable_indicators", {}).get("found")),
+        "administrative_record_recommended": True,
+        "education_only": True,
+        "reasons": []
+    }
+
+    if decision["notarial_protest_possible"]:
+        decision["reasons"].append("Text includes features commonly associated with a negotiable instrument.")
+    else:
+        decision["reasons"].append("Text does not clearly indicate a negotiable instrument; administrative record path likely.")
+
+    if clauses.get("personal_guarantee", {}).get("found"):
+        decision["reasons"].append("Guarantee language detected; confirm against executed originals.")
+
+    if clauses.get("venue_forum", {}).get("found"):
+        decision["reasons"].append("Venue/jurisdiction language detected; verify enforceability and applicability.")
+
+    return jsonify({
+        "ok": True,
+        "decision": decision,
+        "jurisdiction": jurisdiction,
+        "detected_clauses": clauses
+    })
+
+1.3 Register blueprint (A/B/C)
+
+A (root app.py) or B (app/app.py):
+
+from app.public_routes import public_bp
+app.register_blueprint(public_bp)
+
+
+C (create_app()):
+
+from app.public_routes import public_bp
+app.register_blueprint(public_bp)
+
+
+Public UI URL:
+
+/public/evaluate-ui
+
+2) PDF clause extraction → heatmap automatically
+2.1 PDF clause extraction: app/pdf_clause_extractor.py
+import re
+
+def extract_text_from_pdf(pdf_path: str) -> str:
+    import fitz  # PyMuPDF
+    doc = fitz.open(pdf_path)
+    parts = []
+    for page in doc:
+        parts.append(page.get_text("text"))
+    doc.close()
+    return "\n".join(parts)
+
+def best_excerpt(text: str, pattern: str, window: int = 600) -> str | None:
+    m = re.search(pattern, text, re.I | re.S)
+    if not m:
+        return None
+    start = max(0, m.start() - 120)
+    end = min(len(text), m.start() + window)
+    return text[start:end].strip()
+
+def extract_clause_excerpts(full_text: str) -> dict:
+    # Patterns are intentionally conservative.
+    return {
+        "governing_law": best_excerpt(full_text, r"(governed by|governing law|construed in accordance with).{0,400}"),
+        "venue_forum": best_excerpt(full_text, r"(venue|exclusive jurisdiction|submit to jurisdiction).{0,450}"),
+        "personal_guarantee": best_excerpt(full_text, r"(guarant(y|ee)|unconditional guarant|joint and several).{0,450}"),
+    }
+
+2.2 Heatmap annotator (you already have one; keep this): app/pdf_heatmap.py
+
+(Use your existing annotate_pdf_with_clauses(...) implementation that uses fitz highlight annotations.)
+
+2.3 Public PDF upload → auto-annotated download (pre-login)
+
+Add to app/public_routes.py:
+
+import os, uuid
+from flask import send_file
+from app.pdf_clause_extractor import extract_text_from_pdf, extract_clause_excerpts
+from app.pdf_heatmap import annotate_pdf_with_clauses, ClauseHit
+
+UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+@public_bp.post("/pdf/heatmap")
+def pdf_heatmap_auto():
+    """
+    Upload a PDF and get back an annotated PDF with clause highlights.
+    Educational use only.
+    """
+    f = request.files.get("pdf")
+    if not f or not f.filename.lower().endswith(".pdf"):
+        return jsonify({"ok": False, "error": "Upload a PDF file."}), 400
+
+    raw_path = os.path.join(UPLOAD_DIR, f"raw_{uuid.uuid4().hex}.pdf")
+    f.save(raw_path)
+
+    full_text = extract_text_from_pdf(raw_path)
+    excerpts = extract_clause_excerpts(full_text)
+
+    hits = []
+    if excerpts["governing_law"]:
+        hits.append(ClauseHit("Governing Law", excerpts["governing_law"]))
+    if excerpts["venue_forum"]:
+        hits.append(ClauseHit("Venue / Forum", excerpts["venue_forum"]))
+    if excerpts["personal_guarantee"]:
+        hits.append(ClauseHit("Personal Guarantee", excerpts["personal_guarantee"]))
+
+    out_path = annotate_pdf_with_clauses(raw_path, hits, out_dir=UPLOAD_DIR)
+    return send_file(out_path, as_attachment=True, download_name="annotated_contract.pdf")
+
+
+Optional: add a simple upload form later, but the endpoint is ready now:
+
+POST /public/pdf/heatmap with form-data key pdf.
+
+3) Agent confidence decay over time (display + merge gate)
+3.1 Helper: app/confidence_decay.py
+from datetime import datetime, timezone
+
+def parse_iso_z(s: str) -> datetime:
+    # expects "...Z"
+    if s.endswith("Z"):
+        s = s[:-1]
+    return datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+
+def decay(confidence: float, created_at: str, half_life_hours: float = 48.0) -> float:
+    """
+    Exponential decay by half-life. After 48h, confidence halves.
+    """
+    c0 = max(0.0, min(1.0, float(confidence)))
+    t0 = parse_iso_z(created_at)
+    now = datetime.now(timezone.utc)
+    hours = max(0.0, (now - t0).total_seconds() / 3600.0)
+    factor = 0.5 ** (hours / half_life_hours)
+    return round(c0 * factor, 4)
+
+3.2 Apply decay in proposal detail view + merge route
+
+In agent_routes.py where you render votes:
+
+from app.confidence_decay import decay
+
+votes = get_votes(pid)
+for v in votes:
+    v["effective_confidence"] = decay(v["confidence"], v["created_at"])
+
+
+In the merge gate, require effective confidence >= threshold:
+
+approvals = [x for x in votes if x["vote"] == "APPROVE" and x["agent_name"] in ("VALIDATOR","COMPLIANCE")]
+if len(approvals) < 2:
+    ...
+
+# enforce decay threshold (example 0.55)
+if any(x["effective_confidence"] < 0.55 for x in approvals):
+    flash("Cannot merge: approvals are stale; re-run votes.", "danger")
+    return redirect(...)
+
+
+Update template to display effective confidence.
+
+4) Explain-why-approved report (exportable PDF)
+4.1 PDF generator: app/approval_report.py
+from reportlab.lib.pagesizes import LETTER
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import inch
+from textwrap import wrap
+from datetime import datetime
+
+def _draw_wrapped(c, x, y, text, width_chars=110, leading=14):
+    for line in wrap(text or "", width_chars):
+        c.drawString(x, y, line)
+        y -= leading
+    return y
+
+def build_approval_report_pdf(out_path: str, proposal: dict, votes: list):
+    c = canvas.Canvas(out_path, pagesize=LETTER)
+    w, h = LETTER
+    x = 0.8 * inch
+    y = h - 0.8 * inch
+
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(x, y, "Agent Oversight Approval Report")
+    y -= 18
+
+    c.setFont("Helvetica", 10)
+    c.drawString(x, y, f"Generated: {datetime.utcnow().isoformat()}Z")
+    y -= 18
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(x, y, "Proposal")
+    y -= 16
+
+    c.setFont("Helvetica", 10)
+    y = _draw_wrapped(c, x, y, f"ID: {proposal['id']}")
+    y = _draw_wrapped(c, x, y, f"Title: {proposal['title']}")
+    y = _draw_wrapped(c, x, y, f"Branch: {proposal['branch']}")
+    y = _draw_wrapped(c, x, y, f"Overall Risk: {proposal['overall_risk']}")
+    y -= 8
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(x, y, "Why this change")
+    y -= 16
+
+    c.setFont("Helvetica", 10)
+    y = _draw_wrapped(c, x, y, f"Summary: {proposal['summary']}")
+    y -= 6
+    y = _draw_wrapped(c, x, y, f"Rationale: {proposal['rationale']}")
+    y -= 10
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(x, y, "Votes")
+    y -= 16
+
+    c.setFont("Helvetica", 10)
+    for v in votes:
+        line = f"{v['agent_name']}: {v['vote']}  conf={v.get('confidence')}  eff={v.get('effective_confidence','')}"
+        y = _draw_wrapped(c, x, y, line, width_chars=120)
+        y = _draw_wrapped(c, x, y, f"Notes: {v.get('notes','')}", width_chars=120)
+        y -= 6
+        if y < 1.2 * inch:
+            c.showPage()
+            y = h - 0.8 * inch
+            c.setFont("Helvetica", 10)
+
+    c.setFont("Helvetica-Bold", 12)
+    if y < 1.5 * inch:
+        c.showPage()
+        y = h - 0.8 * inch
+    c.drawString(x, y, "Per-file risk")
+    y -= 16
+    c.setFont("Helvetica", 10)
+
+    for fp, r in proposal.get("file_risk", {}).items():
+        y = _draw_wrapped(c, x, y, f"{fp}: {r}", width_chars=120)
+        if y < 1.2 * inch:
+            c.showPage()
+            y = h - 0.8 * inch
+            c.setFont("Helvetica", 10)
+
+    c.save()
+
+4.2 Route: /admin/agents/proposals/<pid>/report.pdf
+
+In agent_routes.py add:
+
+import os
+from flask import send_file
+from app.approval_report import build_approval_report_pdf
+
+@agent_bp.get("/proposals/<pid>/report.pdf")
+def approval_report(pid):
+    p = get_proposal(pid)
+    if not p:
+        return "Not found", 404
+    votes = get_votes(pid)
+    # ensure effective_confidence computed if you added decay
+    out_path = os.path.join("uploads", f"approval_report_{pid}.pdf")
+    os.makedirs("uploads", exist_ok=True)
+    build_approval_report_pdf(out_path, p, votes)
+    return send_file(out_path, as_attachment=True, download_name=f"approval_report_{pid}.pdf")
+
+
+Add a link/button in the admin proposal detail page:
+
+“Download Approval Report (PDF)”
+
+5) Jurisdiction resolver tied into builder agent
+5.1 app/jurisdiction_service.py
+US_STATE_DEFAULTS = {
+    "NY": "New York law (common choice in finance)",
+    "DE": "Delaware law (common corporate law choice)",
+    "CA": "California law",
+    "TX": "Texas law",
+    "FL": "Florida law",
+    "VI": "U.S. Virgin Islands law",
+}
+
+def resolve_jurisdiction(party_a_state: str, party_b_state: str, governing_law_clause_text: str | None = None):
+    result = {"likely_governing_law": None, "notes": []}
+
+    if governing_law_clause_text:
+        result["likely_governing_law"] = "Governing law clause present"
+        result["notes"].append("Clause text detected; treat clause as primary and verify enforceability.")
+        return result
+
+    a = (party_a_state or "").strip().upper()
+    b = (party_b_state or "").strip().upper()
+
+    if a and b and a == b:
+        result["likely_governing_law"] = US_STATE_DEFAULTS.get(a, f"{a} law (unspecified default)")
+        result["notes"].append("Both parties appear in the same state/territory.")
+        return result
+
+    result["likely_governing_law"] = "Potential conflict-of-laws (needs analysis)"
+    result["notes"].append("Parties in different states/territories or missing info; governing law may depend on contract clause and forum rules.")
+    return result
+
+5.2 Inject into Builder prompt context
+
+In your builder agent prompt construction (where you build repo context), add:
+
+extracted governing law clause excerpt
+
+parties’ states (if known)
+
+jurisdiction resolver output
+
+Example inside your builder run:
+
+from app.jurisdiction_service import resolve_jurisdiction
+
+jur = resolve_jurisdiction(party_a_state, party_b_state, governing_law_clause_text=gov_excerpt)
+
+repo_context += "\n\nJurisdiction context (educational):\n"
+repo_context += f"- Party A: {party_a_state}\n- Party B: {party_b_state}\n"
+repo_context += f"- Resolver: {jur}\n"
+
+
+And add a hard constraint in the prompt:
+
+“Do not assert governing law; only present as ‘detected clause’ and ‘needs verification’.”
+
+Admin UI requirement (all oversight + building agents in Admin)
+
+Everything above keeps:
+
+Public features under /public/*
+
+Agent controls under /admin/agents/*
+
+If your current admin home is /admin, add a nav link to:
+
+/admin/agents
+
+Minimal checklist to make it run
+
+Add files:
+
+app/public_routes.py
+
+app/pdf_clause_extractor.py
+
+app/pdf_heatmap.py (already)
+
+app/confidence_decay.py
+
+app/approval_report.py
+
+app/jurisdiction_service.py
+
+Add templates:
+
+templates/public_evaluate.html
+
+Add admin links/buttons in your admin templates
+
+Install dependency for PDF highlight:
+
+PyMuPDF (fitz)
+
+If you paste your current app.py (or app/app.py, or create_app() file) I will give you the exact 5–10 line registration patch that matches your repo precisely, but the code above is already correct for A/B/C.
+
+✅ What you already have (important)
+
+Your app is very well structured:
+
+Central create_app() factory ✅
+
+Blueprint-based routing ✅
+
+Auth isolated (Replit Auth) ✅
+
+Admin / agent governance isolated ✅
+
+Scheduler isolated ✅
+
+Root health check hardened (good) ✅
+
+So we will add, not refactor.
+
+🎯 What you asked to add (recap)
+
+You want to add:
+
+Public, pre-login “Evaluate My Dispute” UI
+
+Public API endpoint /public/evaluate
+
+Public PDF clause extraction + heatmap
+
+Keep ALL agent dashboards + controls admin-only
+
+Zero interference with health checks or auth
+
+We will do this via one new blueprint.
+
+🧱 Step 1 — Create a new blueprint
+File: routes/public.py ✅ NEW FILE
+from flask import Blueprint, request, jsonify, render_template, send_file
+from services.contract_extractor_service import extract_contract_clauses
+from services.jurisdiction_service import resolve_jurisdiction
+import os, uuid
+
+public_bp = Blueprint("public", __name__, url_prefix="/public")
+
+@public_bp.get("/evaluate-ui")
+def evaluate_ui():
+    return render_template("public_evaluate.html")
+
+@public_bp.post("/evaluate")
+def evaluate():
+    data = request.get_json(force=True) or {}
+
+    text = (data.get("contract_text") or "").strip()
+    if len(text) < 100:
+        return jsonify({
+            "ok": False,
+            "error": "Please provide more document text for evaluation."
+        }), 400
+
+    clauses = extract_contract_clauses(text)
+
+    jurisdiction = resolve_jurisdiction(
+        data.get("party_a_state"),
+        data.get("party_b_state"),
+        governing_law_clause_text=clauses.get("governing_law", {}).get("excerpt")
+    )
+
+    decision = {
+        "notarial_protest_possible": bool(
+            clauses.get("negotiable_indicators", {}).get("found")
+        ),
+        "administrative_record_recommended": True,
+        "education_only": True,
+        "reasons": []
+    }
+
+    if decision["notarial_protest_possible"]:
+        decision["reasons"].append(
+            "Document shows characteristics associated with a negotiable instrument."
+        )
+    else:
+        decision["reasons"].append(
+            "Document does not clearly qualify as a negotiable instrument."
+        )
+
+    if clauses.get("personal_guarantee", {}).get("found"):
+        decision["reasons"].append(
+            "Personal guarantee language detected."
+        )
+
+    if clauses.get("venue_forum", {}).get("found"):
+        decision["reasons"].append(
+            "Venue or forum selection language detected."
+        )
+
+    return jsonify({
+        "ok": True,
+        "decision": decision,
+        "jurisdiction": jurisdiction,
+        "detected_clauses": clauses
+    })
+
+
+✔ No auth
+✔ No agent access
+✔ No enforcement language
+✔ Safe educational framing
+
+🧱 Step 2 — Register the blueprint (THIS FILE)
+In your pasted create_app(), add ONE import + register
+
+🔎 Find this block (inside the blueprint registration try):
+
+# Register blueprints
+try:
+    from routes.dashboard import dashboard_bp
+    from routes.api import api_bp
+
+✅ Add below it:
+    from routes.public import public_bp
+
+🔎 Then add this line with the others:
+    app.register_blueprint(public_bp)
+
+🔧 Final block (cleaned)
+from routes.dashboard import dashboard_bp
+from routes.api import api_bp
+from routes.public import public_bp
+
+app.register_blueprint(dashboard_bp)
+app.register_blueprint(api_bp, url_prefix='/api')
+app.register_blueprint(public_bp)
+
+
+That’s it.
+No other changes needed to create_app().
+
+🧱 Step 3 — Add the public template
+File: templates/public_evaluate.html
+
+(Shortened here; you already saw the full version earlier.)
+
+<!doctype html>
+<html>
+<head>
+  <title>Evaluate My Dispute</title>
+</head>
+<body>
+  <h1>Evaluate My Dispute</h1>
+
+  <textarea id="contract" rows="12" cols="90"
+    placeholder="Paste contract or document text here"></textarea><br><br>
+
+  Party A State: <input id="a">
+  Party B State: <input id="b">
+
+  <button onclick="go()">Evaluate</button>
+
+  <pre id="out"></pre>
+
+<script>
+async function go() {
+  const res = await fetch("/public/evaluate", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      contract_text: document.getElementById("contract").value,
+      party_a_state: document.getElementById("a").value,
+      party_b_state: document.getElementById("b").value
+    })
+  });
+  document.getElementById("out").textContent =
+    JSON.stringify(await res.json(), null, 2);
+}
+</script>
+</body>
+</html>
+
+🔐 Why this is safe
+
+No login required
+
+No agents invoked
+
+No code modification
+
+No legal conclusions
+
+Educational framing only
+
+Clean separation:
+
+/public/* → education + screening
+
+/admin/* → agents + governance
+
+/api/* → authenticated workflows
+
+🧠 How this fits your agent system
+
+This public evaluation:
+
+Feeds structured inputs into paid flow later
+
+Can be logged anonymously
+
+Can pre-fill:
+
+jurisdiction
+
+clause detection
+
+eligibility routing
+
+Does not allow agents to act or write code
+
+Your builder / validator / compliance agents stay admin-only.
+
+✅ What you should see after deploy
+
+/ → landing page (unchanged)
+
+/public/evaluate-ui → working evaluation UI
+
+/public/evaluate → JSON output
+
+/admin → unchanged agent dashboard
+
+Health checks → untouched

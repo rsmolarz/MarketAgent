@@ -1,0 +1,124 @@
+{
+  "agent": {
+    "class_name": "EarningsSurpriseDriftAgent",
+    "module_slug": "earnings_surprise_drift_agent",
+    "description": "Detects stocks exhibiting post-earnings announcement drift by analyzing price returns and volume changes following earnings surprises using internal equity price and earnings data.",
+    "category": "equities",
+    "data_sources": [
+      {
+        "name": "EquityPriceClient",
+        "type": "existing_client",
+        "details": "Provides historical and intraday equity prices and volumes for symbols."
+      },
+      {
+        "name": "EarningsCalendarAPI",
+        "type": "public_api",
+        "details": "Provides earnings announcement dates and consensus EPS estimates."
+      }
+    ],
+    "detection_logic": [
+      "Fetch recent earnings announcement dates and consensus EPS for a universe of equities.",
+      "Calculate earnings surprise as (reported EPS - consensus EPS) / consensus EPS.",
+      "For each earnings event with a significant surprise (above threshold), analyze price returns and volume changes for 1 to 5 trading days post-announcement.",
+      "Identify consistent abnormal positive or negative returns following positive or negative surprises respectively, exceeding threshold return and volume change.",
+      "Flag symbols showing statistically significant drift patterns indicating inefficiency in immediate price adjustment."
+    ],
+    "parameters": {
+      "thresholds": {
+        "min_surprise_pct": 0.05,
+        "min_post_earnings_return_pct": 0.5,
+        "min_volume_increase_pct": 20,
+        "drift_window_days": 5
+      },
+      "cadence_minutes_default": 1440
+    },
+    "output_examples": [
+      {
+        "title": "Post-Earnings Drift Detected for AAPL",
+        "description": "AAPL exhibited a 7% positive earnings surprise with a consistent 3% abnormal return and 25% volume increase over 5 days post announcement, indicating delayed price adjustment.",
+        "severity": "medium",
+        "confidence": 0.85,
+        "metadata": {
+          "earnings_date": "2026-01-05",
+          "surprise_pct": 0.07,
+          "post_earnings_return_pct": 3.0,
+          "volume_increase_pct": 25,
+          "drift_window_days": 5
+        },
+        "symbol": "AAPL",
+        "market_type": "equities"
+      }
+    ]
+  },
+  "eval": {
+    "suite_name": "EarningsSurpriseDriftAgent_smoke",
+    "cases": [
+      {
+        "id": "basic_drift_detection",
+        "input_fixture": {
+          "earnings_events": [
+            {
+              "symbol": "TEST",
+              "earnings_date": "2026-01-01",
+              "consensus_eps": 1.0,
+              "reported_eps": 1.1
+            }
+          ],
+          "price_volume_data": {
+            "TEST": [
+              {
+                "date": "2026-01-02",
+                "close": 101,
+                "volume": 1200
+              },
+              {
+                "date": "2026-01-03",
+                "close": 103,
+                "volume": 1300
+              },
+              {
+                "date": "2026-01-04",
+                "close": 104,
+                "volume": 1250
+              },
+              {
+                "date": "2026-01-05",
+                "close": 105,
+                "volume": 1400
+              },
+              {
+                "date": "2026-01-06",
+                "close": 106,
+                "volume": 1500
+              }
+            ]
+          }
+        },
+        "expected_schema": {
+          "type": "list",
+          "item_required_keys": [
+            "title",
+            "description",
+            "severity",
+            "confidence",
+            "metadata",
+            "symbol",
+            "market_type"
+          ]
+        }
+      }
+    ],
+    "offline_adapter_plan": "Use file fixtures for earnings events and price-volume time series data to simulate earnings surprise and post-earnings returns. Mock public API calls for earnings calendar. Validate output findings against expected drift detection."
+  },
+  "safety": {
+    "no_execution": true,
+    "protected_paths": [
+      ".github/",
+      "trading/",
+      "secrets/",
+      "infra/"
+    ],
+    "max_files_changed": 4,
+    "max_lines_changed": 250
+  }
+}

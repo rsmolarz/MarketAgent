@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+<head><title>Approvals Login</title></head>
+<body style="font-family:Arial;max-width:720px;margin:24px auto">
+  <h2>Approvals Login</h2>
+  {% if error %}<div style="color:#b00">{{ error }}</div>{% endif %}
+  <form method="post">
+    <label>Admin token</label><br/>
+    <input name="token" style="width:100%;padding:10px" />
+    <button style="margin-top:12px;padding:10px 14px">Login</button>
+  </form>
+</body>
+</html>

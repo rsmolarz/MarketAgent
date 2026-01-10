@@ -1,0 +1,216 @@
+Below is a clean, deterministic design that plugs directly into your existing patterns:
+
+BaseAgent
+
+get_agent_class
+
+scheduler + telemetry + quarantine
+
+sandbox self-modification
+
+eval harness
+
+No refactors. No guessing.
+
+Objective: Automatic Agent Builder (AAB)
+
+The AAB will create, test, deploy, evaluate, quarantine, promote, or retire agents automatically.
+
+Think of it as a junior quant + ML engineer that:
+
+only ships what survives reality
+
+starts slow
+
+earns more capital and frequency over time
+
+1) Agent Builder Architecture (minimal)
+
+New directory:
+
+meta/agent_builder/
+├── builder.py          # orchestrates creation
+├── templates/
+│   └── analysis_agent.py.j2
+├── eval_generator.py   # auto-build eval suites
+├── deployer.py         # registers + schedules safely
+└── lifecycle.py        # promotion / quarantine / retirement hooks
+
+2) Agent creation (builder.py)
+meta/agent_builder/builder.py
+import re
+from pathlib import Path
+from typing import Dict
+
+AGENTS_DIR = Path("agents")
+
+def snake_case(name: str) -> str:
+    return re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
+
+def create_agent(agent_name: str, spec: Dict[str, str]) -> Path:
+    """
+    Create a new analysis-only agent file.
+    """
+    module_name = snake_case(agent_name)
+    agent_path = AGENTS_DIR / f"{module_name}.py"
+
+    if agent_path.exists():
+        raise RuntimeError(f"Agent already exists: {agent_path}")
+
+    code = f'''
+from typing import List, Dict, Any
+from .base_agent import BaseAgent
+
+class {agent_name}(BaseAgent):
+    """
+    {spec.get("description", "Auto-generated analysis agent")}
+    """
+    name = "{agent_name}"
+
+    def analyze(self) -> List[Dict[str, Any]]:
+        findings = []
+
+        # TODO: implement logic
+        return findings
+'''.lstrip()
+
+    agent_path.write_text(code)
+    return agent_path
+
+
+Key guarantees
+
+Inherits BaseAgent
+
+Uses analyze() only (sandbox-safe)
+
+No execution logic
+
+Telemetry auto-wired via BaseAgent.run()
+
+3) Auto-register agent (no manual edits)
+
+You already use:
+
+AVAILABLE_AGENTS = [...]
+
+
+We do not mutate this directly.
+
+Instead, add one line to your registry file:
+
+Modify agents/__init__.py
+
+Replace:
+
+AVAILABLE_AGENTS = [
+    ...
+]
+
+
+With:
+
+AVAILABLE_AGENTS = [
+    ...
+]
+
+# Auto-discovered agents
+for p in __path__:
+    for f in Path(p).glob("*.py"):
+        name = f.stem
+        if name not in {"base_agent", "__init__"}:
+            cls = "".join(x.capitalize() for x in name.split("_"))
+            if cls.endswith("Agent") and cls not in AVAILABLE_AGENTS:
+                AVAILABLE_AGENTS.append(cls)
+
+
+Result
+
+New agents are auto-discovered
+
+No registry PRs
+
+Builder can deploy autonomously
+
+4) Auto-generate eval suites (eval_generator.py)
+meta/agent_builder/eval_generator.py
+import json
+from pathlib import Path
+
+EVAL_DIR = Path("eval/suites")
+
+def generate_eval(agent_name: str):
+    suite = {
+        "id": f"{agent_name}_smoke",
+        "input": {},
+        "schema": {
+            "type": "list",
+            "item": {
+                "type": "dict",
+                "required_keys": ["title", "severity"]
+            }
+        }
+    }
+
+    path = EVAL_DIR / f"{agent_name}.jsonl"
+    path.write_text(json.dumps(suite) + "\n")
+    return path
+
+
+This ensures
+
+Builder agents must emit findings
+
+Garbage agents fail immediately
+
+No silent promotion
+
+5) Safe deployment (deployer.py)
+meta/agent_builder/deployer.py
+from app import db
+from models import AgentStatus
+
+def deploy_agent(agent_name: str, interval_minutes=120):
+    status = AgentStatus.query.filter_by(agent_name=agent_name).first()
+    if not status:
+        status = AgentStatus(
+            agent_name=agent_name,
+            schedule_interval=interval_minutes,
+            is_active=False
+        )
+        db.session.add(status)
+        db.session.commit()
+
+
+Default rules
+
+Low frequency
+
+Disabled by default
+
+Must be manually or meta-enabled
+
+6) Lifecycle rules (lifecycle.py)
+meta/agent_builder/lifecycle.py
+from services.quarantine import quarantine, clear_quarantine
+from models import AgentStatus
+from app import db
+
+def promote(agent_name: str, new_interval: int):
+    status = AgentStatus.query.filter_by(agent_name=agent_name).first()
+    if status:
+        status.schedule_interval = new_interval
+        status.is_active = True
+        db.session.commit()
+
+def demote(agent_name: str):
+    quarantine(agent_name, "Auto-demotion due to performance")
+
+def retire(agent_name: str):
+    status = AgentStatus.query.filter_by(agent_name=agent_name).first()
+    if status:
+        status.is_active = False
+        db.session.commit()
+
+
+Promotion is data-driven, not LLM-driven.

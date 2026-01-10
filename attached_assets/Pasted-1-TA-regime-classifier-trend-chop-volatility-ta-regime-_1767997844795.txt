@@ -1,0 +1,461 @@
+1️⃣ TA regime classifier (trend / chop / volatility)
+📁 ta/regime_classifier.py (NEW)
+import pandas as pd
+import numpy as np
+
+def _ema(s: pd.Series, span: int) -> pd.Series:
+    return s.ewm(span=span, adjust=False).mean()
+
+def _atr_proxy(close: pd.Series, window: int = 14) -> pd.Series:
+    # ATR proxy using abs returns * price (works with Close-only data)
+    r = close.pct_change().abs()
+    return (r.rolling(window).mean() * close).fillna(0.0)
+
+def _rolling_slope(x: pd.Series, window: int = 63) -> pd.Series:
+    # Slope of log price via linear regression (annualized-ish)
+    y = np.log(x.replace(0, np.nan)).dropna()
+    idx = y.index
+    out = pd.Series(index=x.index, dtype=float)
+
+    if len(y) < window + 5:
+        out[:] = np.nan
+        return out
+
+    for i in range(window, len(y)):
+        yy = y.iloc[i-window:i].values
+        xx = np.arange(window)
+        # slope
+        b = np.polyfit(xx, yy, 1)[0]
+        out.loc[idx[i]] = b
+    return out
+
+def classify_regime(
+    df: pd.DataFrame,
+    lookback: int = 252
+) -> dict:
+    """
+    Returns:
+      {
+        "regime": "trend" | "chop" | "volatility",
+        "confidence": float 0..1,
+        "features": {...}
+      }
+    """
+    if df is None or df.empty or "Close" not in df:
+        return {"regime": "unknown", "confidence": 0.0, "features": {}}
+
+    close = pd.to_numeric(df["Close"], errors="coerce").dropna()
+    if len(close) < 120:
+        return {"regime": "unknown", "confidence": 0.0, "features": {}}
+
+    close = close.tail(lookback)
+
+    ema_fast = _ema(close, 20)
+    ema_slow = _ema(close, 100)
+    atrp = _atr_proxy(close, 14)
+    vol20 = close.pct_change().rolling(20).std() * np.sqrt(252)  # annualized vol
+
+    slope63 = _rolling_slope(close, 63)
+    slope = float(slope63.dropna().iloc[-1]) if slope63.dropna().any() else 0.0
+
+    # trend strength: separation of EMAs normalized by ATR
+    sep = float((ema_fast.iloc[-1] - ema_slow.iloc[-1]))
+    atr = float(atrp.iloc[-1]) if atrp.iloc[-1] != 0 else 1e-9
+    trend_strength = abs(sep) / atr
+
+    # chop proxy: low slope + frequent EMA crossings
+    crosses = ((ema_fast > ema_slow).astype(int).diff().abs().fillna(0))
+    cross_rate = float(crosses.tail(126).sum()) / 126.0
+
+    # volatility proxy
+    v = float(vol20.dropna().iloc[-1]) if vol20.dropna().any() else 0.0
+
+    # decision rules (simple, stable, works well enough)
+    # 1) volatility if vol is high
+    # 2) trend if EMA separation is strong and slope magnitude is decent
+    # 3) otherwise chop
+    if v >= 0.28:  # tune: 0.25-0.35 depending on taste
+        regime = "volatility"
+        conf = min(1.0, (v - 0.20) / 0.20)
+    elif trend_strength >= 1.25 and abs(slope) >= 0.0015:
+        regime = "trend"
+        conf = min(1.0, (trend_strength - 0.8) / 1.2)
+    else:
+        regime = "chop"
+        # confidence rises with cross_rate and low slope
+        conf = float(np.clip((cross_rate * 3.0) + (0.02 / (abs(slope) + 1e-6)) * 0.05, 0, 1))
+
+    return {
+        "regime": regime,
+        "confidence": float(np.clip(conf, 0.0, 1.0)),
+        "features": {
+            "trend_strength": float(trend_strength),
+            "slope63": float(slope),
+            "cross_rate": float(cross_rate),
+            "vol20": float(v),
+            "ema20": float(ema_fast.iloc[-1]),
+            "ema100": float(ema_slow.iloc[-1]),
+        }
+    }
+
+2️⃣ TA + Agent backtest vs SPY (by regime)
+
+This computes “did the agent’s ACT calls beat passive SPY?” and breaks results out by regime.
+
+📁 backtests/ta_agent_vs_spy.py (NEW)
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
+
+from models import Finding, db
+from data_sources.price_loader import load_symbol_frame
+from ta.regime_classifier import classify_regime
+
+HORIZON_DAYS = 5  # forward return horizon
+
+def _forward_return(close: pd.Series, horizon: int) -> pd.Series:
+    return close.shift(-horizon) / close - 1.0
+
+def _asof_slice(df: pd.DataFrame, asof: pd.Timestamp, lookback: int = 252) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    df2 = df[df.index <= asof]
+    return df2.tail(lookback)
+
+def run_agent_vs_spy_report(
+    agent_name: str,
+    start: str = "2007-01-01",
+    end: str | None = None,
+    horizon_days: int = HORIZON_DAYS,
+    symbol: str = "SPY"
+) -> dict:
+    """
+    Uses Finding rows as the agent's "signal events".
+    Compares forward returns after findings vs unconditional SPY forward returns.
+    Regime is computed at the signal date using SPY TA regime.
+    """
+    end_ts = pd.to_datetime(end) if end else pd.Timestamp.utcnow()
+    start_ts = pd.to_datetime(start)
+
+    spy = load_symbol_frame(symbol, start=start, use_cache=True)
+    if spy is None or spy.empty:
+        return {"ok": False, "reason": "no_spy_data"}
+
+    spy = spy[(spy.index >= start_ts) & (spy.index <= end_ts)]
+    if len(spy) < 300:
+        return {"ok": False, "reason": "insufficient_spy_data"}
+
+    spy["fwd"] = _forward_return(spy["Close"], horizon_days)
+
+    # Pull all findings for agent in date window
+    q = (Finding.query
+         .filter(Finding.agent_name == agent_name)
+         .filter(Finding.timestamp >= start_ts.to_pydatetime())
+         .filter(Finding.timestamp <= end_ts.to_pydatetime())
+         .order_by(Finding.timestamp.asc()))
+    findings = q.all()
+
+    events = []
+    for f in findings:
+        # event date aligned to trading day
+        asof = pd.to_datetime(f.timestamp).tz_localize(None).normalize()
+        # find closest trading day on/after timestamp
+        idx = spy.index[spy.index >= asof]
+        if len(idx) == 0:
+            continue
+        t = idx[0]
+
+        # regime at t
+        window = _asof_slice(spy, t, 252)
+        reg = classify_regime(window)
+        fwd = float(spy.loc[t, "fwd"]) if t in spy.index else None
+        if fwd is None or np.isnan(fwd):
+            continue
+
+        events.append({
+            "t": t,
+            "severity": f.severity,
+            "confidence": float(f.confidence or 0.5),
+            "consensus": (f.consensus_action or "").lower(),
+            "llm_disagreement": bool(f.llm_disagreement),
+            "regime": reg["regime"],
+            "regime_conf": float(reg["confidence"]),
+            "fwd": fwd,
+        })
+
+    if not events:
+        return {"ok": True, "agent": agent_name, "n": 0, "reason": "no_events"}
+
+    ev = pd.DataFrame(events)
+
+    # Only "ACT" events for signal performance
+    act = ev[ev["consensus"].isin(["act", "buy", "sell"])].copy()
+    if act.empty:
+        return {"ok": True, "agent": agent_name, "n": len(ev), "reason": "no_act_events"}
+
+    # Baseline: unconditional forward returns over same timestamps
+    baseline = act[["t"]].merge(spy[["fwd"]], left_on="t", right_index=True, how="left")["fwd"].dropna()
+
+    def _summ(df: pd.DataFrame) -> dict:
+        r = df["fwd"].dropna()
+        if r.empty:
+            return {"n": 0}
+        return {
+            "n": int(len(r)),
+            "mean": float(r.mean()),
+            "median": float(r.median()),
+            "hit_rate": float((r > 0).mean()),
+            "p10": float(r.quantile(0.10)),
+            "p90": float(r.quantile(0.90)),
+        }
+
+    by_regime = {reg: _summ(act[act["regime"] == reg]) for reg in ["trend", "chop", "volatility", "unknown"]}
+
+    report = {
+        "ok": True,
+        "agent": agent_name,
+        "horizon_days": horizon_days,
+        "act_summary": _summ(act),
+        "baseline_summary": {
+            "n": int(len(baseline)),
+            "mean": float(baseline.mean()) if len(baseline) else 0.0,
+            "hit_rate": float((baseline > 0).mean()) if len(baseline) else 0.0,
+        },
+        "by_regime": by_regime,
+        "notes": "Agent forward returns measured on SPY fwd returns at signal timestamps.",
+    }
+    return report
+
+
+You can expose this as an API endpoint later or run it in a CLI.
+
+3️⃣ LLM-interpreted TA commentary (per finding)
+
+This generates a human-readable TA state summary and injects it into the council prompt as “TA context”.
+
+📁 ta/ta_context.py (NEW)
+import pandas as pd
+from ta.regime_classifier import classify_regime
+
+def ta_context_summary(df: pd.DataFrame) -> dict:
+    if df is None or df.empty or "Close" not in df:
+        return {"ok": False}
+
+    reg = classify_regime(df)
+
+    close = pd.to_numeric(df["Close"], errors="coerce").dropna()
+    last = float(close.iloc[-1])
+    ret20 = float(close.iloc[-1] / close.iloc[-21] - 1) if len(close) >= 21 else 0.0
+    ret63 = float(close.iloc[-1] / close.iloc[-64] - 1) if len(close) >= 64 else 0.0
+
+    return {
+        "ok": True,
+        "last": last,
+        "ret20": ret20,
+        "ret63": ret63,
+        "regime": reg["regime"],
+        "regime_confidence": reg["confidence"],
+        "features": reg["features"],
+        "one_liner": (
+            f"TA regime={reg['regime']} (conf={reg['confidence']:.2f}); "
+            f"20d={ret20*100:.1f}%, 63d={ret63*100:.1f}%."
+        )
+    }
+
+Council prompt injection (PATCH)
+
+Wherever you build the council prompt (e.g., services/council.py), add:
+
+from data_sources.price_loader import load_symbol_frame
+from ta.ta_context import ta_context_summary
+
+
+Then inside run_council(payload):
+
+symbol = payload.get("symbol")
+ta_ctx = None
+if symbol:
+    df = load_symbol_frame(symbol, start="2007-01-01", use_cache=True).tail(252)
+    ta_ctx = ta_context_summary(df)
+
+payload["ta_context"] = ta_ctx
+
+
+And ensure your LLM prompt includes:
+
+ta_context.one_liner
+
+ta_context.features (optional)
+
+ta_context.regime
+
+4️⃣ Signal compression (merge 10 signals → 1 actionable thesis)
+
+This converts multiple findings into one “compressed” thesis object:
+
+action: ACT/WATCH/IGNORE
+
+rationale
+
+confidence
+
+which findings drove it
+
+📁 meta/signal_compression.py (NEW)
+from collections import defaultdict
+
+SEVERITY_W = {"low": 0.5, "medium": 1.0, "high": 1.5, "critical": 2.0}
+
+def compress_findings(findings: list[dict]) -> dict:
+    """
+    Input: list of Finding.to_dict() payloads (or similar)
+    Output: single thesis dict
+    """
+    if not findings:
+        return {"ok": False, "reason": "no_findings"}
+
+    buckets = defaultdict(list)
+    for f in findings:
+        mt = (f.get("market_type") or "unknown").lower()
+        buckets[mt].append(f)
+
+    total_score = 0.0
+    drivers = []
+
+    for mt, fs in buckets.items():
+        mt_score = 0.0
+        top = None
+        top_score = -1e9
+
+        for f in fs:
+            sev = (f.get("severity") or "medium").lower()
+            w = SEVERITY_W.get(sev, 1.0)
+            conf = float(f.get("confidence") or 0.5)
+            base = w * (0.5 + conf)  # 0.5..1.5 scaling
+            mt_score += base
+
+            if base > top_score:
+                top_score = base
+                top = f
+
+        total_score += mt_score
+        if top:
+            drivers.append({
+                "market_type": mt,
+                "title": top.get("title"),
+                "severity": top.get("severity"),
+                "confidence": top.get("confidence"),
+                "agent": top.get("agent_name") or top.get("agent"),
+                "id": top.get("id"),
+                "score": round(top_score, 3),
+            })
+
+    # thresholds (tune)
+    if total_score >= 6.0:
+        action = "ACT"
+        conf = min(0.95, 0.55 + (total_score - 6.0) * 0.05)
+    elif total_score >= 3.0:
+        action = "WATCH"
+        conf = min(0.85, 0.45 + (total_score - 3.0) * 0.05)
+    else:
+        action = "IGNORE"
+        conf = max(0.10, 0.35 - (3.0 - total_score) * 0.05)
+
+    drivers = sorted(drivers, key=lambda x: x["score"], reverse=True)[:5]
+
+    return {
+        "ok": True,
+        "action": action,
+        "confidence": float(round(conf, 3)),
+        "score": float(round(total_score, 3)),
+        "drivers": drivers,
+        "thesis": _make_thesis(action, drivers)
+    }
+
+def _make_thesis(action: str, drivers: list[dict]) -> str:
+    if not drivers:
+        return "No dominant drivers."
+    top = drivers[0]
+    return f"{action}: Primary driver is {top['market_type']} ({top['title']}). Top drivers: " + ", ".join(
+        f"{d['market_type']}" for d in drivers[:3]
+    )
+
+
+You can run this on:
+
+“Recent Findings” window
+
+or per symbol
+
+or per regime
+
+✅ Tie-in: TA + Agent + LLM triple-confirmation gate
+
+Add this helper:
+
+📁 services/tri_confirm.py (NEW)
+def tri_confirm_gate(council: dict, ta_ctx: dict | None, finding: dict) -> dict:
+    """
+    Returns:
+      { "boost": float, "uncertainty_spike": bool, "reason": str }
+    """
+    consensus = (council.get("consensus") or "").upper()
+    agree = float(council.get("agreement") or 0.0)
+
+    sev = (finding.get("severity") or "medium").lower()
+    base_is_strong = sev in ["high", "critical"] and agree >= 0.66 and consensus == "ACT"
+
+    if not ta_ctx or not ta_ctx.get("ok"):
+        return {"boost": 0.0, "uncertainty_spike": False, "reason": "no_ta"}
+
+    reg = ta_ctx.get("regime")
+    reg_conf = float(ta_ctx.get("regime_confidence") or 0.0)
+
+    # Basic alignment heuristic:
+    # - trend regime favors momentum/trend-follow signals
+    # - chop favors mean-reversion signals
+    # - volatility favors risk-off / hedging / caution signals
+    # We don't know the agent type here, so use severity + consensus only.
+    aligned = (reg_conf >= 0.6 and base_is_strong)
+
+    if aligned:
+        return {"boost": 0.10, "uncertainty_spike": False, "reason": f"aligned_regime={reg}"}
+
+    # conflict: council says ACT but TA regime is low confidence or mismatch → uncertainty
+    if consensus == "ACT" and (reg_conf < 0.55):
+        return {"boost": -0.05, "uncertainty_spike": True, "reason": "ta_low_conflict"}
+
+    return {"boost": 0.0, "uncertainty_spike": False, "reason": "neutral"}
+
+
+Then in your auto-triage flow:
+
+increase Finding.consensus_confidence by boost
+
+if uncertainty_spike=True, log UncertaintyEvent(spike=True, ...)
+
+Next wiring point (so this actually “runs”)
+
+You already have _run_agent() in scheduler.py saving Finding rows. Add this after inserting findings:
+
+# after db.session.add(finding) loops, before commit
+if finding.severity == "critical" and not finding.auto_analyzed:
+    from services.auto_triage import auto_analyze_and_alert
+    auto_analyze_and_alert(finding.id)
+
+
+That’s it: critical findings auto-council + TA + email.
+
+Technical analysis section of the platform (recommended add)
+
+Yes — you should add it. Not as “charts for charts’ sake”, but because TA gives you:
+
+a deterministic “non-LLM” sanity check
+
+regime labeling (trend/chop/vol)
+
+a way to explain signals
+
+a backtestable layer that doesn’t depend on alternative datasets
+
+The exact pieces above are the foundation.

@@ -1,0 +1,258 @@
+1️⃣ Dashboard overlay code (SPY price + signal markers + severity coloring)
+
+This adds a SPY price chart to your existing dashboard and overlays Finding markers (color-coded by severity). It uses Chart.js via CDN (no Python deps).
+
+A) Add 2 API endpoints (price series + signal points)
+
+Edit/create routes/api.py (or add these routes to whatever API blueprint you already have):
+
+# routes/api.py
+from flask import Blueprint, jsonify, request
+from datetime import datetime
+import yfinance as yf
+
+from models import Finding  # uses your SQLAlchemy model
+
+api_bp = Blueprint("api", __name__)
+
+SEVERITY_COLOR = {
+    "low": "#22c55e",       # green
+    "medium": "#eab308",    # yellow
+    "high": "#f97316",      # orange
+    "critical": "#ef4444",  # red
+}
+
+@api_bp.get("/series/spy")
+def spy_series():
+    """
+    Returns SPY daily closes for charting.
+    Query params:
+      - period: default '6mo' (e.g., '1y', '2y', 'max')
+    """
+    period = request.args.get("period", "6mo")
+
+    df = yf.download("SPY", period=period, interval="1d", progress=False)
+    if df is None or df.empty:
+        return jsonify({"symbol": "SPY", "points": []})
+
+    # Normalize
+    df = df.reset_index()
+    points = []
+    for _, r in df.iterrows():
+        d = r["Date"]
+        if hasattr(d, "to_pydatetime"):
+            d = d.to_pydatetime()
+        points.append({
+            "t": d.strftime("%Y-%m-%d"),
+            "close": float(r["Close"]),
+        })
+
+    return jsonify({"symbol": "SPY", "points": points})
+
+
+@api_bp.get("/signals")
+def signals():
+    """
+    Returns recent Finding rows for a symbol for chart markers.
+    Query params:
+      - symbol: default 'SPY'
+      - limit: default 200
+    """
+    symbol = request.args.get("symbol", "SPY")
+    limit = int(request.args.get("limit", "200"))
+
+    rows = (
+        Finding.query
+        .filter(Finding.symbol == symbol)
+        .order_by(Finding.timestamp.desc())
+        .limit(limit)
+        .all()
+    )
+
+    # Chart needs markers at x=date and y=price.
+    # If you stored price in metadata, we can read it. Otherwise we place marker on SPY close via frontend lookup.
+    out = []
+    for f in rows:
+        meta = f.finding_metadata or {}
+        out.append({
+            "id": f.id,
+            "t": f.timestamp.strftime("%Y-%m-%d"),
+            "title": f.title,
+            "severity": f.severity,
+            "color": SEVERITY_COLOR.get(f.severity, "#64748b"),
+            "confidence": float(f.confidence or 0.0),
+            "agent": f.agent_name,
+            "meta": meta,
+        })
+
+    return jsonify({"symbol": symbol, "signals": out})
+
+
+Make sure your app.py registers the blueprint with /api (you already had that earlier):
+
+app.register_blueprint(api_bp, url_prefix="/api")
+
+B) Add the chart container to templates/dashboard.html
+
+Add this somewhere near the top of your dashboard page:
+
+<!-- templates/dashboard.html -->
+<div style="margin: 16px 0; padding: 12px; border: 1px solid #e5e7eb; border-radius: 10px;">
+  <div style="display:flex; gap:12px; align-items:center; justify-content:space-between;">
+    <h3 style="margin:0;">SPY + Signals</h3>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <label for="period" style="font-size:12px;">Period</label>
+      <select id="period">
+        <option value="6mo" selected>6mo</option>
+        <option value="1y">1y</option>
+        <option value="2y">2y</option>
+        <option value="5y">5y</option>
+        <option value="max">max</option>
+      </select>
+      <button id="reloadBtn">Reload</button>
+    </div>
+  </div>
+
+  <div style="margin-top: 10px;">
+    <canvas id="spyChart" height="90"></canvas>
+  </div>
+
+  <div style="margin-top:8px; font-size:12px; color:#6b7280;">
+    Markers are Findings where symbol = SPY. Color = severity. Hover to see title/agent/confidence.
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(async function() {
+  const ctx = document.getElementById('spyChart').getContext('2d');
+  const periodSel = document.getElementById('period');
+  const reloadBtn = document.getElementById('reloadBtn');
+
+  let chart;
+
+  function severityOrder(s) {
+    return ({low:1, medium:2, high:3, critical:4}[s] || 0);
+  }
+
+  async function loadData() {
+    const period = periodSel.value || "6mo";
+
+    const seriesResp = await fetch(`/api/series/spy?period=${encodeURIComponent(period)}`);
+    const seriesJson = await seriesResp.json();
+
+    const sigResp = await fetch(`/api/signals?symbol=SPY&limit=500`);
+    const sigJson = await sigResp.json();
+
+    const points = seriesJson.points || [];
+    const signals = sigJson.signals || [];
+
+    // Map date->close so we can place markers on the SPY close for that day.
+    const closeByDate = {};
+    points.forEach(p => closeByDate[p.t] = p.close);
+
+    // Build signal marker points: one per signal, y=close on that date (fallback: last close)
+    const lastClose = points.length ? points[points.length - 1].close : null;
+
+    const markerPoints = signals
+      .map(s => ({
+        x: s.t,
+        y: closeByDate[s.t] ?? lastClose,
+        title: s.title,
+        agent: s.agent,
+        severity: s.severity,
+        confidence: s.confidence,
+        color: s.color
+      }))
+      .filter(p => p.y !== null);
+
+    // If multiple signals on same day, keep the highest severity (reduces marker spam)
+    const bestPerDay = {};
+    markerPoints.forEach(m => {
+      const prev = bestPerDay[m.x];
+      if (!prev || severityOrder(m.severity) > severityOrder(prev.severity)) bestPerDay[m.x] = m;
+    });
+
+    const markers = Object.values(bestPerDay);
+
+    const labels = points.map(p => p.t);
+    const closes = points.map(p => p.close);
+
+    return { labels, closes, markers };
+  }
+
+  async function render() {
+    const { labels, closes, markers } = await loadData();
+
+    const markerDataset = {
+      type: 'scatter',
+      label: 'Signals',
+      data: markers.map(m => ({ x: m.x, y: m.y, _meta: m })),
+      pointRadius: 5,
+      pointHoverRadius: 7,
+      showLine: false,
+      parsing: false,
+      pointBackgroundColor: (c) => c.raw?._meta?.color || '#64748b',
+      pointBorderColor: '#111827',
+      pointBorderWidth: 1
+    };
+
+    const priceDataset = {
+      type: 'line',
+      label: 'SPY Close',
+      data: labels.map((d, i) => ({ x: d, y: closes[i] })),
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.15
+    };
+
+    if (chart) chart.destroy();
+
+    chart = new Chart(ctx, {
+      data: { datasets: [priceDataset, markerDataset] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'nearest', intersect: false },
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                const raw = context.raw;
+                const m = raw?._meta;
+                if (!m) return `SPY: ${context.parsed.y}`;
+                return `${m.severity.toUpperCase()} | ${m.title} | ${m.agent} | conf=${(m.confidence ?? 0).toFixed(2)}`;
+              }
+            }
+          },
+          legend: { display: true }
+        },
+        scales: {
+          x: { type: 'category', ticks: { maxTicksLimit: 12 } },
+          y: { beginAtZero: false }
+        }
+      }
+    });
+  }
+
+  reloadBtn.addEventListener('click', render);
+  periodSel.addEventListener('change', render);
+
+  await render();
+})();
+</script>
+
+C) Run it
+
+Start the app:
+
+python main.py
+
+
+Open the Replit web preview URL (not 127.0.0.1).
+
+You should see the SPY chart on the dashboard, with colored markers.
+
+Why this directly helps backtesting
+
+Once you run backtests, you can write findings to the DB with historical timestamps. This overlay will immediately show whether signals cluster around drawdowns/regimes — a fast “sanity view” before you even look at metrics.

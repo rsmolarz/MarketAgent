@@ -1,0 +1,127 @@
+<!doctype html>
+<html>
+<head>
+  <title>Meta-Supervisor Approvals</title>
+</head>
+<body style="font-family:Arial;max-width:1100px;margin:24px auto;line-height:1.35">
+
+  <h2>Meta-Supervisor Approval Console</h2>
+  <div style="color:#666">Now: {{ now }}</div>
+
+  <hr/>
+
+  <h3>1) GitHub PRs (merge happens in GitHub)</h3>
+  {% if open_prs and open_prs|length %}
+    <ul>
+      {% for pr in open_prs %}
+        <li>
+          <a href="{{ pr.url }}" target="_blank">#{{ pr.number }} - {{ pr.title }}</a>
+          <span style="color:#666"> (updated {{ pr.updated_at }})</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div style="color:#666">
+      No PRs listed (set <code>GITHUB_TOKEN</code> + <code>GITHUB_REPO</code> to display them).
+    </div>
+  {% endif %}
+
+  <hr/>
+
+  <h3>2) Agent Proposals (approve/reject + IC checklist)</h3>
+  {% for p in proposals %}
+    {% set pid = p.id or p.name %}
+    <div style="border:1px solid #ddd;border-radius:10px;padding:12px;margin:10px 0">
+      <div style="font-weight:700">{{ p.name }} <span style="color:#666">({{ p.source }})</span></div>
+      <div><b>Strategy:</b> {{ p.strategy_class }}</div>
+      <div><b>Regime trigger:</b> {{ p.regime_trigger }}</div>
+      <div><b>Status:</b> {{ p.status }} {% if p.status_note %}<span style="color:#b00">- {{ p.status_note }}</span>{% endif %}</div>
+      {% if p.pr_url %}
+        <div style="margin-top:6px">
+          <b>Scaffold PR:</b>
+          <a href="{{ p.pr_url }}" target="_blank">{{ p.pr_url }}</a>
+        </div>
+      {% endif %}
+
+      <details style="margin-top:8px">
+        <summary><b>IC Checklist (required for approval)</b></summary>
+        {% set c = ic.get(pid) %}
+        <form method="post" action="/admin/approvals/proposal/{{ pid }}/checklist">
+          {% for key in ['data_sources_validated','eval_plan_defined','risk_controls_defined','execution_guardrails','shadow_mode_first','owner_assigned'] %}
+            <div>
+              <label>
+                <input type="checkbox" name="{{ key }}" value="1" {% if c and c.get(key) %}checked{% endif %} />
+                {{ key }}
+              </label>
+            </div>
+          {% endfor %}
+          <button style="margin-top:8px;padding:8px 12px">Save checklist</button>
+        </form>
+      </details>
+
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <form method="post" action="/admin/approvals/proposal/{{ pid }}/set_status">
+          <input type="hidden" name="status" value="APPROVED"/>
+          <button style="padding:8px 12px" {% if p.pr_created %}disabled{% endif %}>Approve</button>
+        </form>
+        <form method="post" action="/admin/approvals/proposal/{{ pid }}/set_status">
+          <input type="hidden" name="status" value="REJECTED"/>
+          <button style="padding:8px 12px;background:#fff;border:1px solid #999">Reject</button>
+        </form>
+        <form method="post" action="/admin/approvals/proposal/{{ pid }}/set_status">
+          <input type="hidden" name="status" value="PENDING"/>
+          <button style="padding:8px 12px;background:#fff;border:1px solid #999">Reset to Pending</button>
+        </form>
+
+        <form method="post" action="/admin/approvals/proposal/{{ pid }}/generate_explainer">
+          <button style="padding:8px 12px">Generate "Why proposed" explainer</button>
+        </form>
+      </div>
+
+      {% set ex = explainers.get(pid) %}
+      {% if ex %}
+        <details style="margin-top:10px" open>
+          <summary><b>Why proposed (LLM explainer)</b> <span style="color:#666">({{ ex.updated_at }})</span></summary>
+          <pre style="white-space:pre-wrap;border:1px solid #eee;border-radius:10px;padding:10px">{{ ex.markdown }}</pre>
+        </details>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <hr/>
+
+  <h3>3) Promotions - Multi-signer ({{ threshold }} of {{ approvers|length if approvers|length else 3 }})</h3>
+  {% if promote_candidates and promote_candidates|length %}
+    {% for a in promote_candidates %}
+      {% set pr = promos.get(a) %}
+      <div style="border:1px solid #ddd;border-radius:10px;padding:12px;margin:10px 0">
+        <div style="font-weight:700">{{ a }}</div>
+        <div><b>Signers:</b> {{ (pr.signers|join(", ")) if pr and pr.signers else "None" }}</div>
+        <div style="color:#666">Approved when signers >= {{ threshold }} and all are on the approver list.</div>
+
+        <form method="post" action="/admin/approvals/promotion/{{ a }}/sign" style="margin-top:8px">
+          <label>Signer email</label><br/>
+          <input name="email" style="padding:8px;width:380px;max-width:100%"/>
+          <button style="padding:8px 12px;margin-left:8px">Sign</button>
+        </form>
+
+        <form method="post" action="/admin/approvals/promotion/{{ a }}/clear" style="margin-top:8px">
+          <button style="padding:8px 12px;background:#fff;border:1px solid #999">Clear signatures</button>
+        </form>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div style="color:#666">No PROMOTE candidates in the current meta_report.</div>
+  {% endif %}
+
+  <hr/>
+
+  <h3>4) What to do next</h3>
+  <ul>
+    <li>Merge PRs in GitHub (dashboard lists them).</li>
+    <li>Approve agent proposals only after the IC checklist is complete.</li>
+    <li>Collect promotion signatures (2-of-3) before allowing promotion PRs.</li>
+  </ul>
+
+</body>
+</html>

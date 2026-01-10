@@ -1,0 +1,550 @@
+1️⃣ Agent Ensemble Voting (within cluster)
+What it does
+
+Builds clusters of redundant agents (from correlation).
+
+When signals arrive, it produces a cluster-level ensemble decision (ACT/WATCH/IGNORE).
+
+You can use ensemble decision to:
+
+boost confidence
+
+suppress duplicate alerts
+
+feed allocator weights
+
+📁 meta/cluster_ensemble.py (NEW)
+from collections import defaultdict
+from typing import Dict, List, Tuple
+
+# Simple vote map
+VOTE_SCORE = {"IGNORE": 0.0, "WATCH": 0.5, "ACT": 1.0}
+
+def build_clusters_from_pairs(redundant_pairs: List[Tuple[str, str]]) -> List[List[str]]:
+    """
+    Given redundant pairs (a,b) meaning correlated, form clusters.
+    """
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for a, b in redundant_pairs:
+        union(a, b)
+
+    groups = defaultdict(list)
+    for x in list(parent.keys()):
+        groups[find(x)].append(x)
+
+    return [sorted(v) for v in groups.values() if len(v) >= 2]
+
+
+def ensemble_vote(votes: Dict[str, str], weights: Dict[str, float] = None) -> Dict:
+    """
+    votes: {agent_name: "ACT"/"WATCH"/"IGNORE"}
+    weights: optional {agent_name: weight}
+    """
+    weights = weights or {}
+    total_w = 0.0
+    score = 0.0
+
+    for agent, v in votes.items():
+        w = float(weights.get(agent, 1.0))
+        total_w += w
+        score += w * VOTE_SCORE.get(v, 0.0)
+
+    if total_w <= 0:
+        return {"consensus": "IGNORE", "agreement": 0.0, "score": 0.0}
+
+    avg = score / total_w
+
+    # Decision bands
+    if avg >= 0.70:
+        consensus = "ACT"
+    elif avg >= 0.35:
+        consensus = "WATCH"
+    else:
+        consensus = "IGNORE"
+
+    # Agreement proxy: how concentrated votes are around the mean
+    # (0..1) where 1 means all same vote
+    distinct = len(set(votes.values())) if votes else 1
+    agreement = 1.0 if distinct == 1 else max(0.0, 1.0 - (distinct - 1) * 0.35)
+
+    return {"consensus": consensus, "agreement": agreement, "score": float(avg)}
+
+📁 Update meta/redundancy.py (ADD THIS) so you can return redundant PAIRS too
+def find_redundant_pairs(corr_threshold=0.85):
+    import numpy as np
+
+    agents, matrix = compute_agent_signal_vectors()
+    pairs = []
+
+    for i, a1 in enumerate(agents):
+        for a2 in agents[i+1:]:
+            v1, v2 = matrix[a1], matrix[a2]
+            if len(v1) < 20:
+                continue
+            corr = np.corrcoef(v1, v2)[0, 1]
+            if corr >= corr_threshold:
+                pairs.append((a1, a2))
+
+    return pairs
+
+2️⃣ Portfolio-level Drawdown Governor
+What it does
+
+Computes rolling portfolio drawdown from your telemetry rewards
+
+If drawdown breaches threshold:
+
+reduces allocator aggressiveness
+
+slows cadence
+
+optionally quarantines high-variance agents
+
+📁 trading/drawdown_governor.py (NEW)
+from dataclasses import dataclass
+from typing import Dict, Any, List
+from pathlib import Path
+import json
+
+EVENTS = Path("telemetry/events.jsonl")
+
+@dataclass
+class DrawdownState:
+    peak: float = 0.0
+    equity: float = 0.0
+    drawdown: float = 0.0
+    breached: bool = False
+
+
+def load_rewards(last_n=5000) -> List[float]:
+    if not EVENTS.exists():
+        return []
+    out = []
+    for ln in EVENTS.read_text().splitlines()[-last_n:]:
+        try:
+            e = json.loads(ln)
+        except Exception:
+            continue
+        r = e.get("reward")
+        if r is None:
+            continue
+        out.append(float(r))
+    return out
+
+
+def compute_drawdown(rewards: List[float]) -> DrawdownState:
+    st = DrawdownState()
+    for r in rewards:
+        st.equity += r
+        if st.equity > st.peak:
+            st.peak = st.equity
+        st.drawdown = (st.equity - st.peak)
+    return st
+
+
+def governor(decision: Dict[str, Any], dd_limit=-3.0) -> Dict[str, Any]:
+    """
+    decision: allocator decision payload you already compute
+    dd_limit: drawdown threshold in reward-units (your reward scale)
+    Returns a modified decision with multipliers.
+    """
+    rewards = load_rewards(last_n=5000)
+    st = compute_drawdown(rewards)
+    breached = st.drawdown <= dd_limit
+
+    # Multipliers
+    # - cadence_multiplier < 1 slows scheduler changes / runs
+    # - budget_multiplier < 1 reduces runs allocated
+    if breached:
+        return {
+            **decision,
+            "drawdown": st.drawdown,
+            "drawdown_breached": True,
+            "cadence_multiplier": 0.5,
+            "budget_multiplier": 0.5,
+            "reason": f"portfolio drawdown {st.drawdown:.2f} <= limit {dd_limit}",
+        }
+
+    return {
+        **decision,
+        "drawdown": st.drawdown,
+        "drawdown_breached": False,
+        "cadence_multiplier": 1.0,
+        "budget_multiplier": 1.0,
+        "reason": "ok",
+    }
+
+🔧 Patch your scheduler allocation method
+
+In AgentScheduler._rebalance_agent_allocation():
+
+from trading.drawdown_governor import governor
+
+# after ingest_events(), before allocate()
+decision = {"total_budget_runs": 30}
+g = governor(decision, dd_limit=-3.0)
+
+total_budget = int(decision["total_budget_runs"] * g["budget_multiplier"])
+total_budget = max(5, total_budget)
+
+
+Then pass total_budget_runs=total_budget to self.allocator.allocate(...).
+
+Optional: if breached, also scale intervals:
+
+if g["drawdown_breached"]:
+    # soften aggressiveness
+    new_interval = max(new_interval, 5)  # don't run < 5 min when stressed
+
+3️⃣ TA + Agent + LLM Triple-confirmation Gate
+What it does
+
+For a finding:
+
+compute TA confirmation for that symbol
+
+run 3-LLM council consensus (ACT/WATCH/IGNORE)
+
+combine with agent severity/confidence
+
+if critical and consensus == ACT and TA agrees → auto-email whitelist
+
+You already have Finding fields + LLMCouncilResult model + UncertaintyEvent.
+
+3A) Technical Analysis engine
+📁 ta/ta_engine.py (NEW)
+import pandas as pd
+
+def rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    delta = close.diff()
+    gain = delta.where(delta > 0, 0).rolling(period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+    rs = gain / loss.replace(0, 1e-9)
+    return 100 - (100 / (1 + rs))
+
+def ta_vote(df) -> dict:
+    """
+    Returns a TA decision: ACT/WATCH/IGNORE + rationale
+    ACT = strong confirmation (trend + momentum)
+    WATCH = partial confirmation
+    IGNORE = conflicts / neutral
+    """
+    if df is None or len(df) < 60 or "Close" not in df:
+        return {"vote": "WATCH", "score": 0.5, "reason": "insufficient price history"}
+
+    close = df["Close"].astype(float)
+    r = rsi(close, 14).iloc[-1]
+
+    ma20 = close.rolling(20).mean().iloc[-1]
+    ma50 = close.rolling(50).mean().iloc[-1]
+    px = close.iloc[-1]
+
+    trend_up = (px > ma20) and (ma20 > ma50)
+    trend_down = (px < ma20) and (ma20 < ma50)
+
+    # Rules (simple, stable, explainable)
+    if trend_up and r >= 55:
+        return {"vote": "ACT", "score": 0.85, "reason": f"trend_up + RSI {r:.1f}"}
+    if trend_down and r <= 45:
+        return {"vote": "ACT", "score": 0.85, "reason": f"trend_down + RSI {r:.1f}"}
+    if trend_up or trend_down:
+        return {"vote": "WATCH", "score": 0.60, "reason": f"trend present, RSI {r:.1f} mixed"}
+    return {"vote": "IGNORE", "score": 0.25, "reason": f"no trend confirmation, RSI {r:.1f}"}
+
+3B) 3-LLM council (pluggable)
+
+You already have Claude. Instead of hardcoding OpenAI/Gemini endpoints, make it provider-pluggable so you can drop in your own wrappers.
+
+📁 services/llm_council.py (NEW)
+import os
+import json
+from typing import Dict, Any
+
+from models import db, LLMCouncilResult, UncertaintyEvent, AgentCouncilStat
+from regime.confidence import get_cached_regime
+from telemetry.context import get_current_run
+
+# Provider hooks you implement / already have
+from services.ai_analysis import analyze_alert_with_claude
+
+# Optional: if you already have these wrappers, import them; otherwise they can be added later.
+try:
+    from services.openai_analysis import analyze_alert_with_openai
+except Exception:
+    analyze_alert_with_openai = None
+
+try:
+    from services.gemini_analysis import analyze_alert_with_gemini
+except Exception:
+    analyze_alert_with_gemini = None
+
+
+VOTE_MAP = {"IGNORE": 0.0, "WATCH": 0.5, "ACT": 1.0}
+
+def _extract_vote(analysis_text: str) -> str:
+    """
+    Minimal deterministic extraction:
+    You can tighten this later by requiring the model to output JSON.
+    """
+    t = (analysis_text or "").upper()
+    # Simple heuristics
+    if "ACTIONABILITY ASSESSMENT" in t and "HIGH" in t:
+        return "ACT"
+    if "ACTIONABILITY ASSESSMENT" in t and "MEDIUM" in t:
+        return "WATCH"
+    if "ACTIONABILITY ASSESSMENT" in t and "LOW" in t:
+        return "IGNORE"
+    return "WATCH"
+
+
+def run_council(finding_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Runs Claude + OpenAI + Gemini (if available), persists LLMCouncilResult,
+    and logs UncertaintyEvent.
+    """
+    models_used = {}
+    analyses = {}
+    votes = {}
+
+    # Claude (required)
+    r1 = analyze_alert_with_claude(finding_dict)
+    if r1.get("success"):
+        models_used["claude"] = r1.get("model")
+        analyses["claude"] = r1.get("analysis")
+        votes["claude"] = _extract_vote(r1.get("analysis"))
+
+    # OpenAI (optional)
+    if analyze_alert_with_openai:
+        r2 = analyze_alert_with_openai(finding_dict)
+        if r2.get("success"):
+            models_used["openai"] = r2.get("model")
+            analyses["openai"] = r2.get("analysis")
+            votes["openai"] = _extract_vote(r2.get("analysis"))
+
+    # Gemini (optional)
+    if analyze_alert_with_gemini:
+        r3 = analyze_alert_with_gemini(finding_dict)
+        if r3.get("success"):
+            models_used["gemini"] = r3.get("model")
+            analyses["gemini"] = r3.get("analysis")
+            votes["gemini"] = _extract_vote(r3.get("analysis"))
+
+    # If only Claude exists, still works but flags disagreement as unknown.
+    numeric = [VOTE_MAP.get(v, 0.5) for v in votes.values()] or [0.5]
+    avg = sum(numeric) / max(len(numeric), 1)
+
+    if avg >= 0.70:
+        consensus = "ACT"
+    elif avg >= 0.35:
+        consensus = "WATCH"
+    else:
+        consensus = "IGNORE"
+
+    # disagreement: spread in votes
+    disagreement = (max(numeric) - min(numeric)) if numeric else 0.0
+    spike = disagreement >= 0.50  # configurable
+
+    # Persist council result
+    rec = LLMCouncilResult(
+        finding_id=int(finding_dict.get("id") or 0),
+        agent_name=finding_dict.get("agent_name") or finding_dict.get("agent"),
+        consensus=consensus,
+        agreement=float(1.0 - disagreement),
+        uncertainty=float(disagreement),
+        models_used=models_used,
+        raw_votes=votes,
+        analyses=analyses,
+        severity=finding_dict.get("severity"),
+        confidence=float(finding_dict.get("confidence") or 0.5),
+    )
+    db.session.add(rec)
+
+    # Persist uncertainty event
+    regime = get_cached_regime() or "unknown"
+    ue = UncertaintyEvent(
+        label="llm_council",
+        score=float(disagreement),
+        spike=bool(spike),
+        disagreement=float(disagreement),
+        votes=votes,
+        active_regime=regime,
+        cadence_multiplier=0.5 if spike else 1.0,
+        decay_multiplier=0.7 if spike else 1.0,
+    )
+    db.session.add(ue)
+
+    # Update fail-first stats (AgentCouncilStat)
+    agent = rec.agent_name or "unknown"
+    stat = AgentCouncilStat.query.filter_by(agent_name=agent, regime=regime).first()
+    if not stat:
+        stat = AgentCouncilStat(agent_name=agent, regime=regime)
+        db.session.add(stat)
+
+    if consensus == "ACT":
+        stat.votes_act += 1
+    elif consensus == "WATCH":
+        stat.votes_watch += 1
+    else:
+        stat.votes_ignore += 1
+        stat.last_ignore_ts = ue.timestamp
+        if not stat.first_failure_ts:
+            stat.first_failure_ts = ue.timestamp
+
+    db.session.commit()
+
+    return {
+        "consensus": consensus,
+        "agreement": float(1.0 - disagreement),
+        "uncertainty": float(disagreement),
+        "spike": bool(spike),
+        "votes": votes,
+        "models_used": models_used,
+    }
+
+3C) Triple-confirmation gate + auto-email on critical
+📁 services/auto_triage.py (NEW)
+from models import db, Finding, Whitelist
+from services.llm_council import run_council
+from services.email_meta import send_meta_email
+from ta.ta_engine import ta_vote
+
+def should_auto_alert(finding: Finding, council: dict, ta: dict) -> bool:
+    if (finding.severity or "").lower() != "critical":
+        return False
+    if council.get("consensus") != "ACT":
+        return False
+    if ta.get("vote") != "ACT":
+        return False
+    return True
+
+
+def auto_analyze_and_alert(finding_id: int, price_frame_loader):
+    """
+    price_frame_loader(symbol) -> df with Close column (no network inside here ideally)
+    """
+    f = Finding.query.get(finding_id)
+    if not f:
+        return {"ok": False, "reason": "finding_not_found"}
+
+    if f.auto_analyzed:
+        return {"ok": True, "reason": "already_analyzed"}
+
+    payload = f.to_dict()
+    payload["agent"] = f.agent_name
+
+    # TA vote
+    df = price_frame_loader(f.symbol) if f.symbol else None
+    ta = ta_vote(df)
+
+    # LLM council
+    council = run_council(payload)
+
+    # Persist consensus fields on Finding
+    f.consensus_action = council.get("consensus")
+    f.consensus_confidence = float(council.get("agreement") or 0.0)
+    f.llm_votes = council.get("votes")
+    f.llm_disagreement = bool(council.get("spike"))
+    f.auto_analyzed = True
+
+    # Alert?
+    if should_auto_alert(f, council, ta) and not f.alerted:
+        emails = [w.email for w in Whitelist.query.all()]
+        subject = f"[ACT] {f.title} ({f.symbol or 'N/A'})"
+        text = (
+            f"Critical finding confirmed by TA + LLM council\n\n"
+            f"Title: {f.title}\n"
+            f"Agent: {f.agent_name}\n"
+            f"Symbol: {f.symbol}\n"
+            f"Severity: {f.severity}\n"
+            f"Confidence: {f.confidence}\n\n"
+            f"TA: {ta}\n"
+            f"Council: {council}\n\n"
+            f"Description:\n{f.description}\n"
+        )
+        html = "<pre>" + text + "</pre>"
+        send_meta_email(subject, text, html, to_override=emails)
+        f.alerted = True
+
+    db.session.commit()
+    return {"ok": True, "ta": ta, "council": council, "alerted": f.alerted}
+
+Wire it into your scheduler (critical findings auto-trigger)
+
+In AgentScheduler._run_agent() after storing findings, add:
+
+from services.auto_triage import auto_analyze_and_alert
+from data_sources.price_loader import load_symbol_frame  # you may need to add this helper
+
+def _price_frame_loader(symbol: str):
+    # implement locally: should load from cache/db, not network
+    return load_symbol_frame(symbol, start="2020-01-01", use_cache=True)
+
+# After db.session.add(finding) and before commit:
+# If critical, run triage immediately.
+if finding_data.get("severity", "").lower() == "critical":
+    db.session.commit()  # ensure finding has an id
+    auto_analyze_and_alert(finding.id, _price_frame_loader)
+
+
+If you don’t have load_symbol_frame, create it as a wrapper around your cached price loader.
+
+Final: Make allocator respond to uncertainty spikes
+
+You already store UncertaintyEvent and have cadence_multiplier + decay_multiplier.
+
+Add to _rebalance_agent_allocation():
+
+from models import UncertaintyEvent
+
+ue = UncertaintyEvent.query.order_by(UncertaintyEvent.timestamp.desc()).first()
+cadence_mult = float(ue.cadence_multiplier) if ue else 1.0
+decay_mult = float(ue.decay_multiplier) if ue else 1.0
+
+# Reduce total budget under uncertainty
+total_budget = int(total_budget * cadence_mult)
+total_budget = max(5, total_budget)
+
+# Optionally reduce exploration when uncertainty is high
+self.allocator.exploration *= decay_mult
+
+
+(If you don’t want to mutate exploration globally, apply a local multiplier in score() instead.)
+
+What you should do next (so this runs end-to-end)
+
+Add the new files:
+
+meta/cluster_ensemble.py
+
+trading/drawdown_governor.py
+
+ta/ta_engine.py
+
+services/llm_council.py
+
+services/auto_triage.py
+
+Add the small scheduler patches:
+
+drawdown governor in _rebalance_agent_allocation()
+
+critical finding auto-triage in _run_agent()
+
+uncertainty multipliers in allocator step
+
+Add/confirm a cached price loader:
+
+data_sources/price_loader.py should expose something like load_symbol_frame()

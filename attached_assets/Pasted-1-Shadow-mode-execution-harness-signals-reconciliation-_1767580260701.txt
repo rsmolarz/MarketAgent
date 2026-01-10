@@ -1,0 +1,313 @@
+1) Shadow-mode execution harness (signals + reconciliation, no capital)
+Goal
+
+Agents keep running, emitting signals and realized PnL reconciliation, but do not deploy capital.
+
+Add: meta_supervisor/policy/mode.py
+import os
+
+def trading_mode() -> str:
+    # "shadow" (default) or "live"
+    return (os.environ.get("TRADING_MODE") or "shadow").lower()
+
+def is_shadow() -> bool:
+    return trading_mode() != "live"
+
+Add: execution/router.py
+from meta_supervisor.policy.mode import is_shadow
+
+def route_signal(signal: dict) -> dict:
+    """
+    Central gate: everything that would allocate capital must pass here.
+    In shadow mode: we record intent but do not size/route orders.
+    """
+    if is_shadow():
+        return {"status": "shadow", "routed": False, "reason": "TRADING_MODE=shadow", "signal": signal}
+
+    # LIVE routing would happen here (broker/exchange adapter)
+    return {"status": "live", "routed": True, "signal": signal}
+
+Wire into your agents (one place)
+
+Wherever an agent currently “acts” on a signal (or where you email results), add:
+
+from execution.router import route_signal
+route_result = route_signal(result_dict_or_signal)
+# store route_result in Finding.metadata or alpha event metadata
+
+Set in Replit
+
+TRADING_MODE=shadow (default)
+
+Later: TRADING_MODE=live
+
+2) Auto-rollback PRs on drawdown breach
+Goal
+
+If an auto-promotion/auto-scaffold PR merges and portfolio drawdown breaches, automatically open a PR that reverts the merge (or disables the promoted agent via policy).
+
+There are two approaches; do both for robustness:
+
+A) Soft rollback (recommended): disable agent(s) via policy file
+
+This is safer than git revert.
+
+Add: meta_supervisor/state/kill_switch.json
+{
+  "disabled_agents": [],
+  "disabled_strategies": []
+}
+
+Add: meta_supervisor/policy/kill_switch.py
+import json
+from pathlib import Path
+
+KILL = Path("meta_supervisor/state/kill_switch.json")
+
+def _load():
+    if not KILL.exists():
+        return {"disabled_agents": [], "disabled_strategies": []}
+    return json.loads(KILL.read_text())
+
+def agent_disabled(agent: str) -> bool:
+    s = _load()
+    return agent in (s.get("disabled_agents") or [])
+
+def strategy_disabled(strategy_class: str) -> bool:
+    s = _load()
+    return strategy_class in (s.get("disabled_strategies") or [])
+
+def disable_agents(agents: list[str], reason: str = ""):
+    s = _load()
+    cur = set(s.get("disabled_agents") or [])
+    for a in agents:
+        cur.add(a)
+    s["disabled_agents"] = sorted(cur)
+    s["last_reason"] = reason
+    KILL.parent.mkdir(parents=True, exist_ok=True)
+    KILL.write_text(json.dumps(s, indent=2))
+
+Wire into AgentScheduler._run_agent
+
+Right before instantiating agent:
+
+from meta_supervisor.policy.kill_switch import agent_disabled
+
+if agent_disabled(agent_name):
+    logger.warning(f"Agent disabled by kill_switch: {agent_name}")
+    return
+
+B) Hard rollback: create a revert PR (git revert)
+
+Add meta_supervisor/github_revert_pr.py (uses GitHub API). It will open a PR that reverts a merge commit. (If you want this exact file, say “use git revert PRs”; it needs your repo workflow/merge strategy to be known. Soft rollback works regardless.)
+
+Breach detection
+
+Add: meta_supervisor/risk/breach.py
+
+import os
+
+def drawdown_breach(fleet: dict) -> bool:
+    # bps threshold
+    thresh = float(os.environ.get("MAX_DRAWDOWN_BPS", "250"))
+    dd = float(fleet.get("portfolio_max_drawdown_bps", 0) or 0)
+    return dd >= thresh
+
+
+In your supervisor run (after report = build_report()):
+
+from meta_supervisor.risk.breach import drawdown_breach
+from meta_supervisor.policy.kill_switch import disable_agents
+
+if drawdown_breach(report.get("fleet", {})):
+    # disable anything recently promoted (or all promoted candidates)
+    promoted = [a for a,s in report.get("agents", {}).items() if s.get("decision") == "PROMOTE"]
+    if promoted:
+        disable_agents(promoted, reason="Auto-rollback: drawdown breach")
+
+
+Env:
+
+MAX_DRAWDOWN_BPS=250 (example)
+
+3) Agent family trees (descendants of winning agents)
+Goal
+
+Track lineage: “This new agent was spawned from X because X had edge in regime R.”
+
+Add: meta_supervisor/state/lineage.json
+{
+  "agents": {}
+}
+
+Add: meta_supervisor/lineage.py
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+LINEAGE = Path("meta_supervisor/state/lineage.json")
+
+def _now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+
+def _load():
+    if not LINEAGE.exists():
+        return {"agents": {}}
+    return json.loads(LINEAGE.read_text())
+
+def _save(data):
+    LINEAGE.parent.mkdir(parents=True, exist_ok=True)
+    LINEAGE.write_text(json.dumps(data, indent=2))
+
+def register_child(child: str, parent: str, reason: str, proposal_id: str | None = None):
+    d = _load()
+    d["agents"].setdefault(child, {})
+    d["agents"][child].update({
+        "parent": parent,
+        "reason": reason,
+        "proposal_id": proposal_id,
+        "created_at": d["agents"][child].get("created_at") or _now()
+    })
+    _save(d)
+
+def get_lineage():
+    return _load()
+
+Wire when scaffolding a new agent
+
+When you generate scaffolds from proposals, include parent_agent in proposal JSON. Then in scaffold creation:
+
+from meta_supervisor.lineage import register_child
+register_child(child=agent_name, parent=proposal["parent_agent"], reason=proposal.get("thesis",""), proposal_id=proposal.get("id"))
+
+Show in report
+
+In build_meta_report.py, add:
+
+from meta_supervisor.lineage import get_lineage
+report["lineage"] = get_lineage()
+
+4) Live capital allocator with risk budget enforcement
+Goal
+
+A deterministic allocator that:
+
+uses your weights (allocation.weights)
+
+applies risk budget caps
+
+blocks strategies on kill-list
+
+supports shadow vs live routing
+
+Add: execution/allocator.py
+import os
+from meta_supervisor.policy.kill_switch import agent_disabled, strategy_disabled
+from meta_supervisor.policy.mode import is_shadow
+
+def _float(x, default=0.0):
+    try: return float(x)
+    except Exception: return default
+
+def allocate(signal: dict, weights: dict, agent_stats: dict) -> dict:
+    """
+    signal must include: agent, strategy_class, confidence, symbol, direction
+    weights: {agent: weight}
+    agent_stats: {agent: {... pnl/hit/error/cvar/etc ...}}
+    """
+    agent = signal.get("agent")
+    strategy = signal.get("strategy_class") or "unknown"
+
+    if agent_disabled(agent):
+        return {"ok": False, "reason": "agent_disabled"}
+    if strategy_disabled(strategy):
+        return {"ok": False, "reason": "strategy_disabled"}
+
+    w = _float(weights.get(agent, 0.0))
+    if w <= 0:
+        return {"ok": False, "reason": "no_weight"}
+
+    # Base risk budget
+    portfolio_risk_usd = _float(os.environ.get("PORTFOLIO_RISK_BUDGET_USD", "1000"))
+    max_pos_usd = _float(os.environ.get("MAX_POSITION_USD", "250"))
+
+    # Confidence scaling
+    conf = _float(signal.get("confidence", 0.0))
+    conf = max(0.0, min(conf, 1.0))
+
+    # Drawdown-aware haircut per agent if available
+    dd_bps = _float(agent_stats.get(agent, {}).get("max_drawdown_bps", 0.0))
+    dd_haircut = 0.5 if dd_bps >= _float(os.environ.get("AGENT_DD_BREACH_BPS", "150")) else 1.0
+
+    target_usd = portfolio_risk_usd * w * conf * dd_haircut
+    target_usd = min(target_usd, max_pos_usd)
+
+    routed = not is_shadow()
+    return {
+        "ok": True,
+        "mode": "shadow" if is_shadow() else "live",
+        "target_usd": round(target_usd, 2),
+        "routed": routed
+    }
+
+Wire allocation into supervisor output
+
+In build_meta_report.py, ensure report["allocation"]["weights"] exists (you already do). Also add agent_stats pass-through.
+
+Wire allocation into signal flow
+
+Where you emit alpha signals, include:
+
+event["agent"] = agent_name
+event["strategy_class"] = agent_strategy_class
+event["run_id"] = current_run_id
+
+
+Then wherever you process signals (email/report step):
+
+from execution.allocator import allocate
+alloc = allocate(signal, weights=report["allocation"]["weights"], agent_stats=report["agents"])
+signal["allocation"] = alloc
+
+
+Env:
+
+PORTFOLIO_RISK_BUDGET_USD=1000
+
+MAX_POSITION_USD=250
+
+AGENT_DD_BREACH_BPS=150
+
+TRADING_MODE=shadow|live
+
+Approval dashboard updates (to support these)
+
+Add two UI panels to /admin/approvals:
+
+Mode toggle display (read-only): shows TRADING_MODE
+
+Kill switch editor (disable agent/strategy quickly)
+
+If you want, I can provide the exact HTML + route endpoints for those two panels.
+
+The order to implement (fastest path)
+
+Shadow mode router + allocator (safe to deploy immediately)
+
+Kill switch enforcement in AgentScheduler
+
+Breach detector → auto-disable promoted agents
+
+Lineage file + report inclusion
+
+One thing you must confirm in your repo (no questions, just do this)
+
+Make sure your alpha events include run_id. Right now your emit_alpha_signal() snippet doesn’t include it. Add:
+
+from telemetry.context import get_current_run
+
+run = get_current_run()
+event["run_id"] = run.run_id if run else ""
+
+
+That’s required for run-level joins and clean governance.

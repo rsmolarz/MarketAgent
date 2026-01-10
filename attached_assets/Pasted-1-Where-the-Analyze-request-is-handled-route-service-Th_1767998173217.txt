@@ -1,0 +1,165 @@
+1️⃣ Where the Analyze request is handled (route + service)
+🔹 There is no explicit /analyze route in this template
+
+Instead, analysis is implicitly triggered via these mechanisms:
+
+A. AI Analysis Modal
+
+The modal at the bottom (#aiAnalysisModal) is the front-end entry point for “Analyze”.
+
+What’s missing in this template:
+
+The JS handler that opens the modal and calls the backend
+
+The API endpoint that performs the 3-LLM council analysis
+
+👉 That logic lives (or should live) in:
+
+static/js/dashboard.js
+
+
+Specifically, look for (or add):
+
+fetch('/api/analyze', { method: 'POST', body: ... })
+
+
+If you don’t find it, that means Analyze is not wired yet — only the UI exists.
+
+2️⃣ Where the Analyze backend SHOULD live (recommended)
+
+Create or confirm this structure:
+
+routes/
+  analyze.py        ← API endpoint
+services/
+  council.py        ← multi-LLM logic
+  auto_triage.py    ← critical → auto-analyze → email
+models/
+  finding.py        ← persist council results here
+
+✅ Recommended API route
+# routes/analyze.py
+@bp.route("/api/analyze", methods=["POST"])
+def analyze():
+    finding_id = request.json["finding_id"]
+    result = run_llm_council(finding_id)
+    persist_council_result(finding_id, result)
+    return jsonify(result)
+
+
+This does not block UI and allows auto-analysis later.
+
+3️⃣ Where the dashboard triggers analysis today
+
+There are three indirect triggers already visible in your template:
+
+A. Critical findings auto-path
+
+You already display:
+
+Critical findings count
+
+Uncertainty spikes
+
+Regime transition warnings
+
+👉 This is the correct place to auto-trigger Analyze.
+
+Hook point (backend):
+
+if finding.severity == "critical":
+    auto_analyze_and_alert(finding.id)
+
+B. TA chart loads regime + uncertainty
+
+From this section:
+
+fetch(`/api/ta_overlay`)
+fetch(`/api/ta_regime`)
+fetch(`/api/uncertainty`)
+
+
+This means:
+
+TA + regime + uncertainty already exist
+
+They are NOT yet informing Analyze decisions
+
+👉 This is where we connect TA → LLM consensus hook.
+
+C. Why Inactive modal
+
+This already calls:
+
+/api/agents/inactive/explain
+
+
+That endpoint should:
+
+Read council disagreement
+
+Read TA regime
+
+Explain substitution logic
+
+You already built the UI correctly.
+
+4️⃣ Where to persist council results (you asked this earlier)
+
+Add fields to Finding (or a linked table):
+
+class Finding(db.Model):
+    ...
+    council_votes = db.JSON
+    council_consensus = db.String
+    council_confidence = db.Float
+    llm_disagreement = db.Boolean
+    ta_regime = db.String
+    analyzed_at = db.DateTime
+
+
+This enables:
+
+Backtests
+
+Regime effectiveness heatmaps
+
+“Why was this agent off?” reports
+
+5️⃣ How to wire automatic 3-LLM analysis + email
+Decision rule (clean + safe):
+if finding.severity == "critical":
+    result = run_llm_council(finding)
+    if result.consensus == "ACT":
+        send_whitelist_email(finding, result)
+
+
+Add TA confirmation:
+
+if ta_confirms and llm_confirms:
+    boost_confidence()
+elif conflict:
+    raise_uncertainty()
+
+
+You already render this visually:
+
+Uncertainty banner
+
+Red vertical bands on TA chart
+
+Decay color changes
+
+6️⃣ What is already DONE (you built this correctly)
+
+You already have:
+
+✅ TA candles + RSI
+✅ Signal markers
+✅ Regime labels
+✅ Uncertainty bands
+✅ Agent decay curves
+✅ Agent substitution map
+✅ Regime effectiveness heatmap
+
+This is institutional-grade dashboarding already.

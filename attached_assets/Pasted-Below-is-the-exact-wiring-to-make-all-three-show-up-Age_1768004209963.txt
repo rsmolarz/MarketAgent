@@ -1,0 +1,568 @@
+Below is the exact wiring to make all three show up:
+
+Agent vs SPY regime chart (dashboard)
+
+IC memo panel (compressed thesis) (dashboard)
+
+Risk Governor status + drawdown band (dashboard)
+
+Everything is non-invasive: new endpoints + small JS renderers. No agent logic changes required.
+
+0) Add three dashboard containers (HTML)
+
+In templates/dashboard.html, add these blocks where you want them (I recommend below “Regime Indicator”):
+
+<!-- Risk Governor -->
+<div class="row mb-4">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+          <i data-feather="shield" class="me-2"></i>
+          Risk Governor
+        </h5>
+        <span id="govBadge" class="badge bg-secondary">Loading...</span>
+      </div>
+      <div class="card-body">
+        <div id="govBody" class="small text-muted">Loading...</div>
+        <div class="mt-2">
+          <div class="progress" style="height:10px;">
+            <div id="govDDBar" class="progress-bar" role="progressbar" style="width:0%"></div>
+          </div>
+          <div class="d-flex justify-content-between small text-muted mt-1">
+            <span>0%</span><span>Max DD threshold</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- IC Memo (Signal Compression) -->
+<div class="row mb-4">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+          <i data-feather="file-text" class="me-2"></i>
+          IC Memo (Compressed Thesis)
+        </h5>
+        <span id="icMemoStamp" class="badge bg-secondary">Loading...</span>
+      </div>
+      <div class="card-body">
+        <div id="icMemoBody" class="small" style="white-space:pre-wrap;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Agent vs SPY by Regime -->
+<div class="row mb-4">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+          <i data-feather="bar-chart-2" class="me-2"></i>
+          Agent vs SPY by Regime
+        </h5>
+        <div class="d-flex gap-2 align-items-center">
+          <label class="small text-muted mb-0">Agent</label>
+          <select id="agentVsSpySelect" class="form-select form-select-sm" style="width:auto;"></select>
+          <button id="agentVsSpyReload" class="btn btn-outline-secondary btn-sm">
+            <i data-feather="refresh-cw" class="me-1"></i>Reload
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="agentVsSpyChart" style="height:320px;"></div>
+        <div id="agentVsSpyTable" class="mt-3"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+1) Add backend: Governor + IC memo + Agent-vs-SPY endpoints
+
+Create: routes/insights.py
+
+from flask import Blueprint, jsonify, request
+from models import db, Finding, AgentStatus
+from datetime import datetime, timedelta
+
+bp = Blueprint("insights", __name__)
+
+@bp.get("/api/governor_state")
+def governor_state():
+    """
+    Live portfolio drawdown governor state (simple + robust).
+    Replace internals later with your actual portfolio equity series if desired.
+    """
+    from services.drawdown_governor import compute_drawdown_state
+    g = compute_drawdown_state()
+    return jsonify({
+        "ok": True,
+        "dd": g["dd"],
+        "dd_limit": g["dd_limit"],
+        "risk_multiplier": g["risk_multiplier"],
+        "cadence_multiplier": g["cadence_multiplier"],
+        "block_new_act": g["block_new_act"],
+        "reason": g["reason"],
+        "ts": datetime.utcnow().isoformat()
+    })
+
+
+@bp.get("/api/ic_memo/latest")
+def ic_memo_latest():
+    """
+    IC memo = compressed thesis built from recent findings.
+    """
+    from services.ic_memo import build_ic_memo
+    hours = int(request.args.get("hours", "24"))
+    memo = build_ic_memo(hours=hours)
+    return jsonify({"ok": True, **memo})
+
+
+@bp.get("/api/eval/agent_vs_spy")
+def agent_vs_spy():
+    """
+    Backtest agent vs SPY by regime using your cached SPY + regime labels.
+    """
+    agent = request.args.get("agent")
+    if not agent:
+        return jsonify({"ok": False, "error": "agent required"}), 400
+
+    from backtests.agent_vs_spy_by_regime import run_agent_vs_spy_by_regime
+    res = run_agent_vs_spy_by_regime(agent_name=agent)
+    return jsonify({"ok": True, **res})
+
+
+@bp.get("/api/agents/list")
+def agents_list():
+    statuses = AgentStatus.query.order_by(AgentStatus.agent_name.asc()).all()
+    names = [s.agent_name for s in statuses] if statuses else []
+    return jsonify({"ok": True, "agents": names})
+
+Register blueprint (critical)
+
+In your app factory / app.py (where you register dashboard bp), add:
+
+from routes.insights import bp as insights_bp
+app.register_blueprint(insights_bp)
+
+2) Implement drawdown governor (backend service)
+
+Create: services/drawdown_governor.py
+
+This is intentionally “works everywhere” using telemetry rewards as an equity proxy.
+You can swap later to true portfolio equity without changing routes/UI.
+
+import json
+from pathlib import Path
+
+EVENTS = Path("telemetry/events.jsonl")
+
+def _load_equity_from_events(last_n=20000):
+    if not EVENTS.exists():
+        return []
+    eq = 0.0
+    series = []
+    for ln in EVENTS.read_text().splitlines()[-last_n:]:
+        try:
+            e = json.loads(ln)
+        except:
+            continue
+        r = e.get("reward")
+        if r is None:
+            continue
+        try:
+            eq += float(r)
+        except:
+            continue
+        series.append(eq)
+    return series
+
+def compute_drawdown_state(
+    dd_limit=-0.06,      # -6% drawdown proxy
+    min_risk_mult=0.35,  # floor
+):
+    eq = _load_equity_from_events()
+    if len(eq) < 50:
+        return {
+            "dd": 0.0,
+            "dd_limit": dd_limit,
+            "risk_multiplier": 1.0,
+            "cadence_multiplier": 1.0,
+            "block_new_act": False,
+            "reason": "insufficient_history"
+        }
+
+    peak = eq[0]
+    dd = 0.0
+    for v in eq:
+        if v > peak:
+            peak = v
+        if peak != 0:
+            dd = min(dd, (v - peak) / abs(peak))
+
+    # dd is negative, dd_limit negative
+    if dd >= dd_limit:
+        return {
+            "dd": dd,
+            "dd_limit": dd_limit,
+            "risk_multiplier": 1.0,
+            "cadence_multiplier": 1.0,
+            "block_new_act": False,
+            "reason": "ok"
+        }
+
+    # Scale down linearly beyond limit; clamp
+    # Example: dd=-12% with limit=-6% => severity=1.0 => strong reduction
+    severity = min(1.0, (abs(dd) - abs(dd_limit)) / max(abs(dd_limit), 1e-9))
+    risk_mult = max(min_risk_mult, 1.0 - 0.65 * severity)
+    cadence_mult = max(min_risk_mult, 1.0 - 0.50 * severity)
+
+    return {
+        "dd": dd,
+        "dd_limit": dd_limit,
+        "risk_multiplier": float(risk_mult),
+        "cadence_multiplier": float(cadence_mult),
+        "block_new_act": severity > 0.75,
+        "reason": "drawdown_protection"
+    }
+
+3) IC memo compression service (backend)
+
+Create: services/ic_memo.py
+
+from datetime import datetime, timedelta
+from models import Finding
+
+def build_ic_memo(hours=24, limit=25):
+    since = datetime.utcnow() - timedelta(hours=hours)
+    qs = (Finding.query
+          .filter(Finding.timestamp >= since)
+          .order_by(Finding.timestamp.desc())
+          .limit(limit)
+          .all())
+
+    if not qs:
+        return {
+            "generated_at": datetime.utcnow().isoformat(),
+            "hours": hours,
+            "headline": "No material signals",
+            "thesis": "No significant findings in the selected window.",
+            "bullets": [],
+        }
+
+    # Compression logic: group by (symbol, severity) and keep best confidence
+    items = []
+    for f in qs:
+        items.append({
+            "ts": f.timestamp.isoformat(),
+            "agent": f.agent_name,
+            "symbol": f.symbol or "NA",
+            "severity": f.severity,
+            "confidence": float(f.confidence or 0),
+            "title": f.title
+        })
+
+    # “Single thesis” = top 3 by (severity, confidence)
+    sev_rank = {"critical": 4, "high": 3, "medium": 2, "low": 1}
+    items_sorted = sorted(items, key=lambda x: (sev_rank.get(x["severity"], 0), x["confidence"]), reverse=True)
+    top = items_sorted[:3]
+
+    headline = f"{top[0]['severity'].upper()} focus: {top[0]['symbol']} — {top[0]['title']}"
+    bullets = [
+        f"[{t['severity'].upper()}] {t['symbol']} — {t['title']} ({t['agent']}, conf {int(t['confidence']*100)}%)"
+        for t in top
+    ]
+
+    thesis = (
+        "Compressed thesis:\n"
+        + "\n".join(f"- {b}" for b in bullets)
+        + "\n\nAction: review top items; if council confirms ACT, promote to trade candidate."
+    )
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "hours": hours,
+        "headline": headline,
+        "thesis": thesis,
+        "bullets": bullets,
+    }
+
+4) Agent vs SPY by regime backtest (backend)
+
+Create: backtests/agent_vs_spy_by_regime.py
+
+This uses:
+
+your load_spy() cached data
+
+your existing regime engine (best-effort import)
+
+your findings as “agent active days” proxy (robust)
+
+import pandas as pd
+from datetime import datetime, timedelta
+
+from data_sources.price_loader import load_spy
+from models import Finding
+
+def _get_regime_series(spy_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Produces a daily regime label for SPY dates.
+    Uses your existing regime module if present; falls back to 'unknown'.
+    """
+    out = spy_df.copy()
+    out["date"] = pd.to_datetime(out["Date"]).dt.date
+
+    try:
+        # Expected in your codebase (based on scheduler.py)
+        from regime import extract_features, score_regimes, regime_confidence
+        import yfinance as yf
+
+        # minimal proxies if needed
+        vix = yf.download("^VIX", period="6mo", progress=False).reset_index()
+        tnx = yf.download("^TNX", period="6mo", progress=False).reset_index()
+
+        # Build features and score
+        features = extract_features(spy_df.set_index("Date"), vix.set_index("Date"), tnx.set_index("Date"), None)
+        scores = score_regimes(features)
+
+        # Map each day to the active regime (best-effort)
+        # If your regime_confidence returns a single state, this still works as a single label.
+        state = regime_confidence(features, scores, prev_regime=None)
+        out["regime"] = state.get("active_regime", "unknown")
+        return out[["date", "regime"]]
+    except Exception:
+        out["regime"] = "unknown"
+        return out[["date", "regime"]]
+
+def run_agent_vs_spy_by_regime(agent_name: str, lookback_days=365*3):
+    spy = load_spy(start="2020-01-01", use_cache=True)
+    if spy.empty:
+        return {"error": "no_spy_data", "by_regime": []}
+
+    spy = spy.copy()
+    spy["Date"] = pd.to_datetime(spy["Date"])
+    spy["date"] = spy["Date"].dt.date
+    spy = spy.sort_values("Date")
+
+    # SPY daily returns
+    spy["spy_ret"] = spy["Close"].pct_change().fillna(0.0)
+
+    # Regimes
+    regimes = _get_regime_series(spy[["Date", "Close"]].rename(columns={"Close": "Close"}))
+    spy = spy.merge(regimes, on="date", how="left")
+    spy["regime"] = spy["regime"].fillna("unknown")
+
+    # Agent “active” days proxy from findings (can be upgraded to true signal exposures later)
+    since = datetime.utcnow() - timedelta(days=lookback_days)
+    findings = (Finding.query
+                .filter(Finding.agent_name == agent_name)
+                .filter(Finding.timestamp >= since)
+                .all())
+
+    active_days = set()
+    for f in findings:
+        try:
+            active_days.add(f.timestamp.date())
+        except:
+            pass
+
+    spy["agent_on"] = spy["date"].apply(lambda d: 1 if d in active_days else 0)
+
+    # Agent return proxy: capture SPY return on days agent is “on”
+    spy["agent_ret"] = spy["spy_ret"] * spy["agent_on"]
+
+    # Summaries by regime
+    g = spy.groupby("regime").agg(
+        agent_days=("agent_on", "sum"),
+        spy_days=("spy_ret", "count"),
+        agent_mean=("agent_ret", "mean"),
+        spy_mean=("spy_ret", "mean"),
+        agent_sum=("agent_ret", "sum"),
+        spy_sum=("spy_ret", "sum"),
+    ).reset_index()
+
+    g["agent_alpha_mean"] = g["agent_mean"] - g["spy_mean"]
+    g = g.sort_values("agent_alpha_mean", ascending=False)
+
+    by_regime = g.to_dict(orient="records")
+
+    return {
+        "agent": agent_name,
+        "window_days": lookback_days,
+        "by_regime": by_regime
+    }
+
+5) Frontend JS wiring (render all three)
+
+In static/js/dashboard.js, add these methods to your Dashboard class and call them from loadInitialData().
+
+Add to loadInitialData() (near the end):
+this.loadGovernor();
+this.loadICMemo();
+this.loadAgentVsSpy();
+
+Add these methods inside the class:
+async loadGovernor() {
+  const badge = document.getElementById('govBadge');
+  const body = document.getElementById('govBody');
+  const bar = document.getElementById('govDDBar');
+  try {
+    const r = await fetch('/api/governor_state');
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'governor error');
+
+    const ddPct = (j.dd * 100);
+    const limitPct = (j.dd_limit * 100);
+    const ddAbs = Math.min(100, Math.max(0, Math.abs(ddPct) / Math.abs(limitPct) * 100));
+
+    let cls = 'bg-success';
+    if (j.reason !== 'ok') cls = j.block_new_act ? 'bg-danger' : 'bg-warning';
+
+    badge.className = `badge ${cls}`;
+    badge.textContent = j.reason === 'ok' ? 'Normal' : (j.block_new_act ? 'HARD RISK-OFF' : 'Risk-Reduced');
+
+    body.textContent =
+      `DD: ${ddPct.toFixed(2)}% (limit ${limitPct.toFixed(2)}%) | ` +
+      `risk_mult=${j.risk_multiplier.toFixed(2)} | cadence_mult=${j.cadence_multiplier.toFixed(2)} | ` +
+      `block_new_act=${j.block_new_act}`;
+
+    if (bar) {
+      bar.className = `progress-bar ${cls}`;
+      bar.style.width = `${ddAbs.toFixed(0)}%`;
+    }
+  } catch (e) {
+    if (badge) badge.textContent = 'Error';
+    if (body) body.textContent = 'Could not load governor state.';
+  }
+}
+
+async loadICMemo() {
+  const stamp = document.getElementById('icMemoStamp');
+  const body = document.getElementById('icMemoBody');
+  try {
+    const r = await fetch('/api/ic_memo/latest?hours=24');
+    const j = await r.json();
+    if (!j.ok) throw new Error('ic memo error');
+
+    if (stamp) {
+      stamp.className = 'badge bg-info';
+      stamp.textContent = `Last 24h • ${new Date(j.generated_at).toLocaleString()}`;
+    }
+    if (body) {
+      body.textContent = `${j.headline}\n\n${j.thesis}`;
+    }
+  } catch (e) {
+    if (stamp) stamp.textContent = 'Error';
+    if (body) body.textContent = 'Could not load IC memo.';
+  }
+}
+
+async loadAgentVsSpy() {
+  const sel = document.getElementById('agentVsSpySelect');
+  const btn = document.getElementById('agentVsSpyReload');
+  const chartDiv = document.getElementById('agentVsSpyChart');
+  const tableDiv = document.getElementById('agentVsSpyTable');
+  if (!sel || !chartDiv || !tableDiv) return;
+
+  async function loadAgents() {
+    const r = await fetch('/api/agents/list');
+    const j = await r.json();
+    return (j.agents || []).filter(a => a && a.endsWith('Agent'));
+  }
+
+  async function loadOne(agent) {
+    const r = await fetch(`/api/eval/agent_vs_spy?agent=${encodeURIComponent(agent)}`);
+    return await r.json();
+  }
+
+  const render = async () => {
+    const agent = sel.value;
+    const j = await loadOne(agent);
+    if (!j.ok) {
+      chartDiv.innerHTML = `<p class="text-danger">Error: ${j.error || 'unknown'}</p>`;
+      tableDiv.innerHTML = '';
+      return;
+    }
+
+    const rows = j.by_regime || [];
+    if (!rows.length) {
+      chartDiv.innerHTML = `<p class="text-muted">No regime stats yet.</p>`;
+      tableDiv.innerHTML = '';
+      return;
+    }
+
+    // Bar chart: alpha mean by regime
+    const regimes = rows.map(r => r.regime);
+    const alpha = rows.map(r => (r.agent_alpha_mean || 0) * 100);
+
+    chartDiv.innerHTML = '';
+    Plotly.newPlot(chartDiv, [{
+      type: 'bar',
+      x: regimes,
+      y: alpha,
+      text: alpha.map(v => `${v.toFixed(2)}%`),
+      textposition: 'auto',
+      hovertemplate: '%{x}<br>Alpha(mean): %{y:.2f}%<extra></extra>'
+    }], {
+      title: `${j.agent} — Mean Alpha vs SPY by Regime`,
+      yaxis: { title: 'Alpha (mean return diff, %)' },
+      margin: { t: 40, l: 60, r: 20, b: 60 },
+      height: 320,
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)'
+    }, { responsive: true });
+
+    // Table
+    const fmtPct = (x) => `${(x*100).toFixed(2)}%`;
+    let html = `
+      <div class="table-responsive">
+      <table class="table table-sm table-hover">
+        <thead>
+          <tr>
+            <th>Regime</th>
+            <th>Agent days</th>
+            <th>Agent mean</th>
+            <th>SPY mean</th>
+            <th>Alpha mean</th>
+          </tr>
+        </thead><tbody>
+    `;
+    rows.forEach(r => {
+      html += `
+        <tr>
+          <td><span class="badge bg-secondary">${r.regime}</span></td>
+          <td>${r.agent_days || 0}</td>
+          <td>${fmtPct(r.agent_mean || 0)}</td>
+          <td>${fmtPct(r.spy_mean || 0)}</td>
+          <td><strong>${fmtPct(r.agent_alpha_mean || 0)}</strong></td>
+        </tr>
+      `;
+    });
+    html += `</tbody></table></div>`;
+    tableDiv.innerHTML = html;
+  };
+
+  // init select once
+  if (!sel.options.length) {
+    const agents = await loadAgents();
+    agents.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a;
+      opt.textContent = a.replace('Agent', '');
+      sel.appendChild(opt);
+    });
+  }
+
+  if (btn) btn.onclick = render;
+  sel.onchange = render;
+  await render();
+}
+
+6) Make sure Plotly is present
+
+Your dashboard template already includes Plotly CDN. Keep it.

@@ -1,0 +1,312 @@
+What this answers (clearly)
+
+“Which agents decay in which regimes — and how fast?”
+
+This is the missing diagnostic that explains:
+
+why agents get muted
+
+whether decay is regime-specific or structural
+
+which agents to rotate into, not just out of
+
+1️⃣ Data model (derived, not stored)
+
+We compute heatmap values from three existing signals:
+
+Component	Source
+Regime label	_cached_regime_state["active_regime"]
+Agent decay	AgentDecay.multipliers[agent]
+Time	rolling window (e.g. last 30 days)
+
+No schema change required.
+
+2️⃣ Collector: decay × regime matrix
+meta/decay_heatmap.py
+from collections import defaultdict
+from datetime import datetime
+
+class DecayHeatmap:
+    def __init__(self, window_days=30):
+        self.window_days = window_days
+        self.data = defaultdict(lambda: defaultdict(list))
+        # data[regime][agent] -> [decay values]
+
+    def ingest(self, regime: str, agent: str, decay_value: float):
+        self.data[regime][agent].append(decay_value)
+
+    def summarize(self):
+        """
+        Returns:
+        {
+          regime: {
+            agent: mean_decay
+          }
+        }
+        """
+        summary = {}
+        for regime, agents in self.data.items():
+            summary[regime] = {
+                agent: sum(vals) / len(vals)
+                for agent, vals in agents.items()
+                if vals
+            }
+        return summary
+
+3️⃣ Wire it into existing flow (2 lines)
+
+In your regime rotation update (already runs every 15 min):
+
+from meta.decay_heatmap import decay_heatmap
+
+for agent, w in _regime_weights.items():
+    decay_heatmap.ingest(
+        state["active_regime"],
+        agent,
+        decay.get(agent)
+    )
+
+
+That’s it.
+
+4️⃣ Heatmap visualization (dashboard)
+Matrix layout
+
+X-axis: Agents
+
+Y-axis: Regimes
+
+Color: mean decay (0 → dead, 1 → strong)
+
+Plot code (Matplotlib or Plotly)
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+summary = decay_heatmap.summarize()
+df = pd.DataFrame(summary).T  # regimes x agents
+
+plt.figure(figsize=(14, 6))
+sns.heatmap(
+    df,
+    cmap="RdYlGn",
+    vmin=0,
+    vmax=1,
+    annot=True,
+    fmt=".2f"
+)
+
+plt.title("Agent Decay by Market Regime")
+plt.xlabel("Agent")
+plt.ylabel("Regime")
+plt.tight_layout()
+
+5️⃣ How to interpret it (this is the payoff)
+Pattern	Meaning
+🔴 Red across all regimes	Agent structurally broken
+🟡 Red only in “risk-on”	Agent is defensive
+🟢 Green only in “volatility”	Crisis-alpha
+Diagonal stripes	Regime specialist
+Flat green	Core allocator anchor
+
+This directly informs:
+
+cross-regime rotation
+
+substitution logic
+
+ensemble weighting
+
+LLM council confidence priors
+
+6️⃣ Optional (high ROI)
+A. Auto-label agents
+if mean_decay < 0.2 across all regimes:
+    label = "structurally_dead"
+
+B. Feed into allocator
+scores[a] *= heatmap_score[regime][a]
+
+C. LLM explanation
+
+“Agent X decayed in inflation + volatility regimes due to lagging volume confirmation.”
+
+What you now have structurally
+
+✅ Regime-conditioned decay
+✅ Explainable agent shutdowns
+✅ No more black-box disabling
+✅ Visual intuition tied to math
+✅ Foundation for agent substitution
+
+Recommended next step (highest leverage)
+
+“Add agent substitution map”
+→ When Agent A decays in regime X, auto-promote Agent B.
+
+Say the word and I’ll wire it cleanly.
+
+Add agent substitution map
+
+Below is a clean, production-safe Agent Substitution Map that plugs directly into what you already built:
+
+decay curves
+
+regime detection
+
+allocator
+
+scheduler
+
+no agent code changes
+
+no live breakage
+
+This turns “Agent failed” into “Agent replaced intelligently.”
+
+Agent Substitution Map (Regime-Aware)
+What this does (precisely)
+
+When an agent decays below a threshold in a given regime, the system:
+
+Identifies which agents historically perform better in that same regime
+
+Promotes the best substitute
+
+Gradually shifts capital / cadence
+
+Logs why the substitution happened
+
+This prevents:
+
+dead zones
+
+regime blind spots
+
+allocator oscillation
+
+“all agents off” failure modes
+
+1️⃣ Define the substitution map (data-driven)
+
+This is learned, not hard-coded.
+
+meta/substitution_map.py
+from collections import defaultdict
+
+class SubstitutionMap:
+    def __init__(self, min_samples=25):
+        self.min_samples = min_samples
+        # map[regime][failed_agent] = [(replacement, score)]
+        self.map = defaultdict(dict)
+
+    def build(self, decay_heatmap, performance_by_regime):
+        """
+        decay_heatmap[regime][agent] -> mean decay
+        performance_by_regime[regime][agent] -> mean forward return
+        """
+        for regime, decays in decay_heatmap.items():
+            perf = performance_by_regime.get(regime, {})
+            for failed_agent, decay in decays.items():
+                if decay >= 0.3:
+                    continue  # not failing
+
+                # find better alternatives in same regime
+                candidates = [
+                    (a, perf.get(a, 0))
+                    for a in perf
+                    if a != failed_agent and decays.get(a, 0) > 0.6
+                ]
+
+                candidates.sort(key=lambda x: x[1], reverse=True)
+                if candidates:
+                    self.map[regime][failed_agent] = candidates[:3]
+
+    def get_substitute(self, regime, agent):
+        return self.map.get(regime, {}).get(agent)
+
+2️⃣ Wire into allocator (5 lines, as promised)
+
+Inside UCBAllocator.allocate(), after score computation:
+
+subs = substitution_map.get_substitute(current_regime, agent)
+
+if subs:
+    best_alt, alt_score = subs[0]
+    scores[best_alt] += abs(scores[agent]) * 0.5
+    scores[agent] *= 0.2
+
+
+Result:
+
+failing agent fades
+
+substitute ramps smoothly
+
+no hard disable unless decay persists
+
+3️⃣ Wire into scheduler (non-invasive)
+
+In _run_agent() before execution:
+
+if decay.get(agent_name) < 0.2:
+    alt = substitution_map.get_substitute(active_regime, agent_name)
+    if alt:
+        logger.info(
+            f"Agent {agent_name} substituted by {alt[0][0]} "
+            f"in regime {active_regime}"
+        )
+        return
+
+
+This avoids:
+
+wasting cycles
+
+noisy telemetry
+
+false alerts
+
+4️⃣ Persist substitutions (for explainability)
+models.py (optional but recommended)
+class AgentSubstitution(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    regime = db.Column(db.String(32))
+    from_agent = db.Column(db.String(64))
+    to_agent = db.Column(db.String(64))
+    reason = db.Column(db.String(128))
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+Logged when substitution occurs.
+
+5️⃣ Dashboard overlay (simple + powerful)
+Table view
+Regime	Failed Agent	Substitute	Confidence
+Volatility	EquityMomentumAgent	BondStressAgent	High
+Inflation	GrowthFactorAgent	ValueSpreadAgent	Medium
+Tooltip on SPY chart
+
+“EquityMomentum muted → BondStress promoted (vol regime)”
+
+6️⃣ What this enables next (strategically)
+
+You now have:
+
+self-healing alpha
+
+redundancy without duplication
+
+agent diversity enforcement
+
+LLM council grounding (“why this replacement?”)
+
+Final truth (no fluff)
+
+This is the point where your system stops being:
+
+“a bunch of smart agents”
+
+and becomes:
+
+an adaptive trading organism

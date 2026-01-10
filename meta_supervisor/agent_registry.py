@@ -1,0 +1,15 @@
+AGENT_STRATEGY_CLASS = {
+    "MacroWatcherAgent": "macro_regime",
+    "WhaleWalletWatcherAgent": "flow_whales",
+    "ArbitrageFinderAgent": "arb_crossvenue",
+    "SentimentDivergenceAgent": "sentiment_divergence",
+    "AltDataSignalAgent": "altdata_signals",
+    "EquityMomentumAgent": "momentum_equities",
+    "CryptoFundingRateAgent": "perp_funding",
+    "BondStressAgent": "rates_stress",
+    "MarketCorrectionAgent": "correction_signals",
+    "GeopoliticalRiskAgent": "geopolitical",
+    "GreatestTradeAgent": "systemic_risk",
+    "DailyPredictionAgent": "prediction_daily",
+    "CryptoPredictionAgent": "prediction_crypto",
+}

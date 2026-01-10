@@ -1,0 +1,39 @@
+arb:
+  status: ACTIVE
+  max_drawdown_bps: -250
+  min_hit_rate: 0.42
+
+funding:
+  status: ACTIVE
+  max_drawdown_bps: -200
+  min_hit_rate: 0.40
+
+macro:
+  status: ACTIVE
+  max_drawdown_bps: -300
+  min_hit_rate: 0.35
+
+sentiment:
+  status: ACTIVE
+  max_drawdown_bps: -200
+  min_hit_rate: 0.45
+
+distressed:
+  status: ACTIVE
+  max_drawdown_bps: -400
+  min_hit_rate: 0.30
+
+alt_data:
+  status: ACTIVE
+  max_drawdown_bps: -200
+  min_hit_rate: 0.40
+
+prediction:
+  status: ACTIVE
+  max_drawdown_bps: -300
+  min_hit_rate: 0.50
+
+geopolitical:
+  status: ACTIVE
+  max_drawdown_bps: -250
+  min_hit_rate: 0.35

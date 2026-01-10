@@ -1,0 +1,215 @@
+1️⃣ Agent decay model (new file)
+meta/decay.py
+from collections import defaultdict, deque
+from math import exp
+
+class AgentDecayModel:
+    """
+    Exponential decay on agent performance.
+    Decay accelerates when uncertainty is high.
+    """
+    def __init__(self, half_life=200):
+        self.half_life = half_life
+        self.history = defaultdict(lambda: deque(maxlen=1000))
+
+    def update(self, agent, reward, uncertainty=0.0):
+        # uncertainty ∈ [0,1] → faster decay
+        decay_lambda = (0.693 / self.half_life) * (1 + uncertainty)
+        prev = self.history[agent][-1] if self.history[agent] else 1.0
+        decayed = prev * exp(-decay_lambda) + reward
+        self.history[agent].append(decayed)
+        return decayed
+
+    def series(self, agent, last_n=100):
+        return list(self.history[agent])[-last_n:]
+
+2️⃣ Hook decay into scheduler (2 lines)
+
+In scheduler.py, add at top:
+
+from meta.decay import AgentDecayModel
+_decay = AgentDecayModel()
+
+
+Inside _run_agent, after findings commit:
+
+from regime.confidence import get_uncertainty
+uncertainty = get_uncertainty() or 0.0
+_decay.update(agent_name, reward=len(findings or []), uncertainty=uncertainty)
+
+
+No behavior change. Just recording.
+
+3️⃣ Dashboard API endpoint (minimal)
+app.py
+@app.route("/decay")
+def decay_view():
+    from meta.decay import _decay
+    return {
+        agent: _decay.series(agent)
+        for agent in _decay.history.keys()
+    }
+
+4️⃣ Dashboard overlay (JS-only, no backend change)
+Add to dashboard.html
+<script>
+async function loadDecay() {
+  const res = await fetch("/decay");
+  const data = await res.json();
+
+  Object.entries(data).forEach(([agent, series]) => {
+    const el = document.getElementById(`decay-${agent}`);
+    if (!el) return;
+    el.textContent = series.slice(-20).map(v => v.toFixed(2)).join(" ▏");
+  });
+}
+loadDecay();
+</script>
+
+Add under each agent row:
+<div class="decay" id="decay-{{ agent_name }}"></div>
+
+5️⃣ Uncertainty bands (visual only)
+
+When uncertainty > 0.7:
+
+.decay {
+  opacity: 0.4;
+}
+.decay.uncertain {
+  background: rgba(255, 165, 0, 0.15);
+}
+
+What you now have (important)
+
+✅ Agent half-life decay
+✅ Uncertainty-accelerated fade
+✅ Visual confirmation of agent death
+✅ Regime-compatible
+✅ No agent code touched
+✅ No allocator broken
+
+Recommended next (very high ROI)
+
+Agent failure heatmap by regime
+→ immediately tells you which agents die first during transitions
+
+Say:
+
+“Add agent failure heatmap”
+
+and I’ll wire it in ~15 lines.
+
+Add agent failure heatmap
+
+Here is the clean implementation for the Agent Failure Heatmap to visualize agent performance over macro regimes:
+
+1️⃣ New Heatmap Model:
+meta/heatmap.py
+
+This will record agent performance in each regime and visualize it as a heatmap.
+
+from collections import defaultdict
+import numpy as np
+
+class AgentFailureHeatmap:
+    def __init__(self, regime_history_length=100):
+        # Storing regime and agent performance
+        self.agent_performance = defaultdict(lambda: defaultdict(lambda: np.zeros(regime_history_length)))
+        self.regime_history = []
+        
+    def update(self, agent, regime, performance_score):
+        """Update agent performance for a specific regime"""
+        self.regime_history.append(regime)
+        self.regime_history = self.regime_history[-100:]  # Limit the history to the last 100 entries
+        
+        idx = len(self.regime_history) - 1
+        self.agent_performance[agent][regime][idx] = performance_score
+    
+    def get_heatmap_data(self):
+        """Return the heatmap data: performance across agents and regimes"""
+        return self.agent_performance
+
+2️⃣ Scheduler Hook (Add Performance Tracking)
+
+Inside scheduler.py, after agent performance update:
+
+from meta.heatmap import AgentFailureHeatmap
+_failure_heatmap = AgentFailureHeatmap()
+
+def _run_agent(self, agent_name: str):
+    # Existing code to run agents
+    ...
+    
+    # For now, we just use reward as the performance metric (replace with your real metric)
+    performance_score = len(findings)  # Example: number of findings is performance
+    
+    # Assuming regime info is available (e.g., through a meta-regime system)
+    regime = _cached_regime_state.get("active_regime", "Unknown")  # Replace with actual regime
+    
+    # Update failure heatmap
+    _failure_heatmap.update(agent_name, regime, performance_score)
+    
+    # Commit findings, save results etc.
+
+3️⃣ Dashboard API Endpoint (Serve Heatmap Data)
+
+Add this to your app.py to serve the data to the frontend:
+
+@app.route("/agent_heatmap")
+def agent_heatmap():
+    from meta.heatmap import _failure_heatmap
+    return _failure_heatmap.get_heatmap_data()
+
+4️⃣ Heatmap Visualization in the Dashboard
+
+Now, we will visualize this as a heatmap:
+
+dashboard.html
+<script>
+async function loadAgentHeatmap() {
+  const res = await fetch("/agent_heatmap");
+  const data = await res.json();
+
+  // Create the heatmap table
+  const table = document.getElementById('heatmap-table');
+  
+  Object.entries(data).forEach(([agent, regimes]) => {
+    const row = table.insertRow();
+    let cell = row.insertCell(0);
+    cell.innerHTML = agent;
+
+    Object.entries(regimes).forEach(([regime, performance]) => {
+      cell = row.insertCell();
+      const avgPerformance = performance.reduce((a, b) => a + b, 0) / performance.length;
+      cell.style.backgroundColor = `rgba(255, 0, 0, ${Math.min(avgPerformance, 1)})`;
+      cell.textContent = avgPerformance.toFixed(2);
+    });
+  });
+}
+
+// Call the function to load the heatmap
+loadAgentHeatmap();
+</script>
+
+<table id="heatmap-table">
+  <thead>
+    <tr>
+      <th>Agent</th>
+      <th>Regime 1</th>
+      <th>Regime 2</th>
+      <th>Regime 3</th>
+      <!-- Add more regimes as needed -->
+    </tr>
+  </thead>
+  <tbody>
+    <!-- Dynamic data will fill here -->
+  </tbody>
+</table>
+
+
+This table will show agents as rows and regimes as columns, with color intensity indicating agent performance in each regime.
+
+5️⃣ Regime Confidence-Based Coloring
+
+The background color intensity is tied to agent performance in each regime. This gives you a heatmap that shows which agents fail first during regime transitions.

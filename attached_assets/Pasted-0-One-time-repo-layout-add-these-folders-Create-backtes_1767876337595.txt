@@ -1,0 +1,566 @@
+0) One-time repo layout (add these folders)
+
+Create:
+
+backtest/
+  __init__.py
+  engine.py
+  metrics.py
+  registry.py
+  results_io.py
+  runners/
+    run_all.py
+    run_one.py
+  data/
+    __init__.py
+    calendar.py
+    loaders_yf.py
+    loaders_fred.py
+    cache.py
+  adapters/
+    __init__.py
+    agent_adapter.py
+    fixtures_adapter.py
+backtest_results/
+  .gitkeep
+data_cache/
+  .gitkeep
+
+
+Add these to .gitignore:
+
+data_cache/
+backtest_results/
+
+1) Backtest engine (time iterator + agent execution)
+
+Create backtest/engine.py:
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Dict, Any, List, Optional, Iterable, Callable
+from datetime import datetime
+import traceback
+
+
+@dataclass
+class SignalEvent:
+    agent_name: str
+    ts: datetime
+    symbol: Optional[str]
+    market_type: Optional[str]
+    severity: str
+    confidence: float
+    title: str
+    description: str
+    metadata: Dict[str, Any]
+
+
+@dataclass
+class BacktestRunResult:
+    agent_name: str
+    start: str
+    end: str
+    bars_freq: str
+    signals: List[SignalEvent]
+    errors: List[Dict[str, Any]]
+
+
+class BacktestEngine:
+    """
+    Runs agents historically by iterating dates and injecting a data context.
+
+    Design rule:
+      - Backtests must not call network APIs from inside agents.
+      - All data comes from the context provided here (adapter layer).
+    """
+
+    def __init__(self, calendar: Iterable[datetime]):
+        self.calendar = list(calendar)
+
+    def run_agent(
+        self,
+        agent_name: str,
+        agent_callable: Callable[[Any], List[Dict[str, Any]]],
+        context_factory: Callable[[datetime], Any],
+        start: datetime,
+        end: datetime,
+    ) -> BacktestRunResult:
+        signals: List[SignalEvent] = []
+        errors: List[Dict[str, Any]] = []
+
+        for dt in self.calendar:
+            if dt < start or dt > end:
+                continue
+
+            try:
+                ctx = context_factory(dt)
+                findings = agent_callable(ctx) or []
+
+                for f in findings:
+                    signals.append(
+                        SignalEvent(
+                            agent_name=agent_name,
+                            ts=dt,
+                            symbol=f.get("symbol"),
+                            market_type=f.get("market_type"),
+                            severity=str(f.get("severity", "low")),
+                            confidence=float(f.get("confidence", 0.0) or 0.0),
+                            title=str(f.get("title", "")),
+                            description=str(f.get("description", "")),
+                            metadata=dict(f.get("metadata", {}) or {}),
+                        )
+                    )
+
+            except Exception as e:
+                errors.append(
+                    {
+                        "agent": agent_name,
+                        "ts": dt.isoformat(),
+                        "error": repr(e),
+                        "trace": traceback.format_exc(limit=20),
+                    }
+                )
+
+        return BacktestRunResult(
+            agent_name=agent_name,
+            start=start.date().isoformat(),
+            end=end.date().isoformat(),
+            bars_freq="1d",
+            signals=signals,
+            errors=errors,
+        )
+
+2) Trading calendar (2007 → now)
+
+Create backtest/data/calendar.py:
+
+from __future__ import annotations
+from datetime import datetime
+from typing import List
+import pandas as pd
+
+
+def trading_days(start: str, end: str) -> List[datetime]:
+    """
+    Simple NYSE-ish weekday calendar. Good enough for signal backtests.
+    If you later want true exchange calendars, swap implementation.
+    """
+    idx = pd.date_range(start=start, end=end, freq="B")  # business days
+    return [d.to_pydatetime() for d in idx]
+
+3) Data caching + Yahoo Finance loader (daily OHLCV)
+
+Create backtest/data/cache.py:
+
+from __future__ import annotations
+from pathlib import Path
+import pandas as pd
+
+CACHE_DIR = Path("data_cache")
+CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+def cache_path(key: str) -> Path:
+    safe = key.replace("/", "_").replace(":", "_")
+    return CACHE_DIR / f"{safe}.parquet"
+
+def load_cache(key: str):
+    p = cache_path(key)
+    if p.exists():
+        return pd.read_parquet(p)
+    return None
+
+def save_cache(key: str, df):
+    p = cache_path(key)
+    df.to_parquet(p, index=True)
+
+
+Create backtest/data/loaders_yf.py:
+
+from __future__ import annotations
+from typing import Dict, Optional
+import pandas as pd
+
+from .cache import load_cache, save_cache
+
+def load_yf_history(symbol: str, start: str, end: str) -> pd.DataFrame:
+    """
+    Daily OHLCV via yfinance. Cached to parquet.
+    """
+    key = f"yf_{symbol}_{start}_{end}"
+    cached = load_cache(key)
+    if cached is not None and len(cached) > 0:
+        return cached
+
+    import yfinance as yf  # dependency already in your pyproject
+
+    df = yf.download(symbol, start=start, end=end, auto_adjust=False, progress=False)
+    # Normalize columns
+    df = df.rename(columns={c: c.lower() for c in df.columns})
+    df.index = pd.to_datetime(df.index)
+    df = df.sort_index()
+    save_cache(key, df)
+    return df
+
+
+def slice_asof(df: pd.DataFrame, asof_date: pd.Timestamp, lookback_days: int = 252) -> pd.DataFrame:
+    """
+    Return lookback window ending at asof_date (inclusive).
+    """
+    df = df.loc[:asof_date].copy()
+    if len(df) <= lookback_days:
+        return df
+    return df.iloc[-lookback_days:]
+
+4) Backtest context + adapter layer (inject data into agents)
+
+Create backtest/adapters/agent_adapter.py:
+
+from __future__ import annotations
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Dict, Any, Optional, List
+import pandas as pd
+
+@dataclass
+class BacktestContext:
+    asof: datetime
+    frames: Dict[str, pd.DataFrame]         # symbol -> OHLCV daily frame
+    meta: Dict[str, Any]                    # extra per-agent config
+
+
+class AnalysisAgentAdapter:
+    """
+    Adapter to run agents safely in backtests.
+
+    Contract:
+      - agent must implement analyze(context) -> List[findings]
+      - agent must NOT call network in analyze() for backtests
+    """
+    def __init__(self, agent):
+        self.agent = agent
+
+    def __call__(self, ctx: BacktestContext) -> List[Dict[str, Any]]:
+        if hasattr(self.agent, "analyze"):
+            return self.agent.analyze(ctx)  # type: ignore
+        # fallback: plan/act/reflect style (not recommended for backtests)
+        if hasattr(self.agent, "act") and hasattr(self.agent, "plan"):
+            plan = self.agent.plan()
+            return self.agent.act(plan)
+        return []
+
+5) Metrics (signal quality, forward returns, calibration)
+
+Create backtest/metrics.py:
+
+from __future__ import annotations
+from dataclasses import asdict
+from typing import Dict, Any, List, Optional, Tuple
+import pandas as pd
+import numpy as np
+
+from .engine import SignalEvent
+
+SEVERITY_ORDER = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+
+def _to_df(signals: List[SignalEvent]) -> pd.DataFrame:
+    if not signals:
+        return pd.DataFrame()
+    rows = []
+    for s in signals:
+        r = asdict(s)
+        r["ts"] = pd.to_datetime(r["ts"])
+        r["sev_rank"] = SEVERITY_ORDER.get(str(r["severity"]).lower(), 0)
+        rows.append(r)
+    return pd.DataFrame(rows).sort_values("ts")
+
+def compute_forward_returns(
+    signals: List[SignalEvent],
+    price_frames: Dict[str, pd.DataFrame],
+    horizons: Tuple[int, ...] = (1, 5, 20, 60),
+) -> Dict[str, Any]:
+    df = _to_df(signals)
+    if df.empty:
+        return {"signal_count": 0, "forward": {}, "by_severity": {}, "by_confidence_bucket": {}}
+
+    forward_stats: Dict[str, Any] = {}
+    # compute per-horizon returns for each signal when symbol has price data
+    for h in horizons:
+        rets = []
+        for _, row in df.iterrows():
+            sym = row["symbol"]
+            if not sym or sym not in price_frames:
+                continue
+            px = price_frames[sym]
+            if px.empty or "close" not in px.columns:
+                continue
+            ts = pd.to_datetime(row["ts"]).normalize()
+            if ts not in px.index:
+                # nearest previous
+                prior = px.index[px.index <= ts]
+                if len(prior) == 0:
+                    continue
+                ts = prior[-1]
+            i = px.index.get_loc(ts)
+            if isinstance(i, slice):
+                continue
+            j = i + h
+            if j >= len(px.index):
+                continue
+            p0 = float(px["close"].iloc[i])
+            p1 = float(px["close"].iloc[j])
+            rets.append((p1 / p0) - 1.0)
+
+        if len(rets) == 0:
+            forward_stats[f"{h}d"] = {"n": 0, "mean": None, "median": None, "hit_rate": None}
+        else:
+            arr = np.array(rets, dtype=float)
+            forward_stats[f"{h}d"] = {
+                "n": int(len(arr)),
+                "mean": float(np.mean(arr)),
+                "median": float(np.median(arr)),
+                "hit_rate": float(np.mean(arr > 0.0)),
+            }
+
+    # severity breakdown
+    by_sev = {}
+    for sev in ["low", "medium", "high", "critical"]:
+        sub = df[df["severity"].str.lower() == sev]
+        by_sev[sev] = {"count": int(len(sub))}
+
+    # confidence calibration buckets
+    buckets = [(0.0, 0.5), (0.5, 0.7), (0.7, 0.85), (0.85, 1.01)]
+    by_conf = {}
+    for lo, hi in buckets:
+        sub = df[(df["confidence"] >= lo) & (df["confidence"] < hi)]
+        by_conf[f"{lo:.2f}-{hi:.2f}"] = {"count": int(len(sub))}
+
+    return {
+        "signal_count": int(len(df)),
+        "forward": forward_stats,
+        "by_severity": by_sev,
+        "by_confidence_bucket": by_conf,
+    }
+
+6) Results writer (json)
+
+Create backtest/results_io.py:
+
+from __future__ import annotations
+from pathlib import Path
+import json
+from typing import Any, Dict
+
+OUT_DIR = Path("backtest_results")
+OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+def write_result(agent_name: str, payload: Dict[str, Any]) -> Path:
+    p = OUT_DIR / f"{agent_name}.json"
+    p.write_text(json.dumps(payload, indent=2, default=str))
+    return p
+
+7) Registry (discover all agents from manifest)
+
+Create backtest/registry.py:
+
+from __future__ import annotations
+from typing import Dict, Any, List
+from pathlib import Path
+import yaml
+
+def load_manifest(path: str = "agents/manifest.yaml") -> Dict[str, Any]:
+    p = Path(path)
+    return yaml.safe_load(p.read_text())
+
+def list_agents(manifest: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return manifest.get("agents", [])
+
+def import_agent_class(module_path: str, class_name: str):
+    import importlib
+    mod = importlib.import_module(module_path)
+    return getattr(mod, class_name)
+
+8) Runner: backtest ONE agent (2007–present)
+
+Create backtest/runners/run_one.py:
+
+from __future__ import annotations
+from datetime import datetime
+import pandas as pd
+
+from backtest.data.calendar import trading_days
+from backtest.data.loaders_yf import load_yf_history, slice_asof
+from backtest.engine import BacktestEngine
+from backtest.adapters.agent_adapter import BacktestContext, AnalysisAgentAdapter
+from backtest.metrics import compute_forward_returns
+from backtest.results_io import write_result
+from backtest.registry import load_manifest, import_agent_class
+
+
+DEFAULT_START = "2007-01-01"
+DEFAULT_END = "2025-12-31"
+
+# Minimal symbol universe for baseline backtests (expand later)
+BASE_SYMBOLS = ["SPY", "QQQ", "IWM", "DIA", "^VIX", "^TNX", "TLT"]
+
+
+def run_one(agent_name: str, start: str = DEFAULT_START, end: str = DEFAULT_END):
+    manifest = load_manifest()
+    entry = next((a for a in manifest["agents"] if a["name"] == agent_name), None)
+    if not entry:
+        raise SystemExit(f"Agent not found in manifest: {agent_name}")
+
+    cls = import_agent_class(entry["module"], entry["callable"])
+    agent = cls()
+    adapter = AnalysisAgentAdapter(agent)
+
+    # Load data frames once (cached)
+    frames = {}
+    for sym in BASE_SYMBOLS:
+        frames[sym] = load_yf_history(sym, start=start, end=end)
+
+    cal = trading_days(start, end)
+    engine = BacktestEngine(cal)
+
+    def context_factory(dt):
+        asof = pd.Timestamp(dt).normalize()
+        sliced = {sym: slice_asof(df, asof, lookback_days=252) for sym, df in frames.items()}
+        return BacktestContext(asof=dt, frames=sliced, meta={"symbols": BASE_SYMBOLS})
+
+    result = engine.run_agent(
+        agent_name=agent_name,
+        agent_callable=adapter,
+        context_factory=context_factory,
+        start=datetime.fromisoformat(start),
+        end=datetime.fromisoformat(end),
+    )
+
+    # Metrics computed using full frames (for forward returns)
+    metrics = compute_forward_returns(result.signals, frames)
+
+    payload = {
+        "agent": agent_name,
+        "period": {"start": start, "end": end},
+        "signals": metrics,
+        "errors": {"count": len(result.errors), "sample": result.errors[:5]},
+    }
+    out = write_result(agent_name, payload)
+    print(f"Wrote: {out}")
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) < 2:
+        raise SystemExit("Usage: python -m backtest.runners.run_one <AgentName>")
+    run_one(sys.argv[1])
+
+9) Runner: backtest ALL agents (with category rules)
+
+Create backtest/runners/run_all.py:
+
+from __future__ import annotations
+from backtest.registry import load_manifest
+from backtest.runners.run_one import run_one, DEFAULT_START, DEFAULT_END
+
+# Start with “daily-market-data-compatible” agents.
+# Add event-driven agents later with their own runner.
+CATEGORY_A = {
+    "MarketCorrectionAgent",
+    "EquityMomentumAgent",
+    "BondStressAgent",
+    "MacroWatcherAgent",
+    "HeartbeatAgent",
+    "GreatestTradeAgent",
+    "CryptoStablecoinPremiumAgent",  # will effectively start later if you add crypto data
+}
+
+def main(start: str = DEFAULT_START, end: str = DEFAULT_END):
+    manifest = load_manifest()
+    agents = [a["name"] for a in manifest["agents"] if a["name"] in CATEGORY_A]
+    print("Running:", agents)
+
+    for name in agents:
+        try:
+            run_one(name, start=start, end=end)
+        except Exception as e:
+            print(f"[FAIL] {name}: {e}")
+
+if __name__ == "__main__":
+    main()
+
+10) Wire into Meta-Agent (promotion/pruning based on backtests)
+
+Add a simple “score” rule now, improve later:
+
+Promote if:
+
+signals >= N
+
+20d hit_rate >= threshold
+
+critical/high signals not purely noise
+
+Quarantine if:
+
+extremely high frequency + low hit rate
+
+or “always critical” behavior
+
+or forward returns negative across horizons
+
+Create meta/agent_builder/promotion.py (new):
+
+from __future__ import annotations
+import json
+from pathlib import Path
+
+RESULTS_DIR = Path("backtest_results")
+
+def load_result(agent_name: str) -> dict:
+    p = RESULTS_DIR / f"{agent_name}.json"
+    return json.loads(p.read_text())
+
+def score_agent(agent_name: str) -> dict:
+    r = load_result(agent_name)
+    fwd20 = r["signals"]["forward"].get("20d", {})
+    count = r["signals"].get("signal_count", 0)
+
+    hit = fwd20.get("hit_rate")
+    mean = fwd20.get("mean")
+
+    # Simple conservative scoring
+    score = 0.0
+    if hit is not None:
+        score += (hit - 0.5) * 100.0
+    if mean is not None:
+        score += mean * 100.0
+
+    return {
+        "agent": agent_name,
+        "signals": count,
+        "hit_20d": hit,
+        "mean_20d": mean,
+        "score": score,
+        "recommendation": (
+            "PROMOTE" if (count >= 20 and hit is not None and hit >= 0.55)
+            else "HOLD" if (count >= 5)
+            else "PRUNE"
+        )
+    }
+
+Run instructions (exact shell commands)
+A) Run one agent from 2007
+python -m backtest.runners.run_one MarketCorrectionAgent
+
+B) Run the initial batch
+python -m backtest.runners.run_all
+
+C) View output
+ls backtest_results
+cat backtest_results/MarketCorrectionAgent.json
+
+D) Score/promote
+python - << 'EOF'
+from meta.agent_builder.promotion import score_agent
+print(score_agent("MarketCorrectionAgent"))
+EOF

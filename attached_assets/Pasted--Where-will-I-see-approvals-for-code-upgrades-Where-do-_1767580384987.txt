@@ -1,0 +1,186 @@
+🔑 Where will I see approvals for code upgrades?
+🔑 Where do I approve agents that will be made?
+Short answer
+
+👉 In the Web UI at
+
+/approvals
+
+
+This is already wired in this line in your app.py:
+
+from routes.approvals import approvals_bp
+app.register_blueprint(approvals_bp)
+
+
+So approvals are not abstract — they live in the web app you are already running.
+
+🧭 How the approval flow works (end-to-end)
+1️⃣ Meta-Supervisor proposes things (automatic)
+
+The Meta-Supervisor generates:
+
+Agent promotions
+
+Agent retirements
+
+New agent proposals (regime-triggered, literature, failure-forensics, etc.)
+
+Code upgrade recommendations
+
+These land in files like:
+
+meta_supervisor/agent_proposals.json
+meta_supervisor/reports/meta_report.json
+
+2️⃣ Approval Dashboard (human gate)
+URL
+/approvals
+
+What appears there
+
+Each proposal shows:
+
+✅ Agent name
+
+🧠 “Why this agent was proposed”
+
+📊 Supporting metrics (PnL, hit rate, CVaR, sim vs live divergence)
+
+🧾 IC checklist (risk, regime fit, capital impact)
+
+🔐 Approval status
+
+This dashboard is served by:
+
+routes/approvals.py
+templates/approvals.html
+
+
+(You already have the blueprint hooked — this is the right place.)
+
+3️⃣ Formal IC approval checklist (per agent)
+
+Each proposal must satisfy:
+
+ Strategy class identified
+
+ Regime justification
+
+ Capital at risk ≤ budget
+
+ CVaR acceptable
+
+ Simulation vs live gap within tolerance
+
+ No kill-list conflict
+
+These fields live in the proposal JSON and are rendered in the UI.
+
+4️⃣ Multi-signer approval (2-of-3)
+How it works
+
+Each admin user can “Approve”
+
+Approval is recorded with:
+
+email
+
+timestamp
+
+Promotion triggers only when:
+
+len(approvals) >= 2
+
+
+This logic lives in:
+
+meta_supervisor/approval_policy.py
+
+
+And the UI enforces it visually:
+
+“1/2 approvals”
+
+“2/2 → APPROVED”
+
+5️⃣ What happens when you click APPROVE
+This is the key part 👇
+
+Once a proposal reaches APPROVED:
+
+✅ For existing agents
+
+Meta-Supervisor:
+
+Enables promotion
+
+Allows capital allocation
+
+Writes state update
+
+(Optionally) creates a GitHub PR for config change
+
+✅ For new agents
+
+Scaffold PR is auto-created
+
+You see a GitHub PR link immediately in the UI
+
+Proposal status becomes:
+
+PR_CREATED
+
+
+This is handled by:
+
+meta_supervisor/scaffold.py
+meta_supervisor/github_scaffold_pr.py
+
+6️⃣ Where you approve code upgrades (PRs)
+
+Two layers of approval exist by design:
+
+Layer 1 — Platform approval (Web UI)
+
+Approve idea / agent
+
+Happens at /approvals
+
+Layer 2 — Code approval (GitHub)
+
+Review scaffold PR
+
+Merge / reject
+
+Normal GitHub workflow
+
+This separation is intentional and institutional-grade.
+
+🔐 Why this is correct (quant-grade governance)
+
+You now have:
+
+Control	Where
+Agent proposal	Meta-Supervisor
+IC review	/approvals UI
+Multi-signer approval	Web UI + DB
+Code creation	Auto-generated PR
+Code merge	GitHub
+Capital deployment	Only after approval
+Kill-switch	Policy file
+Audit trail	JSON + GitHub
+
+This matches how real funds operate.
+
+✅ One small fix you must apply now (important)
+
+Your app.py has a typo that will break startup:
+
+fraom sqlalchemy.orm import DeclarativeBase
+
+Fix to:
+from sqlalchemy.orm import DeclarativeBase
+
+
+Do this now before testing approvals.

@@ -1,0 +1,507 @@
+Files to add (drop-in)
+1) routes/approvals.py (new blueprint)
+
+Create routes/approvals.py:
+
+import json
+import os
+from pathlib import Path
+from datetime import datetime, timezone
+from flask import Blueprint, request, session, redirect, url_for, render_template, abort, jsonify
+
+approvals_bp = Blueprint("approvals", __name__)
+
+# --- Paths ---
+META_REPORT = Path("meta_supervisor/reports/meta_report.json")
+PROPOSALS_A = Path("meta_supervisor/agent_proposals.json")
+PROPOSALS_R = Path("meta_supervisor/agent_proposals_regime.json")
+
+STATE_DIR = Path("meta_supervisor/state")
+APPROVALS_STATE = STATE_DIR / "approvals_state.json"
+IC_STATE = STATE_DIR / "ic_checklists.json"
+EXPLAIN_STATE = STATE_DIR / "proposal_explainers.json"
+PROMO_STATE = STATE_DIR / "promotion_approvals.json"
+
+def _now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+def _load_json(path: Path, default):
+    try:
+        if not path.exists():
+            return default
+        return json.loads(path.read_text())
+    except Exception:
+        return default
+
+def _save_json(path: Path, data):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2))
+
+def _admin_token_required():
+    token = os.environ.get("ADMIN_DASH_TOKEN", "")
+    if not token:
+        # If unset, dashboard is open (not recommended). Set ADMIN_DASH_TOKEN.
+        return True
+    provided = request.args.get("token") or request.headers.get("X-Admin-Token") or session.get("admin_token")
+    return provided == token
+
+def _require_admin():
+    if not _admin_token_required():
+        abort(403)
+
+def _approvers():
+    raw = os.environ.get("PROMOTION_APPROVERS", "")
+    return [x.strip().lower() for x in raw.split(",") if x.strip()]
+
+def _threshold():
+    try:
+        return int(os.environ.get("PROMOTION_THRESHOLD", "2"))
+    except Exception:
+        return 2
+
+def _github_cfg():
+    return {
+        "token": os.environ.get("GITHUB_TOKEN"),
+        "repo": os.environ.get("GITHUB_REPO"),  # e.g. "rsmolarz/MarketAgent"
+    }
+
+def _list_open_prs():
+    """
+    Optional. If GITHUB_TOKEN + GITHUB_REPO set, fetch open PRs.
+    Otherwise returns [].
+    """
+    cfg = _github_cfg()
+    if not cfg["token"] or not cfg["repo"]:
+        return []
+
+    import urllib.request
+
+    url = f"https://api.github.com/repos/{cfg['repo']}/pulls?state=open&per_page=20"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {cfg['token']}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "MarketAgent-Approvals",
+        },
+        method="GET",
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+
+    prs = []
+    for pr in data:
+        prs.append({
+            "number": pr.get("number"),
+            "title": pr.get("title"),
+            "url": pr.get("html_url"),
+            "user": (pr.get("user") or {}).get("login"),
+            "updated_at": pr.get("updated_at"),
+        })
+    return prs
+
+def _all_proposals():
+    a = _load_json(PROPOSALS_A, {"proposals": []}).get("proposals", [])
+    r = _load_json(PROPOSALS_R, {"proposals": []}).get("proposals", [])
+    # Normalize
+    def norm(p, source):
+        p = dict(p)
+        p.setdefault("id", p.get("name"))
+        p.setdefault("source", source)
+        p.setdefault("status", "PENDING")
+        p.setdefault("created_at", _now())
+        return p
+    out = [norm(p, "manual") for p in a] + [norm(p, "regime") for p in r]
+    return out
+
+def _save_proposals(updated):
+    # split back by source
+    manual = [p for p in updated if p.get("source") == "manual"]
+    regime = [p for p in updated if p.get("source") == "regime"]
+    _save_json(PROPOSALS_A, {"proposals": manual})
+    _save_json(PROPOSALS_R, {"proposals": regime})
+
+def _ic_template():
+    return {
+        "data_sources_validated": False,
+        "eval_plan_defined": False,
+        "risk_controls_defined": False,
+        "execution_guardrails": False,
+        "shadow_mode_first": False,
+        "owner_assigned": False,
+    }
+
+@approvals_bp.route("/admin/approvals/login", methods=["GET", "POST"])
+def login():
+    token = os.environ.get("ADMIN_DASH_TOKEN", "")
+    if not token:
+        return redirect(url_for("approvals.dashboard"))
+    if request.method == "POST":
+        provided = request.form.get("token", "")
+        if provided == token:
+            session["admin_token"] = provided
+            return redirect(url_for("approvals.dashboard"))
+        return render_template("approvals_login.html", error="Invalid token")
+    return render_template("approvals_login.html", error=None)
+
+@approvals_bp.route("/admin/approvals")
+def dashboard():
+    _require_admin()
+
+    report = _load_json(META_REPORT, {})
+    proposals = _all_proposals()
+    ic = _load_json(IC_STATE, {})
+    explainers = _load_json(EXPLAIN_STATE, {})
+    promos = _load_json(PROMO_STATE, {})
+
+    open_prs = _list_open_prs()
+
+    # Compute pending promotions from meta_report decisions
+    agents = (report.get("agents") or {})
+    promote_candidates = [a for a, s in agents.items() if s.get("decision") == "PROMOTE"]
+
+    return render_template(
+        "approvals_dashboard.html",
+        report=report,
+        open_prs=open_prs,
+        proposals=proposals,
+        ic=ic,
+        explainers=explainers,
+        promote_candidates=promote_candidates,
+        promos=promos,
+        approvers=_approvers(),
+        threshold=_threshold(),
+        now=_now(),
+    )
+
+@approvals_bp.route("/admin/approvals/proposal/<pid>/checklist", methods=["POST"])
+def update_checklist(pid):
+    _require_admin()
+    ic = _load_json(IC_STATE, {})
+    cur = ic.get(pid) or _ic_template()
+    for k in cur.keys():
+        cur[k] = bool(request.form.get(k))
+    ic[pid] = cur
+    _save_json(IC_STATE, ic)
+    return redirect(url_for("approvals.dashboard"))
+
+@approvals_bp.route("/admin/approvals/proposal/<pid>/set_status", methods=["POST"])
+def set_proposal_status(pid):
+    _require_admin()
+    status = request.form.get("status", "PENDING").upper()
+    proposals = _all_proposals()
+
+    # enforce IC complete on APPROVE
+    ic = _load_json(IC_STATE, {})
+    checklist = ic.get(pid) or _ic_template()
+    ic_complete = all(bool(v) for v in checklist.values())
+
+    for p in proposals:
+        if (p.get("id") == pid) or (p.get("name") == pid):
+            if status == "APPROVED" and not ic_complete:
+                # refuse approve until checklist complete
+                p["status"] = "PENDING"
+                p["status_note"] = "IC checklist incomplete"
+            else:
+                p["status"] = status
+                p["status_note"] = ""
+                p["updated_at"] = _now()
+    _save_proposals(proposals)
+    return redirect(url_for("approvals.dashboard"))
+
+@approvals_bp.route("/admin/approvals/promotion/<agent>/sign", methods=["POST"])
+def sign_promotion(agent):
+    _require_admin()
+    email = (request.form.get("email") or "").strip().lower()
+    if not email:
+        return redirect(url_for("approvals.dashboard"))
+
+    allowed = set(_approvers())
+    if allowed and email not in allowed:
+        return redirect(url_for("approvals.dashboard"))
+
+    promos = _load_json(PROMO_STATE, {})
+    rec = promos.get(agent) or {"agent": agent, "signers": [], "created_at": _now()}
+    if email not in rec["signers"]:
+        rec["signers"].append(email)
+    rec["updated_at"] = _now()
+    promos[agent] = rec
+    _save_json(PROMO_STATE, promos)
+    return redirect(url_for("approvals.dashboard"))
+
+@approvals_bp.route("/admin/approvals/promotion/<agent>/clear", methods=["POST"])
+def clear_promotion(agent):
+    _require_admin()
+    promos = _load_json(PROMO_STATE, {})
+    if agent in promos:
+        del promos[agent]
+        _save_json(PROMO_STATE, promos)
+    return redirect(url_for("approvals.dashboard"))
+
+@approvals_bp.route("/admin/approvals/proposal/<pid>/generate_explainer", methods=["POST"])
+def generate_explainer(pid):
+    _require_admin()
+    report = _load_json(META_REPORT, {})
+    proposals = _all_proposals()
+    target = None
+    for p in proposals:
+        if (p.get("id") == pid) or (p.get("name") == pid):
+            target = p
+            break
+    if not target:
+        return redirect(url_for("approvals.dashboard"))
+
+    # Call OpenAI via your existing env vars
+    from openai import OpenAI
+    key = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    base = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
+    model = os.environ.get("PROPOSAL_EXPLAIN_MODEL", "gpt-4.1-mini")
+    client = OpenAI(api_key=key, base_url=base) if base else OpenAI(api_key=key)
+
+    prompt = {
+        "proposal": target,
+        "fleet": report.get("fleet", {}),
+        "strategy_cvar": report.get("strategy_cvar", {}),
+        "recent_decisions": {
+            "promote": [a for a, s in (report.get("agents") or {}).items() if s.get("decision") == "PROMOTE"],
+            "kill": [a for a, s in (report.get("agents") or {}).items() if s.get("decision") in ("KILL", "RETIRE")],
+        },
+    }
+
+    msg = (
+        "Explain why this agent was proposed, in PM language.\n"
+        "Include: regime fit, edge hypothesis, key signals, risks, how it complements existing agents, and eval plan.\n"
+        "Output markdown. Be specific to the JSON.\n\n"
+        f"{json.dumps(prompt, indent=2)}"
+    )
+
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "system", "content": "Output markdown only."},
+                  {"role": "user", "content": msg}],
+        temperature=0.2,
+        max_tokens=900,
+    )
+    explainer_md = resp.choices[0].message.content
+
+    explainers = _load_json(EXPLAIN_STATE, {})
+    explainers[pid] = {"updated_at": _now(), "markdown": explainer_md}
+    _save_json(EXPLAIN_STATE, explainers)
+
+    return redirect(url_for("approvals.dashboard"))
+
+2) Register this blueprint in app.py
+
+In your create_app() where you register blueprints, add:
+
+from routes.approvals import approvals_bp
+app.register_blueprint(approvals_bp)
+
+
+(Keep your existing /admin blueprint; this one provides /admin/approvals.)
+
+3) Templates (UI)
+
+Create templates/approvals_login.html:
+
+<!doctype html>
+<html>
+<head><title>Approvals Login</title></head>
+<body style="font-family:Arial;max-width:720px;margin:24px auto">
+  <h2>Approvals Login</h2>
+  {% if error %}<div style="color:#b00">{{ error }}</div>{% endif %}
+  <form method="post">
+    <label>Admin token</label><br/>
+    <input name="token" style="width:100%;padding:10px" />
+    <button style="margin-top:12px;padding:10px 14px">Login</button>
+  </form>
+</body>
+</html>
+
+
+Create templates/approvals_dashboard.html:
+
+<!doctype html>
+<html>
+<head>
+  <title>Meta-Supervisor Approvals</title>
+</head>
+<body style="font-family:Arial;max-width:1100px;margin:24px auto;line-height:1.35">
+
+  <h2>Meta-Supervisor Approval Console</h2>
+  <div style="color:#666">Now: {{ now }}</div>
+
+  <hr/>
+
+  <h3>1) GitHub PRs (merge happens in GitHub)</h3>
+  {% if open_prs and open_prs|length %}
+    <ul>
+      {% for pr in open_prs %}
+        <li>
+          <a href="{{ pr.url }}" target="_blank">#{{ pr.number }} — {{ pr.title }}</a>
+          <span style="color:#666"> (updated {{ pr.updated_at }})</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div style="color:#666">
+      No PRs listed (set <code>GITHUB_TOKEN</code> + <code>GITHUB_REPO</code> to display them).
+    </div>
+  {% endif %}
+
+  <hr/>
+
+  <h3>2) Agent Proposals (approve/reject + IC checklist)</h3>
+  {% for p in proposals %}
+    {% set pid = p.id or p.name %}
+    <div style="border:1px solid #ddd;border-radius:10px;padding:12px;margin:10px 0">
+      <div style="font-weight:700">{{ p.name }} <span style="color:#666">({{ p.source }})</span></div>
+      <div><b>Strategy:</b> {{ p.strategy_class }}</div>
+      <div><b>Regime trigger:</b> {{ p.regime_trigger }}</div>
+      <div><b>Status:</b> {{ p.status }} {% if p.status_note %}<span style="color:#b00">— {{ p.status_note }}</span>{% endif %}</div>
+
+      <details style="margin-top:8px">
+        <summary><b>IC Checklist (required for approval)</b></summary>
+        {% set c = ic.get(pid) %}
+        <form method="post" action="/admin/approvals/proposal/{{ pid }}/checklist">
+          {% for key in ['data_sources_validated','eval_plan_defined','risk_controls_defined','execution_guardrails','shadow_mode_first','owner_assigned'] %}
+            <div>
+              <label>
+                <input type="checkbox" name="{{ key }}" value="1" {% if c and c.get(key) %}checked{% endif %} />
+                {{ key }}
+              </label>
+            </div>
+          {% endfor %}
+          <button style="margin-top:8px;padding:8px 12px">Save checklist</button>
+        </form>
+      </details>
+
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <form method="post" action="/admin/approvals/proposal/{{ pid }}/set_status">
+          <input type="hidden" name="status" value="APPROVED"/>
+          <button style="padding:8px 12px">Approve</button>
+        </form>
+        <form method="post" action="/admin/approvals/proposal/{{ pid }}/set_status">
+          <input type="hidden" name="status" value="REJECTED"/>
+          <button style="padding:8px 12px;background:#fff;border:1px solid #999">Reject</button>
+        </form>
+        <form method="post" action="/admin/approvals/proposal/{{ pid }}/set_status">
+          <input type="hidden" name="status" value="PENDING"/>
+          <button style="padding:8px 12px;background:#fff;border:1px solid #999">Reset to Pending</button>
+        </form>
+
+        <form method="post" action="/admin/approvals/proposal/{{ pid }}/generate_explainer">
+          <button style="padding:8px 12px">Generate “Why proposed” explainer</button>
+        </form>
+      </div>
+
+      {% set ex = explainers.get(pid) %}
+      {% if ex %}
+        <details style="margin-top:10px" open>
+          <summary><b>Why proposed (LLM explainer)</b> <span style="color:#666">({{ ex.updated_at }})</span></summary>
+          <pre style="white-space:pre-wrap;border:1px solid #eee;border-radius:10px;padding:10px">{{ ex.markdown }}</pre>
+        </details>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <hr/>
+
+  <h3>3) Promotions — Multi-signer ({{ threshold }} of {{ approvers|length if approvers|length else 3 }})</h3>
+  {% if promote_candidates and promote_candidates|length %}
+    {% for a in promote_candidates %}
+      {% set pr = promos.get(a) %}
+      <div style="border:1px solid #ddd;border-radius:10px;padding:12px;margin:10px 0">
+        <div style="font-weight:700">{{ a }}</div>
+        <div><b>Signers:</b> {{ (pr.signers|join(", ")) if pr and pr.signers else "None" }}</div>
+        <div style="color:#666">Approved when signers >= {{ threshold }} and all are on the approver list.</div>
+
+        <form method="post" action="/admin/approvals/promotion/{{ a }}/sign" style="margin-top:8px">
+          <label>Signer email</label><br/>
+          <input name="email" style="padding:8px;width:380px;max-width:100%"/>
+          <button style="padding:8px 12px;margin-left:8px">Sign</button>
+        </form>
+
+        <form method="post" action="/admin/approvals/promotion/{{ a }}/clear" style="margin-top:8px">
+          <button style="padding:8px 12px;background:#fff;border:1px solid #999">Clear signatures</button>
+        </form>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div style="color:#666">No PROMOTE candidates in the current meta_report.</div>
+  {% endif %}
+
+  <hr/>
+
+  <h3>4) What to do next</h3>
+  <ul>
+    <li>Merge PRs in GitHub (dashboard lists them).</li>
+    <li>Approve agent proposals only after the IC checklist is complete.</li>
+    <li>Collect promotion signatures (2-of-3) before allowing promotion PRs.</li>
+  </ul>
+
+</body>
+</html>
+
+4) Enforce the 2-of-3 gate in your promotion PR creation
+
+In meta_supervisor/github_pr.py (or wherever you trigger PR creation), add a guard:
+
+import os, json
+from pathlib import Path
+
+PROMO_STATE = Path("meta_supervisor/state/promotion_approvals.json")
+
+def promotion_is_approved(agent: str) -> bool:
+    approvers = [x.strip().lower() for x in os.environ.get("PROMOTION_APPROVERS","").split(",") if x.strip()]
+    threshold = int(os.environ.get("PROMOTION_THRESHOLD","2"))
+    if not PROMO_STATE.exists():
+        return False
+    data = json.loads(PROMO_STATE.read_text())
+    rec = data.get(agent) or {}
+    signers = [s.lower() for s in (rec.get("signers") or [])]
+    signers = list(dict.fromkeys(signers))  # unique preserve order
+    if approvers:
+        signers = [s for s in signers if s in approvers]
+    return len(signers) >= threshold
+
+
+Then when you decide to create a promotion PR:
+
+if agent_decision == "PROMOTE" and promotion_is_approved(agent_name):
+    # create PR
+else:
+    # skip PR creation until signatures collected
+
+Environment variables to set in Replit
+
+Minimum (dashboard protection + signers):
+
+ADMIN_DASH_TOKEN = some long token
+
+PROMOTION_APPROVERS = a@x.com,b@y.com,c@z.com
+
+PROMOTION_THRESHOLD = 2
+
+Optional (show PRs in UI):
+
+GITHUB_TOKEN = PAT with repo read permissions
+
+GITHUB_REPO = rsmolarz/MarketAgent (or your actual repo)
+
+Optional (explainer LLM):
+
+AI_INTEGRATIONS_OPENAI_API_KEY (you already have this)
+
+AI_INTEGRATIONS_OPENAI_BASE_URL (if using a proxy)
+
+How approvals flow in practice
+Code upgrades
+
+Meta-Supervisor creates PR → appears in GitHub
+
+Dashboard shows PR link
+
+You merge in GitHub
+
+New agents

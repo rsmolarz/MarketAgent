@@ -1,0 +1,167 @@
+1️⃣ Agent Redundancy Pruning (Correlation Clustering)
+
+Problem solved
+Multiple agents fire the same signal → false diversification → capital dilution.
+
+Solution
+Cluster agents by signal co-movement, keep the strongest per cluster, down-weight the rest.
+
+📁 meta/redundancy.py (NEW)
+import numpy as np
+from collections import defaultdict
+from models import Finding
+
+CORR_LOOKBACK = 300
+CORR_THRESHOLD = 0.85
+
+
+def compute_agent_signal_vectors():
+    """
+    Builds binary time-series vectors per agent:
+    1 = signal fired, 0 = no signal
+    """
+    rows = (
+        Finding.query
+        .order_by(Finding.timestamp.desc())
+        .limit(CORR_LOOKBACK)
+        .all()
+    )
+
+    by_ts = defaultdict(set)
+    for r in rows:
+        by_ts[r.timestamp].add(r.agent_name)
+
+    agents = sorted({r.agent_name for r in rows})
+    matrix = {a: [] for a in agents}
+
+    for _, active_agents in sorted(by_ts.items()):
+        for a in agents:
+            matrix[a].append(1 if a in active_agents else 0)
+
+    return agents, matrix
+
+
+def find_redundant_agents():
+    agents, matrix = compute_agent_signal_vectors()
+    redundant = set()
+
+    for i, a1 in enumerate(agents):
+        for a2 in agents[i+1:]:
+            v1, v2 = matrix[a1], matrix[a2]
+            if len(v1) < 20:
+                continue
+
+            corr = np.corrcoef(v1, v2)[0, 1]
+            if corr >= CORR_THRESHOLD:
+                redundant.add(a2)
+
+    return redundant
+
+Apply pruning in allocator (3 lines)
+
+Inside _rebalance_agent_allocation() before allocation:
+
+from meta.redundancy import find_redundant_agents
+
+redundant = find_redundant_agents()
+agent_names = [a for a in agent_names if a not in redundant]
+
+
+✅ Automatic
+✅ Explainable
+✅ No agent deletion
+✅ Capital preserved
+
+2️⃣ Regime-Specific Half-Life Decay Curves
+
+Problem solved
+Agents don’t fail equally across regimes.
+You need time-decay, not kill switches.
+
+📁 meta/decay.py (NEW)
+import math
+
+REGIME_HALF_LIFE = {
+    "risk_on": 120,
+    "risk_off": 40,
+    "transition": 20,
+    "shock": 10,
+    "unknown": 60,
+}
+
+
+def decay_multiplier(age_steps: int, regime: str) -> float:
+    half_life = REGIME_HALF_LIFE.get(regime, 60)
+    return math.exp(-age_steps / half_life)
+
+Apply decay inside allocator score (5 lines)
+
+Modify UCBAllocator.score():
+
+from meta.decay import decay_multiplier
+from regime.confidence import get_cached_regime
+
+regime = get_cached_regime() or "unknown"
+age = len(self.rewards[agent])
+decay = decay_multiplier(age, regime)
+
+return decay * (mean + bonus)
+
+
+✅ Smooth capital fade
+✅ Regime-aware
+✅ Prevents whipsaw
+✅ Mathematically stable
+
+3️⃣ Capital Attribution Report (LP-Grade)
+
+This is what LPs, ICs, and auditors ask for.
+
+“Where did returns come from?”
+“What worked in risk-off?”
+“Why was capital reduced?”
+
+📁 reports/capital_attribution.py (NEW)
+from collections import defaultdict
+from telemetry.events import load_events
+from models import LLMCouncilResult
+
+
+def build_capital_attribution():
+    events = load_events(limit=5000)
+    attribution = defaultdict(lambda: defaultdict(float))
+
+    for e in events:
+        agent = e.get("agent")
+        reward = e.get("reward", 0)
+        regime = e.get("regime", "unknown")
+
+        attribution[regime][agent] += reward
+
+    return attribution
+
+Sample output (dashboard / PDF / email)
+{
+  "risk_off": {
+    "BondStressAgent": 1.42,
+    "MacroWatcherAgent": 0.88
+  },
+  "risk_on": {
+    "ArbitrageFinderAgent": 2.11,
+    "EquityMomentumAgent": 1.76
+  },
+  "transition": {
+    "GeopoliticalRiskAgent": -0.12
+  }
+}
+
+
+This ties directly into:
+
+allocator decisions
+
+regime rotation
+
+agent substitution
+
+LP communications

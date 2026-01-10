@@ -1,0 +1,255 @@
+Your allocation.py is already wired correctly if meta_supervisor.confidence_decay.get_confidence_multiplier() returns a multiplier that is updated from abs_error_bps (and optionally loss-weighted). Right now you only need to:
+
+implement/upgrade confidence_decay.py to:
+
+compute per-agent multipliers from alpha/reconciled.jsonl using abs_error_bps
+
+persist them
+
+expose get_confidence_multiplier(name)
+
+ensure it’s called during meta-supervisor runs (so multipliers stay fresh)
+
+Below is a drop-in confidence_decay.py that matches your import and is compatible with your allocation.py.
+
+1) Replace meta_supervisor/confidence_decay.py with this
+import json
+import math
+from pathlib import Path
+from collections import defaultdict
+from datetime import datetime, timezone
+
+RECON = Path("alpha/reconciled.jsonl")
+STATE = Path("meta_supervisor/state/confidence_multipliers.json")
+
+# ---------- Tunables (production-safe defaults) ----------
+HORIZON_HOURS = 24
+
+# How quickly history fades (in number of reconciled signals per agent)
+HALF_LIFE_SIGNALS = 80
+
+# Penalty scaling: abs_error of ~50 bps is meaningful
+LOSS_K_BPS = 50.0
+
+# Hard bounds (so allocation never goes infinite or zero without a kill decision)
+FLOOR = 0.50
+CEIL = 1.10
+
+# Per-signal penalty ceiling (prevents a single point from nuking the multiplier)
+PENALTY_CAP = 0.08
+
+# Loss amplifier: if realized < 0, penalize more than just abs_error
+LOSS_AMPLIFIER = 1.3
+
+# Optional tiny boost for strong stability streaks (kept small + capped)
+STABILITY_BOOST = 0.02
+STABILITY_GOOD_ERR_BPS = 30.0
+STABILITY_MIN_GOOD = 10
+# --------------------------------------------------------
+
+
+def _now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _load_jsonl(p: Path) -> list[dict]:
+    if not p.exists():
+        return []
+    return [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+
+
+def _load_state() -> dict:
+    if not STATE.exists():
+        return {"version": 1, "generated_at": None, "multipliers": {}}
+    try:
+        return json.loads(STATE.read_text())
+    except Exception:
+        return {"version": 1, "generated_at": None, "multipliers": {}}
+
+
+def _save_state(s: dict):
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    STATE.write_text(json.dumps(s, indent=2))
+
+
+def _sigmoid_penalty(abs_error_bps: float) -> float:
+    """
+    Maps abs_error_bps -> penalty in [0, PENALTY_CAP].
+    0 bps -> 0 penalty
+    50 bps -> moderate penalty
+    150+ bps -> near cap
+    """
+    x = max(0.0, float(abs_error_bps))
+    return (x / (x + LOSS_K_BPS)) * PENALTY_CAP
+
+
+def update_confidence_multipliers(limit_rows: int = 8000) -> dict:
+    """
+    Recomputes confidence multipliers based on reconciled signal error.
+    Uses exponentially weighted penalties with half-life in signals.
+    """
+    recon = _load_jsonl(RECON)
+    recon = [r for r in recon if int(r.get("horizon_hours", 0)) == HORIZON_HOURS]
+    if not recon:
+        state = _load_state()
+        if state.get("generated_at") is None:
+            state["generated_at"] = _now()
+            _save_state(state)
+        return state
+
+    recon = recon[-limit_rows:]
+
+    # group by agent in file order (approx chronological)
+    by_agent: dict[str, list[dict]] = defaultdict(list)
+    for r in recon:
+        a = r.get("agent") or "unknown"
+        by_agent[a].append(r)
+
+    prev = _load_state()
+    prev_mult = prev.get("multipliers", {}) or {}
+
+    # exponential forgetting factor
+    lam = math.log(2.0) / max(HALF_LIFE_SIGNALS, 1)
+
+    multipliers: dict[str, float] = dict(prev_mult)  # keep agents not seen today
+
+    for agent, rows in by_agent.items():
+        m = float(prev_mult.get(agent, 1.0))
+
+        good = 0
+        bad = 0
+
+        n = len(rows)
+        # last 250 signals is plenty; still EW-weighted
+        tail = rows[-250:]
+
+        for i, r in enumerate(tail):
+            try:
+                abs_err = float(r.get("abs_error_bps", 0.0) or 0.0)
+                realized = float(r.get("realized_pnl_bps", 0.0) or 0.0)
+            except Exception:
+                continue
+
+            # weight: newer signals matter more
+            # map i to global index within agent series (approx)
+            # newer => smaller exponent => higher weight
+            global_idx = (n - len(tail) + i)
+            age = (n - 1 - global_idx)
+            w = math.exp(-lam * max(age, 0))
+
+            pen = _sigmoid_penalty(abs_err) * w
+            if realized < 0:
+                pen *= LOSS_AMPLIFIER
+
+            # multiplicative decay
+            m *= (1.0 - pen)
+
+            # track stability stats
+            if realized > 0 and abs_err <= STABILITY_GOOD_ERR_BPS:
+                good += 1
+            if realized < 0 and abs_err >= (STABILITY_GOOD_ERR_BPS * 2):
+                bad += 1
+
+        # small boost if consistently good and not “bad”
+        if good >= STABILITY_MIN_GOOD and bad == 0:
+            m *= (1.0 + STABILITY_BOOST)
+
+        # clamp
+        m = max(FLOOR, min(CEIL, m))
+        multipliers[agent] = round(m, 4)
+
+    out = {"version": 1, "generated_at": _now(), "multipliers": multipliers}
+    _save_state(out)
+    return out
+
+
+def get_confidence_multiplier(agent_name: str) -> float:
+    """
+    Safe accessor used by allocation.py.
+    """
+    state = _load_state()
+    mult = (state.get("multipliers") or {}).get(agent_name)
+    try:
+        return float(mult) if mult is not None else 1.0
+    except Exception:
+        return 1.0
+
+What this does
+
+Uses abs_error_bps from alpha/reconciled.jsonl (24h horizon)
+
+Penalizes more when realized_pnl_bps < 0
+
+Keeps multipliers bounded [0.50, 1.10] so weights don’t blow up or disappear unexpectedly
+
+Provides the exact function your allocation.py imports: get_confidence_multiplier()
+
+2) Make sure the multipliers update on each supervisor run
+
+In your meta report builder (the file you pasted that calls update_confidence_multipliers()), keep this:
+
+confidence_state = update_confidence_multipliers()
+
+
+That will refresh the state file and make allocation.py pick it up automatically.
+
+If you want the supervisor to refresh multipliers even when the report builder isn’t called, add this once at the start of run_meta_supervisor():
+
+from meta_supervisor.confidence_decay import update_confidence_multipliers
+update_confidence_multipliers()
+
+3) (Required for Step 2 gates) Add sim error stats to build_meta_report.py
+
+You should add these fields (if you haven’t yet), because promotion gates will use them:
+
+abs_errors = [float(r.get("abs_error_bps", 0)) for r in rec if r.get("abs_error_bps") is not None]
+pnl_errors = [float(r.get("pnl_error_bps", 0)) for r in rec if r.get("pnl_error_bps") is not None]
+
+agent_stats["avg_abs_error_bps"] = round(sum(abs_errors)/max(len(abs_errors),1), 2) if abs_errors else None
+agent_stats["avg_pnl_error_bps"] = round(sum(pnl_errors)/max(len(pnl_errors),1), 2) if pnl_errors else None
+agent_stats["sim_version"] = rec[-1].get("sim_version") if rec else None
+
+4) Promotion gate upgrade (uses low sim error + positive alpha)
+
+If your promotion.py isn’t updated yet, set the gate to:
+
+pnl_sum_bps > 150
+
+hit_rate >= 0.55
+
+error_rate == 0
+
+avg_abs_error_bps <= 60
+
+avg_pnl_error_bps >= -20 (not consistently underperforming expectation)
+
+5) Per-strategy CVaR using expected vs realized gap
+
+This should be computed from pnl_error_bps grouped by strategy class (agent→strategy map). If you paste your current strategy_attribution.py, I’ll integrate CVaR directly into it rather than creating a parallel module.
+
+6) Replace score-linear sim with model-based expected returns
+
+You already have the right reconciliation structure. The clean next step is:
+
+add alpha/simulator_model.py (ridge regression)
+
+train it daily/weekly
+
+in alpha/reconcile.py compute expected_pnl_bps using the trained model, fallback to score-linear if model missing
+
+If you paste your current alpha/prices_crypto.py and tell me which exchange you’re using for get_price(), I’ll also add the training schedule hook in your scheduler.py job list so it’s fully automated.
+
+Immediate action you can take now
+
+Replace meta_supervisor/confidence_decay.py with the code above
+
+Run:
+
+python -c "from meta_supervisor.confidence_decay import update_confidence_multipliers; import json; print(json.dumps(update_confidence_multipliers(), indent=2))"
+
+
+Confirm meta_supervisor/state/confidence_multipliers.json is created and non-empty
+
+Run your meta supervisor once; allocation will immediately reflect multipliers
+
+If you paste your current meta_supervisor/promotion.py and meta_supervisor/strategy_attribution.py, I’ll give you exact replacements for steps 2–3 without guesswork.

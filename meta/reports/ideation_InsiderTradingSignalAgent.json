@@ -1,0 +1,134 @@
+{
+  "agent": {
+    "class_name": "InsiderTradingSignalAgent",
+    "module_slug": "insider_trading_signal_agent",
+    "description": "Detects potential insider trading signals by analyzing unusual patterns in insider transaction filings combined with abnormal short-term price movements and volume spikes in equities.",
+    "category": "equities",
+    "data_sources": [
+      {
+        "name": "SEC EDGAR Insider Transactions",
+        "type": "public_api",
+        "details": "Fetch recent Form 4 filings reporting insider trades for listed equities via SEC EDGAR public API."
+      },
+      {
+        "name": "Equity Price and Volume Data",
+        "type": "existing_client",
+        "details": "Use internal market data client to obtain recent intraday and daily price and volume data for equities."
+      }
+    ],
+    "detection_logic": [
+      "Fetch recent insider transaction filings (Form 4) from SEC EDGAR for the last 1-2 trading days.",
+      "For each insider transaction, identify the equity symbol and transaction type (buy/sell) and size relative to insider holdings.",
+      "Fetch recent price and volume data for the equity covering the transaction day and prior days.",
+      "Calculate abnormal price movement and volume spike metrics relative to historical averages (e.g., 20-day average volume and volatility).",
+      "Flag cases where insider buys coincide with significant abnormal positive price and volume spikes, or insider sells coincide with abnormal negative price and volume spikes.",
+      "Assign severity based on size of insider transaction and magnitude of price/volume abnormality.",
+      "Generate findings with metadata including insider name, transaction details, abnormality scores, and timestamps."
+    ],
+    "parameters": {
+      "thresholds": {
+        "min_transaction_percent_of_holdings": 0.5,
+        "min_price_change_percent": 2.0,
+        "min_volume_spike_multiplier": 3.0
+      },
+      "cadence_minutes_default": 240
+    },
+    "output_examples": [
+      {
+        "title": "Potential Insider Buying Signal in XYZ Corp",
+        "description": "Insider purchased 1.2% of holdings in XYZ Corp coinciding with a 3.5% price increase and 4x volume spike on the same day, indicating possible material non-public information.",
+        "severity": "high",
+        "confidence": 0.85,
+        "metadata": {
+          "insider_name": "John Doe",
+          "transaction_type": "buy",
+          "transaction_percent_of_holdings": 1.2,
+          "price_change_percent": 3.5,
+          "volume_spike_multiplier": 4.0,
+          "filing_date": "2026-01-05"
+        },
+        "symbol": "XYZ",
+        "market_type": "equities"
+      }
+    ]
+  },
+  "eval": {
+    "suite_name": "InsiderTradingSignalAgent_smoke",
+    "cases": [
+      {
+        "id": "basic_insider_buy_signal",
+        "input_fixture": {
+          "insider_filings": [
+            {
+              "symbol": "ABC",
+              "insider_name": "Alice Smith",
+              "transaction_type": "buy",
+              "transaction_percent_of_holdings": 0.6,
+              "filing_date": "2026-01-06"
+            }
+          ],
+          "price_volume_data": {
+            "ABC": {
+              "price_change_percent": 2.5,
+              "volume_spike_multiplier": 3.5
+            }
+          }
+        },
+        "expected_schema": {
+          "type": "list",
+          "item_required_keys": [
+            "title",
+            "severity",
+            "confidence",
+            "metadata",
+            "symbol",
+            "market_type"
+          ]
+        }
+      },
+      {
+        "id": "no_signal_due_to_low_volume_spike",
+        "input_fixture": {
+          "insider_filings": [
+            {
+              "symbol": "DEF",
+              "insider_name": "Bob Lee",
+              "transaction_type": "sell",
+              "transaction_percent_of_holdings": 1.0,
+              "filing_date": "2026-01-06"
+            }
+          ],
+          "price_volume_data": {
+            "DEF": {
+              "price_change_percent": -3.0,
+              "volume_spike_multiplier": 1.5
+            }
+          }
+        },
+        "expected_schema": {
+          "type": "list",
+          "item_required_keys": [
+            "title",
+            "severity",
+            "confidence",
+            "metadata",
+            "symbol",
+            "market_type"
+          ]
+        }
+      }
+    ],
+    "offline_adapter_plan": "Use file fixtures to mock SEC EDGAR insider filings and internal price/volume data client responses. Validate findings schema and logic deterministically in CI without network."
+  },
+  "safety": {
+    "no_execution": true,
+    "protected_paths": [
+      ".github/",
+      "trading/",
+      "secrets/",
+      "infra/"
+    ],
+    "max_files_changed": 4,
+    "max_lines_changed": 250
+  }
+}

@@ -1,0 +1,157 @@
+1️⃣ What we cluster (important)
+
+We do NOT cluster raw prices.
+
+We cluster agent signal behavior:
+
+timing similarity
+
+direction
+
+realized forward returns
+
+Each agent becomes a signal vector over time.
+
+2️⃣ Minimal data contract (already satisfied)
+
+Your backtest engine already produces something like:
+
+{
+  "agent": "MarketCorrectionAgent",
+  "asof": "2018-10-01",
+  "symbol": "SPY",
+  "direction": -1,
+  "forward_return_20d": -0.08
+}
+
+
+That’s enough.
+
+3️⃣ signal_clustering.py
+
+Drop this in meta/ or evaluation/.
+
+"""
+Signal Clustering Engine
+
+Identifies redundant agents by clustering signal behavior.
+"""
+
+import numpy as np
+from typing import Dict, List
+from collections import defaultdict
+from sklearn.cluster import AgglomerativeClustering
+
+
+class SignalClusterer:
+    def __init__(self, corr_threshold: float = 0.75):
+        self.corr_threshold = corr_threshold
+
+    def build_agent_vectors(self, records: List[dict]) -> Dict[str, np.ndarray]:
+        """
+        Convert backtest records into per-agent vectors
+        """
+        series = defaultdict(list)
+
+        for r in records:
+            val = r.get("forward_return_20d")
+            if val is not None:
+                series[r["agent"]].append(val)
+
+        # Align lengths
+        min_len = min(len(v) for v in series.values())
+        vectors = {
+            k: np.array(v[-min_len:]) for k, v in series.items()
+        }
+
+        return vectors
+
+    def cluster(self, vectors: Dict[str, np.ndarray]) -> Dict[int, List[str]]:
+        """
+        Cluster agents by correlation similarity
+        """
+        agents = list(vectors.keys())
+        X = np.vstack([vectors[a] for a in agents])
+
+        corr = np.corrcoef(X)
+        distance = 1 - corr
+
+        model = AgglomerativeClustering(
+            affinity="precomputed",
+            linkage="average",
+            distance_threshold=1 - self.corr_threshold,
+            n_clusters=None
+        )
+
+        labels = model.fit_predict(distance)
+
+        clusters = defaultdict(list)
+        for agent, label in zip(agents, labels):
+            clusters[label].append(agent)
+
+        return dict(clusters)
+
+4️⃣ Selecting the “winner” per cluster
+
+Add this small helper (same file or allocator):
+
+def select_representatives(clusters, agent_scores):
+    """
+    Keep best-performing agent per cluster
+    """
+    winners = {}
+    losers = set()
+
+    for cid, agents in clusters.items():
+        ranked = sorted(
+            agents,
+            key=lambda a: agent_scores.get(a, -1),
+            reverse=True
+        )
+        winners[cid] = ranked[0]
+        losers.update(ranked[1:])
+
+    return winners, losers
+
+5️⃣ Plug into Capital Allocator (2 lines of logic)
+
+After you compute agent scores:
+
+clusterer = SignalClusterer()
+vectors = clusterer.build_agent_vectors(backtest_records)
+clusters = clusterer.cluster(vectors)
+
+winners, redundant = select_representatives(clusters, agent_scores)
+
+
+Then:
+
+if agent_name in redundant:
+    weight *= 0.25   # or 0.0 if you want hard pruning
+    reason = "cluster_redundant"
+
+
+That’s it.
+
+6️⃣ Example outcome (realistic)
+Cluster	Agents	Action
+0	MarketCorrection, EquityMomentum	keep MarketCorrection, fade other
+1	WhaleWallet, CryptoFunding	keep WhaleWallet
+2	GeopoliticalRisk	standalone
+3	ArbitrageFinder	standalone
+
+Capital is focused, not diluted.
+
+7️⃣ Why this matters more than decay alone
+
+Decay answers:
+
+“Is this agent working recently?”
+
+Clustering answers:
+
+“Is this agent adding information?”
+
+You need both.
+
+This is exactly how multi-signal hedge funds avoid internal crowding.

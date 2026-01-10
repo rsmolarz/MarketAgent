@@ -53,7 +53,7 @@ class AgentManager {
     
     async loadAgents() {
         try {
-            const response = await fetch('/api/agents');
+            const response = await fetch('/dashboard/api/agents');
             if (!response.ok) throw new Error('Failed to fetch agents');
             
             this.agents = await response.json();

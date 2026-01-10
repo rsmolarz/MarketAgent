@@ -1,0 +1,9 @@
+{
+  "agents": [
+    "ArbitrageFinderAgent",
+    "CryptoFundingRateAgent",
+    "DailyPredictionAgent",
+    "CryptoPredictionAgent"
+  ],
+  "strategy_classes": []
+}

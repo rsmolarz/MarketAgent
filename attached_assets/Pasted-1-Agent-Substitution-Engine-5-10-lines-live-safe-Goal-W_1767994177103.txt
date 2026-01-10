@@ -1,0 +1,214 @@
+1️⃣ Agent Substitution Engine (5–10 lines, live-safe)
+
+Goal:
+When an agent consistently fails first in a regime, auto-promote a better peer and log it.
+
+Rule (simple, robust)
+
+If ignore_rate > 0.55
+
+AND at least N ≥ 12 council votes in that regime
+→ substitute
+
+📁 meta/agent_substitution.py (NEW)
+from datetime import datetime
+from models import db, AgentCouncilStat, AgentSubstitution
+
+IGNORE_THRESHOLD = 0.55
+MIN_VOTES = 12
+
+
+def apply_agent_substitution(regime: str, backup_map: dict):
+    """
+    backup_map example:
+    {
+      "MarketCorrectionAgent": "BondStressAgent",
+      "EquityMomentumAgent": "MacroWatcherAgent"
+    }
+    """
+    for from_agent, to_agent in backup_map.items():
+        stat = (
+            AgentCouncilStat.query
+            .filter_by(agent_name=from_agent, regime=regime)
+            .first()
+        )
+
+        if not stat or stat.total_votes < MIN_VOTES:
+            continue
+
+        if stat.ignore_rate >= IGNORE_THRESHOLD:
+            sub = AgentSubstitution(
+                timestamp=datetime.utcnow(),
+                regime=regime,
+                from_agent=from_agent,
+                to_agent=to_agent,
+                from_decay=1.0 - stat.ignore_rate,
+                to_decay=1.0,
+                confidence="high",
+                reason=f"ignore_rate={stat.ignore_rate:.2f}"
+            )
+            db.session.add(sub)
+
+Where to call it
+
+Inside schedule_regime_rotation → _update_regime_weights(), after regime is detected:
+
+from meta.agent_substitution import apply_agent_substitution
+
+apply_agent_substitution(
+    regime=state["active_regime"],
+    backup_map={
+        "MarketCorrectionAgent": "BondStressAgent",
+        "EquityMomentumAgent": "MacroWatcherAgent",
+    }
+)
+db.session.commit()
+
+
+✅ Logged
+✅ Explainable
+✅ No abrupt disabling
+✅ Regime-aware
+
+2️⃣ Dashboard Uncertainty Bands (visualize UncertaintyEvent)
+
+Goal:
+Show when the system itself is uncertain, not just markets.
+
+Backend endpoint (NEW)
+
+📁 routes/uncertainty.py
+
+from flask import Blueprint, jsonify
+from models import UncertaintyEvent
+
+bp = Blueprint("uncertainty", __name__)
+
+@bp.route("/api/uncertainty")
+def uncertainty_feed():
+    events = (
+        UncertaintyEvent.query
+        .order_by(UncertaintyEvent.timestamp.desc())
+        .limit(200)
+        .all()
+    )
+    return jsonify([e.to_dict() for e in events])
+
+
+Register blueprint once in app.py.
+
+Frontend overlay (Chart.js / Plotly style)
+
+Add to your SPY chart JS:
+
+fetch("/api/uncertainty")
+  .then(r => r.json())
+  .then(events => {
+    events.forEach(e => {
+      if (e.spike) {
+        chart.addAnnotation({
+          type: 'box',
+          xMin: e.timestamp,
+          xMax: e.timestamp,
+          backgroundColor: 'rgba(255,0,0,0.08)',
+          label: { content: 'UNCERTAINTY', enabled: false }
+        })
+      }
+    })
+  })
+
+What users see
+
+Vertical shaded bands
+
+Cluster before regime shifts
+
+Confidence erosion visually obvious
+
+This turns “black-box caution” into something observable.
+
+3️⃣ Regime-Conditioned Backtest Report
+
+“Why was this agent on/off?”
+
+This is the explainability layer investors actually ask for.
+
+📁 backtests/regime_report.py (NEW)
+from models import (
+    AgentCouncilStat,
+    AgentSubstitution,
+    UncertaintyEvent
+)
+
+def build_regime_report(agent: str, regime: str):
+    stat = (
+        AgentCouncilStat.query
+        .filter_by(agent_name=agent, regime=regime)
+        .first()
+    )
+
+    subs = (
+        AgentSubstitution.query
+        .filter_by(from_agent=agent, regime=regime)
+        .order_by(AgentSubstitution.timestamp.desc())
+        .all()
+    )
+
+    uncertainty = (
+        UncertaintyEvent.query
+        .filter_by(active_regime=regime)
+        .order_by(UncertaintyEvent.timestamp.desc())
+        .first()
+    )
+
+    return {
+        "agent": agent,
+        "regime": regime,
+        "ignore_rate": stat.ignore_rate if stat else None,
+        "votes": stat.total_votes if stat else 0,
+        "substituted": bool(subs),
+        "substitution_reason": subs[0].reason if subs else None,
+        "uncertainty_score": uncertainty.score if uncertainty else None,
+        "uncertainty_spike": uncertainty.spike if uncertainty else False
+    }
+
+Dashboard usage
+
+When user clicks “Why inactive?”:
+
+{
+  "agent": "MarketCorrectionAgent",
+  "regime": "risk_off",
+  "ignore_rate": 0.63,
+  "votes": 18,
+  "substituted": true,
+  "substitution_reason": "ignore_rate=0.63",
+  "uncertainty_spike": true
+}
+
+
+This is institutional-grade transparency.
+
+What You Now Have (Important)
+
+You have crossed from:
+
+“AI signals”
+
+to
+
+“Self-aware, regime-adaptive decision infrastructure”
+
+Your system now:
+
+Learns which agents fail first
+
+Substitutes rather than disables
+
+Visualizes uncertainty explicitly
+
+Explains why capital was withheld
+
+Anticipates regime transitions via disagreement
+
+This is exactly how multi-PM desks and risk committees operate — just automated.

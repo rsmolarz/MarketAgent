@@ -1,16 +1,13 @@
 import os
 import logging
-from openai import OpenAI
+import anthropic
+from telemetry.context import get_current_run
 
 logger = logging.getLogger(__name__)
 
-AI_INTEGRATIONS_OPENAI_API_KEY = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY")
-AI_INTEGRATIONS_OPENAI_BASE_URL = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 
-openai_client = OpenAI(
-    api_key=AI_INTEGRATIONS_OPENAI_API_KEY,
-    base_url=AI_INTEGRATIONS_OPENAI_BASE_URL
-)
+anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 ANALYSIS_SYSTEM_PROMPT = """You are an expert financial analyst and trading strategist with deep technical analysis expertise. When presented with a market alert or finding, provide a structured analysis with exactly three sections:
 
@@ -54,9 +51,9 @@ Example strategy format:
 Keep your response focused and practical. Avoid excessive hedging language but do note significant risks."""
 
 
-def analyze_alert_with_chatgpt(finding_data: dict) -> dict:
+def analyze_alert_with_claude(finding_data: dict) -> dict:
     """
-    Analyze a market finding/alert using ChatGPT and return structured analysis.
+    Analyze a market finding/alert using Claude and return structured analysis.
     
     Args:
         finding_data: Dictionary containing the alert details (title, description, metadata, etc.)
@@ -83,30 +80,36 @@ Additional Metadata:
 {_format_metadata(finding_data.get('metadata', {}))}
 """
 
-        # the newest OpenAI model is "gpt-5" which was released August 7, 2025.
-        # do not change this unless explicitly requested by the user
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
+        response = anthropic_client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2500,
+            system=ANALYSIS_SYSTEM_PROMPT,
             messages=[
-                {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
                 {"role": "user", "content": alert_text}
-            ],
-            max_completion_tokens=2500
+            ]
         )
         
-        analysis_text = response.choices[0].message.content or ""
+        run = get_current_run()
+        if run and hasattr(response, "usage") and response.usage:
+            run.add_llm_usage(
+                tokens_in=int(response.usage.input_tokens or 0),
+                tokens_out=int(response.usage.output_tokens or 0),
+                cost_usd=0.0
+            )
+        
+        analysis_text = response.content[0].text if response.content else ""
         
         return {
             'success': True,
             'analysis': analysis_text,
-            'model': 'gpt-4o',
+            'model': 'claude-sonnet-4-20250514',
             'finding_id': finding_data.get('id'),
             'finding_title': finding_data.get('title')
         }
         
     except Exception as e:
         error_msg = str(e)
-        logger.error(f"ChatGPT analysis failed: {error_msg}")
+        logger.error(f"Claude analysis failed: {error_msg}")
         
         if "FREE_CLOUD_BUDGET_EXCEEDED" in error_msg:
             return {
@@ -120,6 +123,85 @@ Additional Metadata:
             'error': 'api_error',
             'message': f'Failed to analyze alert: {error_msg}'
         }
+
+
+def analyze_alert_with_chatgpt(finding_data: dict) -> dict:
+    """
+    Main analysis function using the LLM Council.
+    Kept for backward compatibility - now runs a 3-LLM council (GPT, Claude, Gemini).
+    
+    Returns structured consensus + narrative analysis from primary model.
+    """
+    try:
+        from services.llm_council import analyze_with_council_sync
+        
+        council_result = analyze_with_council_sync(finding_data)
+        
+        if not council_result.get("ok") or not council_result.get("consensus"):
+            logger.warning("LLM Council failed, falling back to Claude-only")
+            return analyze_alert_with_claude(finding_data)
+        
+        consensus = council_result["consensus"]
+        
+        narrative_parts = []
+        
+        narrative_parts.append("**LLM Council Analysis**\n")
+        narrative_parts.append(f"**Consensus Decision**: {consensus.get('verdict', 'WATCH')}")
+        narrative_parts.append(f"**Confidence**: {consensus.get('confidence', 0.5):.1%}")
+        if council_result.get("uncertainty_spike"):
+            narrative_parts.append("⚠️ **High Uncertainty**: Models disagreed significantly\n")
+        else:
+            narrative_parts.append("")
+        
+        if consensus.get("one_paragraph_summary"):
+            narrative_parts.append(f"**Summary**: {consensus['one_paragraph_summary']}\n")
+        
+        if consensus.get("key_drivers"):
+            narrative_parts.append("**Key Drivers**:")
+            for driver in consensus["key_drivers"][:5]:
+                narrative_parts.append(f"- {driver}")
+            narrative_parts.append("")
+        
+        if consensus.get("what_to_verify"):
+            narrative_parts.append("**To Verify**:")
+            for item in consensus["what_to_verify"][:4]:
+                narrative_parts.append(f"- {item}")
+            narrative_parts.append("")
+        
+        positioning = consensus.get("positioning", {})
+        if positioning:
+            narrative_parts.append(f"**Market Bias**: {positioning.get('bias', 'neutral').title()}")
+            if positioning.get("suggested_actions"):
+                narrative_parts.append("**Suggested Actions**:")
+                for action in positioning["suggested_actions"][:3]:
+                    narrative_parts.append(f"- {action}")
+            narrative_parts.append("")
+        
+        narrative_parts.append(f"**Time Horizon**: {consensus.get('time_horizon', 'days').title()}")
+        
+        models_used = [m.get("model", "unknown") for m in council_result.get("models", []) if m.get("ok")]
+        narrative_parts.append(f"\n*Analyzed by {len(models_used)} LLMs: {', '.join(models_used)}*")
+        
+        analysis_text = "\n".join(narrative_parts)
+        
+        return {
+            'success': True,
+            'analysis': analysis_text,
+            'model': 'llm-council',
+            'finding_id': finding_data.get('id'),
+            'finding_title': finding_data.get('title'),
+            'consensus': consensus.get('verdict', 'WATCH'),
+            'confidence': consensus.get('confidence', 0.5),
+            'uncertainty_spike': council_result.get('uncertainty_spike', False),
+            'models_used': models_used,
+            'votes': council_result.get('consensus', {}).get('majority', {}),
+            'full_council_result': council_result
+        }
+        
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"LLM Council analysis failed: {error_msg}, falling back to Claude")
+        return analyze_alert_with_claude(finding_data)
 
 
 def _format_metadata(metadata: dict) -> str:

@@ -1,42 +1,10 @@
 # Market Inefficiency Agent Platform
 
 ## Overview
-This platform leverages AI agents to detect market inefficiencies, arbitrage opportunities, and systemic risks across global financial markets (crypto, equities, bonds, commodities, alternative data). It aims to provide a comprehensive monitoring solution with a web-based dashboard, real-time agent scheduling, and multi-channel notifications for various market sectors. The business vision is to offer a cutting-edge tool for financial analysts and traders to gain an edge by identifying actionable insights from vast amounts of market data.
+This platform uses AI agents to identify market inefficiencies, arbitrage opportunities, and systemic risks across global financial markets (crypto, equities, bonds, commodities, alternative data). It provides a web-based dashboard, real-time agent scheduling, and multi-channel notifications. The goal is to equip financial analysts and traders with actionable insights from vast market data.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
-
-## Recent Changes
-- **2026-01-04**: Added CryptoPredictionAgent for AI-powered cryptocurrency forecasting. Uses 6 modular analyzers (CryptoTechnicalAnalyzer, CryptoOrderflowAnalyzer, CryptoProfileAnalyzer, CryptoVWAPAnalyzer, CryptoRiskGate, CryptoEnsemblePredictor) to generate daily predictions for BTC, ETH, SOL, AVAX, LINK, DOGE, ADA. Features include:
-  - Technical analysis (RSI, MACD, ADX)
-  - Orderflow analysis (funding rates, open interest, volume)
-  - Market profile analysis (POC, VAH, VAL)
-  - VWAP deviation signals
-  - Regime detection (TRENDING/RANGING/VOLATILE/MIXED)
-  - Crypto-specific risk gating (funding extremes, OI anomalies, volatility)
-  - 60-minute execution interval
-- **2026-01-04**: Added DailyPredictionAgent for AI-powered price forecasting. Uses 3 modular analyzers (ForecasterAnalyzer, RegimeDetector, EnsemblePredictor) to generate daily predictions for 18 symbols across equities, indices, futures, and crypto. Features include:
-  - 4-model forecasting ensemble (trend, mean reversion, momentum, volatility)
-  - Market regime detection (bull/bear/range/volatile)
-  - Macro risk gating during high-uncertainty periods
-  - Actionability ratings with entry/exit points
-  - 60-minute execution interval
-- **2026-01-04**: Added whitelist-based authentication using Replit Auth. Only users on the whitelist can access the platform. Features include:
-  - User/OAuth/Whitelist database tables for authentication
-  - Admin panel at /admin for managing whitelist entries
-  - Protected dashboard and API routes with login requirements
-  - ADMIN_EMAILS environment variable for seeding initial admin users
-  - ChatGPT analysis enhanced with detailed technical indicators (entry/exit points, stop-losses, profit targets)
-- **2025-12-21**: Added GreatestTradeAgent - modular systemic risk detector inspired by "The Greatest Trade Ever". Uses 3 pluggable analyzers (MacroBubbleDetector, CDSAnalyzer, StructuredProductAnalyzer) to detect housing bubbles, CDS mispricing, and hidden tranche risks. Located in `agents/greatest_trade_agent.py` with modular components in `agents/analyzers/`
-- **2025-11-01**: Added MarketCorrectionAgent - detects early warning signals for 10%+ market corrections using RSI, moving averages, VIX spikes, momentum exhaustion, and yield curve analysis
-- **2025-11-01**: Added GeopoliticalRiskAgent - monitors 6 global hotspots (Taiwan, Ukraine, Middle East, China-US, North Korea, South China Sea) using NLP sentiment analysis and risk keywords
-- **2025-08-18**: Fixed dashboard "no market data" display issue - resolved API route conflicts and metadata handling
-- **2025-08-18**: Market data API now returns authentic findings: SPY (+2.44%), AAPL (+14.12%), TSLA (+8.58%) with 3,000+ total findings
-- **2025-08-18**: Added JavaScript cache-busting and debugging to resolve frontend loading issues on live URL
-- **2025-08-18**: Fixed production database separation issue - deployed site uses separate database from development
-- **2025-08-18**: Added essential API keys (Alpha Vantage, Coinbase, GitHub, News API) for authentic market data collection
-- **2025-08-18**: Accelerated agent scheduling from 15-60 minutes to 2-5 minutes for faster data flow
-- **2025-08-18**: Verified authentic market data collection working - EquityMomentumAgent generating 36+ findings/hour, AltDataSignalAgent tracking GitHub AI/ML activity, real Coinbase crypto data flowing
 
 ## System Architecture
 
@@ -45,55 +13,63 @@ Preferred communication style: Simple, everyday language.
 - **Database**: PostgreSQL.
 - **Web Interface**: HTML templates, Bootstrap for responsive UI, JavaScript for real-time updates.
 - **Task Scheduling**: APScheduler for background agent execution.
-- **Health Monitoring**: Multi-endpoint health checks for deployment systems.
+- **Health Monitoring**: Multi-endpoint health checks.
 
 ### Agent Architecture
-- **Base Agent Pattern**: Agents inherit from `BaseAgent` for standardized plan/act/reflect operations.
-- **Modular Design**: 14 specialized agents in the `agents/` directory for specific market sectors or data sources.
-- **Modular Analyzers**: Reusable analysis components in `agents/analyzers/` that can be shared across agents.
+- **Base Agent Pattern**: Agents inherit from `BaseAgent` for standardized operations.
+- **Modular Design**: Specialized agents and reusable analysis components (`agents/analyzers/`).
 - **Registry System**: `AgentRegistry` manages agent lifecycle.
-- **Scheduling System**: JSON-based configuration (`agent_schedule.json`) defines execution intervals.
+- **Scheduling System**: JSON-based configuration (`agent_schedule.json`) for execution intervals.
+- **Meta-Agent**: Automates agent ranking, weighting, and auto-disabling based on forward-return labeling and performance metrics.
+- **LLM Regime Council**: Multi-model LLM ensemble (GPT, Claude, Gemini) for confidence-weighted regime assessment, disagreement detection, and uncertainty management, including decay curves and early warning systems.
+- **Meta-Supervisor**: Governance layer for agent monitoring, telemetry, safety (kill-switches), and promotion policies.
+- **Builder Agent**: Outputs complete file contents, incorporates safety workflow with risk scoring, admin review UI, sandboxed execution, and memory for learning from rejected proposals.
 
 ### Data Integration Layer
-- **Multi-Source Architecture**: Separate client classes for various data providers (e.g., Coinbase, Yahoo Finance, Etherscan, GitHub).
+- **Multi-Source Architecture**: Separate client classes for various data providers.
 - **API Abstraction**: Standardized interfaces for different data types.
-- **Error Handling**: Robust error handling and fallback mechanisms for data source failures.
+- **Error Handling**: Robust error handling and fallback mechanisms.
 
 ### Database Schema
-- **Users Table**: Stores authenticated user profiles with admin status.
-- **OAuth Table**: Manages OAuth tokens for Replit Auth sessions.
-- **Whitelist Table**: Controls platform access - only whitelisted emails can log in.
-- **Findings Table**: Stores detected market inefficiencies with metadata.
-- **Agent Status Table**: Tracks agent health, execution, and scheduling.
-- **Market Data Table**: Caches market data for analysis.
+- **Tables**: Users, OAuth, Whitelist, Findings, Agent Status, Market Data, AgentMemory, ApprovalEvent, UncertaintyEvent, DistressedDeal.
+
+### Distressed Property Deal Pipeline
+- **DistressedDeal Model**: Tracks distressed properties through acquisition lifecycle with stage progression (screened → underwritten → LOI → closed, plus "dead" escape).
+- **DealValuation Model**: Pricing bands with Zestimate, distressed_price (55-75% of Zestimate), recovery_value, and recovery_multiple calculation.
+- **ICVote Model**: Human vs AI vote tracking (ACT/WATCH/PASS) with automatic override detection when humans override AI recommendations.
+- **IC Memo Service**: LLM-powered Investment Committee memo generation for institutional-grade distressed asset analysis (`services/distressed_ic_memo.py`).
+- **CRM Handoff**: Webhook-based integration with external CRMs and deal rooms (`services/crm_handoff.py`). Supports multiple CRM configs via env vars (CRM_WEBHOOK_URL, CRM_1_WEBHOOK_URL, etc.).
+- **Deal Kill Rules Engine**: Automated deal killing based on stage timeout (14/30/21 days), IC inactivity, missing docs, and regime normalization (`services/deal_kill_rules.py`).
+- **Portfolio Exposure**: Weighted capital exposure by stage (screened: 0%, underwritten: 30%, LOI: 60%, closed: 100%).
+- **Deal Routes**: Full CRUD operations, stage progression, memo generation, IC voting, valuation, exposure API, and CRM sync (`routes/deals.py`).
+- **Kanban UI**: Pipeline visualization at `/deals/` with stage cards, IC voting, pricing bands, memo buttons, and CRM sync actions.
+- **ZillowDistressAgent**: Metro-level distress analysis using Zillow Research datasets, identifies liquidity freeze, affordability shock, oversupply, and rent compression regimes (`agents/zillow_distress_agent.py`).
+- **DistressedDealEvaluatorAgent**: Institutional-grade distressed debt/equity evaluation using Moyer's "Distressed Debt Analysis" frameworks. Features Altman Z-Score, EBITDA normalization (EBITDAR), multiple derivation from DCF theory, capital structure analysis, fulcrum security identification, recovery waterfall modeling with plan vs true value scenarios, and capital structure arbitrage detection (`agents/distressed_deal_evaluator_agent.py`).
 
 ### Authentication System
-- **Replit Auth**: OAuth-based authentication using Replit as identity provider.
-- **Whitelist Control**: Only emails in the whitelist table can access the platform.
-- **Admin Management**: Admins can add/remove whitelist entries via /admin panel.
-- **ADMIN_EMAILS**: Environment variable to seed initial admin emails (comma-separated).
+- **Replit Auth**: OAuth-based authentication using Replit.
+- **Whitelist Control**: Only whitelisted emails can access the platform, managed via an `/admin` panel.
+- **ADMIN_EMAILS**: Environment variable for initial admin seeding.
 
 ### Notification System
 - **Multi-Channel Support**: Email, Telegram, and SMS.
-- **Configurable Alerts**: Severity-based filtering and customizable preferences.
-- **Template-Based Messages**: Rich formatting for different channels.
+- **Configurable Alerts**: Severity-based filtering.
 
 ### Web Dashboard
 - **Real-Time Updates**: JavaScript-based with automatic data refresh.
 - **Agent Management**: Interface for starting, stopping, and configuring agents.
 - **Findings Browser**: Searchable and filterable view of findings.
-- **Analytics Views**: Charts and visualizations for market trends and agent performance.
-- **Health Check Endpoints**: Smart health detection for deployment systems vs. web browsers.
+- **Analytics Views**: Charts and visualizations for market trends, agent performance (e.g., SPY price with agent signals, decay curve visualizations, agent failure heatmap).
 
 ### Configuration Management
-- **Environment-Based Config**: API keys and sensitive data via environment variables.
+- **Environment-Based Config**: API keys and sensitive data.
 - **YAML Configuration**: Main application settings in `config.yaml`.
-- **Agent-Specific Settings**: Individual agent configurations for thresholds and parameters.
+- **Agent-Specific Settings**: Individual agent configurations.
 
 ## External Dependencies
 
 ### Financial Data APIs
-- **Coinbase API**: Cryptocurrency prices and data (migrated from Binance).
+- **Coinbase API**: Cryptocurrency prices and data.
 - **Yahoo Finance**: Stock prices, indices, bonds, and economic indicators via `yfinance` library.
 - **Etherscan API**: Ethereum blockchain data.
 
@@ -101,8 +77,8 @@ Preferred communication style: Simple, everyday language.
 - **GitHub API**: Repository metrics.
 - **Patent APIs**: USPTO PatentsView.
 - **Satellite Data**: Specialized providers for maritime and logistics.
-- **News APIs**: NewsAPI and Google News RSS for geopolitical risk assessment.
-- **NLP Processing**: NLTK VADER for sentiment analysis of news articles.
+- **News APIs**: NewsAPI and Google News RSS.
+- **NLP Processing**: NLTK VADER for sentiment analysis.
 
 ### Infrastructure Services
 - **SMTP Servers**: For email notifications.
@@ -113,6 +89,7 @@ Preferred communication style: Simple, everyday language.
 - **Web Framework**: Flask, Flask-SQLAlchemy.
 - **Data Processing**: pandas, numpy.
 - **Machine Learning**: scikit-learn.
-- **Market Data**: ccxt (for crypto exchanges), yfinance.
+- **Market Data**: ccxt, yfinance.
 - **Task Scheduling**: APScheduler.
-- **Visualization**: plotly.
+- **Visualization**: plotly, matplotlib.
+- **LLMs**: anthropic, google-generativeai.

@@ -1,0 +1,511 @@
+0) Required new data artifact: allocation history snapshots
+
+You need week-over-week allocation deltas. Add a daily snapshot (or every meta-supervisor run snapshot).
+
+meta_supervisor/history.py (NEW)
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+HIST = Path("meta_supervisor/state/allocation_history.jsonl")
+
+def _now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+
+def append_allocation_snapshot(report: dict, run_id: str | None = None):
+    HIST.parent.mkdir(parents=True, exist_ok=True)
+    alloc = report.get("allocation", {}) or {}
+    fleet = report.get("fleet", {}) or {}
+    meta = report.get("meta", {}) or {}
+
+    event = {
+        "ts": meta.get("generated_at") or _now(),
+        "run_id": run_id,
+        "method": alloc.get("method"),
+        "weights": alloc.get("weights", {}) or {},
+        "portfolio_pnl_bps": fleet.get("portfolio_pnl_bps"),
+        "portfolio_max_dd_bps": fleet.get("portfolio_max_drawdown_bps"),
+    }
+    with open(HIST, "a", encoding="utf-8") as f:
+        f.write(json.dumps(event) + "\n")
+    return event
+
+def load_history(limit: int = 10000) -> list[dict]:
+    if not HIST.exists():
+        return []
+    rows = [json.loads(x) for x in HIST.read_text().splitlines() if x.strip()]
+    return rows[-limit:]
+
+Wire it into your orchestrator (one line)
+
+In your run_meta_supervisor() (the orchestrator you posted), right after report = build_report() succeeds:
+
+from meta_supervisor.history import append_allocation_snapshot
+append_allocation_snapshot(report, run_id=run_id)
+
+
+That single line gives you capital movement tracking.
+
+1) Charts generator: heatmap + live-vs-sim charts (PNG outputs)
+services/weekly_charts.py (NEW)
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+from collections import defaultdict
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+RECON = Path("alpha/reconciled.jsonl")
+OUTDIR = Path("meta_supervisor/reports/weekly_assets")
+
+def _load_jsonl(p: Path) -> list[dict]:
+    if not p.exists():
+        return []
+    return [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+
+def _now_tag():
+    return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+def _week_slice(rows: list[dict], days: int = 7) -> list[dict]:
+    # assumes recon has ts or emitted_at; fallback: last N
+    # simplest: take last 7*X signals by file order
+    return rows[-5000:]  # keep generous window; PDF summarizer will aggregate
+
+def cvar_heatmap_by_regime_png(horizon_hours: int = 24) -> Path | None:
+    rows = [r for r in _load_jsonl(RECON) if int(r.get("horizon_hours", 0)) == horizon_hours]
+    rows = _week_slice(rows)
+
+    # group pnl by regime
+    by_regime = defaultdict(list)
+    for r in rows:
+        rg = r.get("regime") or r.get("regime_label") or "UNKNOWN"
+        try:
+            by_regime[rg].append(float(r.get("realized_pnl_bps", 0.0)))
+        except Exception:
+            continue
+
+    if not by_regime:
+        return None
+
+    # compute CVaR(95) on LEFT tail by regime
+    def cvar95(xs):
+        xs = sorted(xs)
+        if not xs:
+            return 0.0
+        k = max(0, int((1.0 - 0.95) * len(xs)))
+        tail = xs[: max(k+1, 1)]
+        return sum(tail) / len(tail)
+
+    regimes = sorted(by_regime.keys())
+    vals = [abs(cvar95(by_regime[r])) for r in regimes]  # tail magnitude
+
+    # heatmap as 1xN matrix
+    import numpy as np
+    mat = np.array([vals], dtype=float)
+
+    OUTDIR.mkdir(parents=True, exist_ok=True)
+    out = OUTDIR / f"cvar_heatmap_{_now_tag()}.png"
+
+    plt.figure(figsize=(10, 2.2))
+    plt.imshow(mat, aspect="auto")
+    plt.yticks([0], ["|CVaR95|"])
+    plt.xticks(range(len(regimes)), regimes, rotation=45, ha="right", fontsize=8)
+    plt.colorbar(label="bps (tail magnitude)")
+    plt.title("Regime Tail Risk Heatmap (|CVaR95|, last window)")
+    plt.tight_layout()
+    plt.savefig(out, dpi=160)
+    plt.close()
+    return out
+
+def live_vs_sim_attribution_png(horizon_hours: int = 24) -> Path | None:
+    rows = [r for r in _load_jsonl(RECON) if int(r.get("horizon_hours", 0)) == horizon_hours]
+    rows = _week_slice(rows)
+    if not rows:
+        return None
+
+    live = []
+    sim = []
+
+    # simple sim proxy: score_final -> expected bps (replace later with your simulator output)
+    for r in rows:
+        try:
+            pnl = float(r.get("realized_pnl_bps", 0.0))
+            sf = float(r.get("score_final") or r.get("ensemble_score_final") or 0.0)
+        except Exception:
+            continue
+        exp = max(min(sf * 25.0, 200.0), -200.0)
+        live.append(pnl)
+        sim.append(exp)
+
+    if not live:
+        return None
+
+    OUTDIR.mkdir(parents=True, exist_ok=True)
+    out = OUTDIR / f"live_vs_sim_{_now_tag()}.png"
+
+    # cumulative curves
+    cum_live, cum_sim = [], []
+    a = b = 0.0
+    for x, y in zip(live, sim):
+        a += x
+        b += y
+        cum_live.append(a)
+        cum_sim.append(b)
+
+    plt.figure(figsize=(10, 3.2))
+    plt.plot(cum_live, label="Live cumulative PnL (bps)")
+    plt.plot(cum_sim, label="Sim cumulative (proxy) (bps)")
+    plt.title("Live vs Sim (proxy) Cumulative Attribution")
+    plt.xlabel("Signal index (last window)")
+    plt.ylabel("Cumulative bps")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(out, dpi=160)
+    plt.close()
+    return out
+
+2) “What changed this week” LLM summary (audited)
+
+This produces:
+
+meta_supervisor/reports/weekly_change_summary.json
+
+a text block you embed into the PDF
+
+meta_supervisor/weekly_summary_llm.py (NEW)
+import json
+import os
+from pathlib import Path
+from datetime import datetime, timezone
+
+from openai import OpenAI
+
+REPORT = Path("meta_supervisor/reports/meta_report.json")
+HIST = Path("meta_supervisor/state/allocation_history.jsonl")
+OUT = Path("meta_supervisor/reports/weekly_change_summary.json")
+
+def _now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+
+def _load_jsonl(p: Path) -> list[dict]:
+    if not p.exists():
+        return []
+    return [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+
+def build_weekly_context(report: dict, hist: list[dict]) -> dict:
+    # last ~14 snapshots gives you this week vs prior week baseline if you run daily/6h
+    last = hist[-14:]
+    if len(last) < 3:
+        return {"note": "insufficient_history", "snapshots": last, "report": report}
+
+    # compute allocation delta between oldest and newest in window
+    w0 = last[0].get("weights", {}) or {}
+    w1 = last[-1].get("weights", {}) or {}
+    agents = set(w0.keys()) | set(w1.keys())
+    deltas = {a: round(float(w1.get(a, 0)) - float(w0.get(a, 0)), 4) for a in agents}
+    top_moves = sorted(deltas.items(), key=lambda kv: abs(kv[1]), reverse=True)[:10]
+
+    # portfolio delta
+    pnl0 = last[0].get("portfolio_pnl_bps")
+    pnl1 = last[-1].get("portfolio_pnl_bps")
+
+    return {
+        "generated_at": report.get("meta", {}).get("generated_at"),
+        "severity": report.get("meta", {}).get("severity"),
+        "portfolio": {
+            "pnl_start_bps": pnl0,
+            "pnl_end_bps": pnl1,
+        },
+        "top_allocation_moves": top_moves,
+        "promote": [k for k,v in (report.get("agents") or {}).items() if v.get("decision") == "PROMOTE"],
+        "kill_retire": [k for k,v in (report.get("agents") or {}).items() if v.get("decision") in ("KILL","RETIRE")],
+        "regime_multipliers": report.get("meta", {}).get("regime_multipliers", {}),
+        "allocation_method": (report.get("allocation") or {}).get("method"),
+    }
+
+def summarize_with_llm(context: dict) -> dict:
+    api_key = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    base_url = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL") or os.environ.get("OPENAI_BASE_URL")
+    model = os.environ.get("WEEKLY_SUMMARY_MODEL", "gpt-4.1-mini")
+
+    if not api_key:
+        return {"ok": False, "error": "missing_api_key"}
+
+    client = OpenAI(api_key=api_key, base_url=base_url)
+
+    system = (
+        "You are an institutional quant PM assistant. "
+        "Write a weekly change summary for LPs. "
+        "Be specific, short, and audit-friendly. No hype. "
+        "Output strict JSON with keys: headline, bullets, risks, actions."
+    )
+    user = json.dumps({"context": context})
+
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[{"role":"system","content":system},{"role":"user","content":user}],
+        temperature=0.2,
+    )
+
+    content = resp.choices[0].message.content
+    try:
+        j = json.loads(content)
+        j["ok"] = True
+        j["generated_at"] = _now()
+        return j
+    except Exception:
+        return {"ok": False, "error": "non_json_response", "raw": content, "generated_at": _now()}
+
+def main():
+    report = json.loads(REPORT.read_text()) if REPORT.exists() else {}
+    hist = _load_jsonl(HIST)
+
+    context = build_weekly_context(report, hist)
+    summary = summarize_with_llm(context)
+
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(json.dumps({"context": context, "summary": summary}, indent=2))
+    return summary
+
+if __name__ == "__main__":
+    print(json.dumps(main(), indent=2))
+
+3) Capital movement reconciliation appendix (weights + deltas)
+
+This uses allocation_history.jsonl and produces a table (embedded into PDF).
+
+meta_supervisor/capital_movement.py (NEW)
+import json
+from pathlib import Path
+
+HIST = Path("meta_supervisor/state/allocation_history.jsonl")
+
+def _load_jsonl(p: Path) -> list[dict]:
+    if not p.exists():
+        return []
+    return [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+
+def capital_movement_table(n_snapshots: int = 14, top_n: int = 12) -> dict:
+    rows = _load_jsonl(HIST)
+    if len(rows) < 2:
+        return {"ok": False, "reason": "insufficient_history"}
+
+    window = rows[-n_snapshots:]
+    w0 = window[0].get("weights", {}) or {}
+    w1 = window[-1].get("weights", {}) or {}
+
+    agents = list(set(w0.keys()) | set(w1.keys()))
+    deltas = [(a, float(w0.get(a, 0)), float(w1.get(a, 0)), float(w1.get(a, 0)) - float(w0.get(a, 0))) for a in agents]
+    deltas.sort(key=lambda t: abs(t[3]), reverse=True)
+
+    return {
+        "ok": True,
+        "from_ts": window[0].get("ts"),
+        "to_ts": window[-1].get("ts"),
+        "top_moves": [{"agent":a, "w_from":round(x,4), "w_to":round(y,4), "delta":round(d,4)} for a,x,y,d in deltas[:top_n]],
+    }
+
+4) Weekly PDF builder that embeds: heatmap + LLM summary + capital appendix + live-vs-sim chart
+services/lp_weekly_pdf.py (REPLACE with this upgraded version)
+import json
+from pathlib import Path
+from reportlab.lib.pagesizes import LETTER
+from reportlab.pdfgen import canvas
+
+from services.weekly_charts import cvar_heatmap_by_regime_png, live_vs_sim_attribution_png
+from meta_supervisor.capital_movement import capital_movement_table
+
+SUMMARY_JSON = Path("meta_supervisor/reports/weekly_change_summary.json")
+OUT_DIR = Path("meta_supervisor/reports")
+
+def _draw_wrapped(c: canvas.Canvas, x: int, y: int, text: str, max_width: int, line_h: int = 12):
+    # simple wrapper (audit-safe)
+    words = (text or "").split()
+    line = ""
+    for w in words:
+        trial = (line + " " + w).strip()
+        if c.stringWidth(trial, "Helvetica", 10) <= max_width:
+            line = trial
+        else:
+            c.drawString(x, y, line)
+            y -= line_h
+            line = w
+    if line:
+        c.drawString(x, y, line)
+        y -= line_h
+    return y
+
+def build_weekly_pdf(report: dict) -> Path:
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    out = OUT_DIR / "lp_weekly_summary.pdf"
+
+    c = canvas.Canvas(str(out), pagesize=LETTER)
+    w, h = LETTER
+
+    meta = report.get("meta", {})
+    fleet = report.get("fleet", {})
+    agents = report.get("agents", {})
+    alloc = (report.get("allocation") or {}).get("weights", {}) or {}
+
+    # ---------------- Page 1: Executive Summary ----------------
+    y = h - 40
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(40, y, "LP Weekly Summary")
+    y -= 20
+
+    c.setFont("Helvetica", 10)
+    c.drawString(40, y, f"Generated: {meta.get('generated_at','')}")
+    y -= 14
+    c.drawString(40, y, f"Portfolio PnL (bps): {fleet.get('portfolio_pnl_bps','')} | Max DD (bps): {fleet.get('portfolio_max_drawdown_bps','')}")
+    y -= 14
+    c.drawString(40, y, f"Allocation method: {(report.get('allocation') or {}).get('method','')}")
+    y -= 20
+
+    promos = [k for k,v in agents.items() if v.get("decision") == "PROMOTE"]
+    kills = [k for k,v in agents.items() if v.get("decision") in ("KILL","RETIRE")]
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(40, y, "Decisions")
+    y -= 14
+    c.setFont("Helvetica", 10)
+    y = _draw_wrapped(c, 50, y, f"PROMOTE: {', '.join(promos) if promos else 'None'}", 520)
+    y = _draw_wrapped(c, 50, y, f"KILL/RETIRE: {', '.join(kills) if kills else 'None'}", 520)
+    y -= 10
+
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(40, y, "Top Allocation (weights)")
+    y -= 14
+    c.setFont("Helvetica", 10)
+    for name, wt in sorted(alloc.items(), key=lambda kv: kv[1], reverse=True)[:10]:
+        c.drawString(50, y, f"- {name}: {wt}")
+        y -= 12
+
+    c.showPage()
+
+    # ---------------- Page 2: CVaR Heatmap by Regime ----------------
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(40, h - 40, "Regime Tail Risk Heatmap (|CVaR95|)")
+    img = cvar_heatmap_by_regime_png(horizon_hours=24)
+    if img and Path(img).exists():
+        c.drawImage(str(img), 40, 220, width=520, height=260, preserveAspectRatio=True, mask='auto')
+    c.setFont("Helvetica", 10)
+    c.drawString(40, 190, "Interpretation: darker/higher values indicate worse left-tail outcomes in that regime over the last window.")
+    c.showPage()
+
+    # ---------------- Page 3: What changed this week (LLM summary) ----------------
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(40, h - 40, "What Changed This Week (LLM Summary)")
+    c.setFont("Helvetica", 10)
+
+    summary_block = {}
+    if SUMMARY_JSON.exists():
+        try:
+            summary_block = json.loads(SUMMARY_JSON.read_text()).get("summary", {})
+        except Exception:
+            summary_block = {}
+
+    y = h - 70
+    headline = summary_block.get("headline") or "N/A"
+    c.setFont("Helvetica-Bold", 12)
+    y = _draw_wrapped(c, 40, y, headline, 520, line_h=14)
+    y -= 6
+
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(40, y, "Bullets")
+    y -= 14
+    c.setFont("Helvetica", 10)
+    for b in (summary_block.get("bullets") or [])[:8]:
+        y = _draw_wrapped(c, 50, y, f"- {b}", 510)
+
+    y -= 6
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(40, y, "Risks")
+    y -= 14
+    c.setFont("Helvetica", 10)
+    for r in (summary_block.get("risks") or [])[:6]:
+        y = _draw_wrapped(c, 50, y, f"- {r}", 510)
+
+    y -= 6
+    c.setFont("Helvetica-Bold", 11)
+    c.drawString(40, y, "Actions")
+    y -= 14
+    c.setFont("Helvetica", 10)
+    for a in (summary_block.get("actions") or [])[:6]:
+        y = _draw_wrapped(c, 50, y, f"- {a}", 510)
+
+    c.setFont("Helvetica", 9)
+    c.drawString(40, 40, "Audit note: This page is generated from stored context + LLM output archived in weekly_change_summary.json.")
+    c.showPage()
+
+    # ---------------- Page 4: Capital Movement Appendix ----------------
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(40, h - 40, "Capital Movement Reconciliation (Allocation Deltas)")
+    mv = capital_movement_table(n_snapshots=14, top_n=12)
+
+    c.setFont("Helvetica", 10)
+    y = h - 70
+    if not mv.get("ok"):
+        c.drawString(40, y, f"Insufficient allocation history: {mv.get('reason')}")
+    else:
+        c.drawString(40, y, f"From: {mv.get('from_ts')}   To: {mv.get('to_ts')}")
+        y -= 18
+        c.setFont("Helvetica-Bold", 10)
+        c.drawString(40, y, "Agent")
+        c.drawString(220, y, "W_from")
+        c.drawString(300, y, "W_to")
+        c.drawString(380, y, "Δ")
+        y -= 12
+        c.setFont("Helvetica", 10)
+        for row in mv.get("top_moves", []):
+            c.drawString(40, y, str(row["agent"]))
+            c.drawString(220, y, str(row["w_from"]))
+            c.drawString(300, y, str(row["w_to"]))
+            c.drawString(380, y, str(row["delta"]))
+            y -= 12
+
+    c.showPage()
+
+    # ---------------- Page 5: Live vs Sim attribution chart ----------------
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(40, h - 40, "Live vs Sim Attribution (Cumulative)")
+    img2 = live_vs_sim_attribution_png(horizon_hours=24)
+    if img2 and Path(img2).exists():
+        c.drawImage(str(img2), 40, 220, width=520, height=260, preserveAspectRatio=True, mask='auto')
+    c.setFont("Helvetica", 10)
+    c.drawString(40, 190, "Note: Sim line uses a proxy mapping from score_final to expected bps. Replace with your simulator output when available.")
+    c.showPage()
+
+    c.save()
+    return out
+
+5) Wire it into your weekly flow
+Before sending weekly emails, generate the LLM summary once:
+
+In your weekly scheduler job (or just before send_lp_weekly_email()), run:
+
+python meta_supervisor/weekly_summary_llm.py
+
+
+Or call it inside send_lp_weekly_email() (recommended):
+
+Add near the top of send_lp_weekly_email():
+
+from meta_supervisor.weekly_summary_llm import main as build_weekly_llm_summary
+build_weekly_llm_summary()
+
+
+That ensures the PDF always has the summary.
+
+6) Quant-level notes (important)
+
+To keep this “quant-grade”:
+
+Everything is stored (JSON artifacts + chart PNGs + PDFs)
+
+LLM output is archived with input context (weekly_change_summary.json)
+
+Capital movement uses historical snapshots rather than inferred deltas
+
+Live-vs-sim chart is explicitly labeled “proxy” until you wire the real simulator

@@ -1,0 +1,210 @@
+1) Patch: meta_supervisor/build_meta_report.py
+Replace the import section at the top with this (adds CVaR + regime + risk)
+import json
+import sys
+from pathlib import Path
+from datetime import datetime, timezone
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from meta_supervisor.retirement import retirement_score, retirement_label
+from meta_supervisor.portfolio import portfolio_from_alpha
+from meta_supervisor.proposal_scoring import score_proposal
+from meta_supervisor.allocation import main as alloc_main
+from meta_supervisor.confidence_decay import update_confidence_multipliers
+
+# NEW: risk + cvar allocation + regime multipliers
+from meta_supervisor.risk_metrics import var_cvar, max_drawdown_bps
+from meta_supervisor.allocation_cvar import compute_cvar_weights
+from meta_supervisor.regime import compute_regime_multipliers, get_regime_multiplier
+
+PROPOSALS_PATH = Path("meta_supervisor/agent_proposals.json")
+TEL = Path("telemetry/events.jsonl")
+RECON = Path("alpha/reconciled.jsonl")
+ALPHA = Path("alpha/events.jsonl")
+
+2) Patch: inside main() — replace your loading lines
+Replace:
+telemetry = load_jsonl(TEL)
+alpha = load_jsonl("alpha/events.jsonl")
+recon = load_jsonl(RECON)
+
+With:
+telemetry = load_jsonl(TEL)
+alpha = load_jsonl(ALPHA)
+recon = load_jsonl(RECON)
+
+3) Patch: compute regime multipliers once, early in main()
+
+Right after:
+
+recon24 = [r for r in recon if int(r.get("horizon_hours", 0)) == 24]
+
+
+Add:
+
+# NEW: drawdown-aware regime multipliers (computed from recent reconciled series)
+try:
+    regime_multipliers = compute_regime_multipliers(horizon_hours=24)
+except Exception:
+    regime_multipliers = {}
+
+4) Patch: while building each agent’s stats, compute VaR/CVaR/DD and regime multiplier
+
+Inside your loop:
+
+for agent, data in by_agent.items():
+
+
+After you define rec = data.get("reconciled", []), add:
+
+# NEW: per-agent pnl series (24h horizon)
+pnl_series = [float(r.get("realized_pnl_bps", 0)) for r in rec]
+
+# NEW: risk metrics
+v, c = var_cvar(pnl_series, alpha=0.95)
+dd = max_drawdown_bps(pnl_series)
+
+# NEW: infer "current" regime for this agent (most recent reconciled event)
+last_regime = None
+if rec:
+    last_regime = rec[-1].get("regime") or rec[-1].get("regime_label")
+reg_mult = get_regime_multiplier(last_regime) if last_regime else 1.0
+
+
+Then, when you build agent_stats, add these fields:
+
+agent_stats = {
+    "runs": len(tel),
+    "avg_latency_ms": round(sum(latencies) / max(len(latencies),1), 1) if latencies else None,
+    "tokens": sum(t.get("tokens_in", 0) + t.get("tokens_out", 0) for t in tel),
+    "alpha_signals": len(alp),
+    "reconciled_signals": len(rec),
+    "pnl_sum_bps": round(pnl_sum, 2),
+    "hit_rate": round(hit_count / max(len(rec), 1), 3) if rec else 0,
+    "error_rate": round(error_count / max(len(tel), 1), 3) if tel else 0,
+    "cost_usd": round(cost_sum, 6),
+
+    # NEW: risk + regime info
+    "var_95_bps": v,
+    "cvar_95_bps": c,
+    "max_dd_bps": dd,
+    "last_regime": last_regime,
+    "regime_multiplier": reg_mult,
+}
+
+5) Patch: tighten decision logic to penalize tail risk (optional but recommended)
+
+Right now, you kill on pnl/error/score. Add one more kill condition:
+
+After:
+
+if agent_stats["pnl_sum_bps"] < -150 or agent_stats["error_rate"] > 0.2:
+
+
+Change to:
+
+if (
+    agent_stats["pnl_sum_bps"] < -150
+    or agent_stats["error_rate"] > 0.2
+    or agent_stats["max_dd_bps"] > 350
+    or (agent_stats["cvar_95_bps"] < -120)  # heavy left-tail
+):
+
+
+This prevents “looks good until it blows up” agents from surviving.
+
+6) Patch: store regime multipliers into the report meta
+
+Where you set report["meta"], change to:
+
+report["meta"] = {
+    "generated_at": _now(),
+    "severity": "high" if fleet.get("portfolio_pnl_bps", 0) < 0 else "low",
+    "regime_multipliers": regime_multipliers,
+}
+
+
+(We keep the report["fleet"] as-is.)
+
+7) Patch: replace allocation with CVaR allocation (tail-risk aware), apply regime multiplier
+
+Replace:
+
+confidence_state = update_confidence_multipliers()
+weights = alloc_main(report["agents"])
+
+report["allocation"] = {
+    "weights": weights,
+    "confidence_state": confidence_state
+}
+
+
+With:
+
+confidence_state = update_confidence_multipliers()
+
+# Build agent_pnls dict for CVaR allocation
+agent_pnls = {}
+for r in recon24:
+    a = r.get("agent", "unknown")
+    agent_pnls.setdefault(a, []).append(float(r.get("realized_pnl_bps", 0.0)))
+
+# CVaR weights (tail-risk aware) + confidence decay is applied inside compute_cvar_weights()
+try:
+    weights = compute_cvar_weights(agent_pnls, report["agents"], alpha=0.95)
+    allocation_method = "cvar_95"
+except Exception:
+    # fallback to your existing allocator
+    weights = alloc_main(report["agents"])
+    allocation_method = "legacy"
+
+# Apply regime multipliers on top of weights (drawdown-aware regime reweighting)
+# (This leans away from regimes with bad realized DD)
+if weights:
+    adjusted = {}
+    for agent, w in weights.items():
+        rm = float(report["agents"].get(agent, {}).get("regime_multiplier", 1.0))
+        adjusted[agent] = float(w) * rm
+    s = sum(adjusted.values())
+    if s > 0:
+        weights = {k: round(v / s, 4) for k, v in adjusted.items()}
+
+report["allocation"] = {
+    "method": allocation_method,
+    "weights": weights,
+    "confidence_state": confidence_state,
+}
+
+8) Patch: keep everything else as-is
+
+Your proposal scoring, research blobs, and file write stay unchanged.
+
+What this gives you immediately
+
+Every agent now has:
+
+var_95_bps, cvar_95_bps, max_dd_bps
+
+last_regime, regime_multiplier
+
+Portfolio now allocates capital by:
+
+edge / tail risk (CVaR)
+
+multiplied by confidence decay
+
+multiplied by regime drawdown multipliers
+
+Tear sheets can now include real risk stats without additional joins.
+
+One critical note (so it doesn’t silently fail)
+
+Your compute_cvar_weights() should not crash if get_multiplier(agent) is missing. If your confidence_decay.py does not already expose get_multiplier(), add this tiny helper there:
+
+def get_multiplier(agent_name: str) -> float:
+    state = load_state()  # however you load it today
+    return float(state.get("multipliers", {}).get(agent_name, 1.0))
+
+
+If you paste meta_supervisor/confidence_decay.py, I’ll give you the exact edit.

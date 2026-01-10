@@ -27,6 +27,21 @@
     </div>
 </div>
 
+<!-- Uncertainty Banner (provisional signals warning) -->
+<div id="uncertaintyBanner" class="alert mb-4" style="display:none; border-radius: 8px;">
+    <div class="d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center">
+            <i data-feather="alert-circle" class="me-2"></i>
+            <strong>All signals provisional</strong>
+            <span id="uncertaintyText" class="ms-2 text-muted"></span>
+        </div>
+        <div>
+            <span id="transitionWarning" class="badge bg-danger me-2" style="display:none;">Regime Transition Likely</span>
+            <span id="uncertaintyBadge" class="badge"></span>
+        </div>
+    </div>
+</div>
+
 <!-- Key Metrics -->
 <div class="row mb-4">
     <div class="col-lg-3 col-md-6 mb-3">
@@ -89,6 +104,195 @@
                         <h3 class="card-title mb-0" id="total-agents-count">-</h3>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Regime Indicator -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-2">
+                <div class="d-flex align-items-center justify-content-between">
+                    <div class="d-flex align-items-center">
+                        <i data-feather="compass" class="me-2 text-primary" width="24" height="24"></i>
+                        <span class="fw-bold me-2">Market Regime:</span>
+                        <span id="regime-label" class="badge fs-6" style="font-size:16px;font-weight:bold;">Loading...</span>
+                    </div>
+                    <div class="d-flex align-items-center gap-3">
+                        <div id="regime-distribution" class="d-flex gap-2 small text-muted"></div>
+                        <button id="why-inactive-btn" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#whyInactiveModal">
+                            <i data-feather="help-circle" class="me-1" width="14" height="14"></i>Why inactive?
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Risk Governor -->
+<div class="row mb-4">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+          <i data-feather="shield" class="me-2"></i>
+          Risk Governor
+        </h5>
+        <span id="govBadge" class="badge bg-secondary">Loading...</span>
+      </div>
+      <div class="card-body">
+        <div id="govBody" class="small text-muted">Loading...</div>
+        <div class="mt-2">
+          <div class="progress" style="height:10px;">
+            <div id="govDDBar" class="progress-bar" role="progressbar" style="width:0%"></div>
+          </div>
+          <div class="d-flex justify-content-between small text-muted mt-1">
+            <span>0%</span><span>Max DD threshold</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- IC Memo (Signal Compression) -->
+<div class="row mb-4">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+          <i data-feather="file-text" class="me-2"></i>
+          IC Memo (Compressed Thesis)
+        </h5>
+        <span id="icMemoStamp" class="badge bg-secondary">Loading...</span>
+      </div>
+      <div class="card-body">
+        <div id="icMemoBody" class="small" style="white-space:pre-wrap;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Agent vs SPY by Regime -->
+<div class="row mb-4">
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+          <i data-feather="bar-chart-2" class="me-2"></i>
+          Agent vs SPY by Regime
+        </h5>
+        <div class="d-flex gap-2 align-items-center">
+          <label class="small text-muted mb-0">Agent</label>
+          <select id="agentVsSpySelect" class="form-select form-select-sm" style="width:auto;"></select>
+          <button id="agentVsSpyReload" class="btn btn-outline-secondary btn-sm">
+            <i data-feather="refresh-cw" class="me-1"></i>Reload
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="agentVsSpyChart" style="height:320px;"></div>
+        <div id="agentVsSpyTable" class="mt-3"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Why Inactive Modal -->
+<div class="modal fade" id="whyInactiveModal" tabindex="-1" aria-labelledby="whyInactiveModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="whyInactiveModalLabel">
+                    <i data-feather="info" class="me-2"></i>Agent Activity Explanation
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="why-inactive-content">
+                <div class="text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SPY Price + Signal Markers -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i data-feather="activity" class="me-2"></i>
+                    SPY + Agent Signals
+                </h5>
+                <div class="d-flex gap-2 align-items-center">
+                    <label for="spy-period" class="form-label mb-0 me-2">Period:</label>
+                    <select id="spy-period" class="form-select form-select-sm" style="width: auto;">
+                        <option value="6mo" selected>6mo</option>
+                        <option value="1y">1y</option>
+                        <option value="2y">2y</option>
+                        <option value="5y">5y</option>
+                        <option value="max">max</option>
+                    </select>
+                    <button id="spy-reload-btn" class="btn btn-outline-secondary btn-sm">
+                        <i data-feather="refresh-cw" class="me-1"></i>Reload
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div style="height: 300px;">
+                    <canvas id="spyChart"></canvas>
+                </div>
+                <div class="mt-2 small text-muted">
+                    <span class="badge" style="background:#22c55e;">Low</span>
+                    <span class="badge" style="background:#eab308;">Medium</span>
+                    <span class="badge" style="background:#f97316;">High</span>
+                    <span class="badge" style="background:#ef4444;">Critical</span>
+                    &mdash; Markers show agent findings. Hover to see details.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Technical Analysis Chart -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i data-feather="trending-up" class="me-2"></i>
+                    Technical Analysis
+                </h5>
+                <div class="d-flex gap-2 align-items-center">
+                    <label for="taSymbol" class="form-label mb-0 me-2">Symbol</label>
+                    <input id="taSymbol" value="SPY" class="form-control form-control-sm" style="width:100px;">
+                    <label for="taPeriod" class="form-label mb-0 me-2">Period</label>
+                    <select id="taPeriod" class="form-select form-select-sm" style="width: auto;">
+                        <option value="6mo" selected>6mo</option>
+                        <option value="1y">1y</option>
+                        <option value="2y">2y</option>
+                        <option value="5y">5y</option>
+                        <option value="max">max</option>
+                    </select>
+                    <button id="taLoadBtn" class="btn btn-outline-primary btn-sm">
+                        <i data-feather="refresh-cw" class="me-1"></i>Load
+                    </button>
+                    <span id="taRegimeBadge" class="badge bg-secondary ms-2">--</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="taCandle" style="height:400px;"></div>
+                <div id="taRSI" style="height:180px;"></div>
             </div>
         </div>
     </div>
@@ -161,6 +365,185 @@
         </div>
     </div>
 </div>
+
+<!-- Agent Decay Curves -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i data-feather="activity" class="me-2"></i>
+                    Agent Performance Decay
+                </h5>
+                <div>
+                    <span id="uncertainty-badge" class="badge bg-secondary">Loading...</span>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="decay-container" class="row">
+                    <div class="text-center">
+                        <div class="spinner-border text-secondary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-2">Loading decay curves...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Agent Failure Heatmap by Regime -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i data-feather="alert-triangle" class="me-2"></i>
+                    Agent Failure Heatmap by Regime
+                </h5>
+                <span class="badge bg-info">Which agents fail during regime transitions</span>
+            </div>
+            <div class="card-body">
+                <div id="agent-heatmap-container" style="min-height: 200px;">
+                    <div class="text-center">
+                        <div class="spinner-border text-secondary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-2">Loading agent failure heatmap...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Regime Effectiveness Heatmap -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i data-feather="grid" class="me-2"></i>
+                    Regime Effectiveness Heatmap
+                </h5>
+            </div>
+            <div class="card-body">
+                <div id="regime-heatmap" style="min-height: 350px;">
+                    <div class="text-center">
+                        <div class="spinner-border text-secondary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-2">Loading regime heatmap...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Agent Decay by Regime Heatmap -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i data-feather="thermometer" class="me-2"></i>
+                    Agent Decay by Market Regime
+                </h5>
+                <span class="badge bg-warning text-dark">Which agents decay in which regimes</span>
+            </div>
+            <div class="card-body">
+                <div id="decay-heatmap-container" style="min-height: 300px;">
+                    <img id="decay-heatmap-img" src="/dashboard/api/decay_heatmap/chart" alt="Agent Decay Heatmap" style="max-width: 100%; height: auto;" onerror="this.style.display='none'; document.getElementById('decay-heatmap-fallback').style.display='block';">
+                    <div id="decay-heatmap-fallback" style="display: none;">
+                        <div class="text-center py-4">
+                            <i data-feather="bar-chart-2" class="text-muted mb-2" width="48" height="48"></i>
+                            <p class="text-muted">Collecting decay data across regimes...</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <h6 class="text-muted mb-2">How to interpret:</h6>
+                    <div class="row small">
+                        <div class="col-md-4"><span class="badge bg-danger me-1">Red across all</span> Agent structurally broken</div>
+                        <div class="col-md-4"><span class="badge bg-warning text-dark me-1">Red in risk-on</span> Agent is defensive</div>
+                        <div class="col-md-4"><span class="badge bg-success me-1">Green in volatility</span> Crisis-alpha specialist</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Uncertainty Status & Agent Decay by LLM Council -->
+<div class="row mt-4">
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i data-feather="alert-circle" class="me-2"></i>
+                    LLM Council Uncertainty
+                </h5>
+                <span id="overall-uncertainty-badge" class="badge bg-secondary">Loading...</span>
+            </div>
+            <div class="card-body">
+                <div id="uncertainty-decay-container">
+                    <div class="text-center py-3">
+                        <div class="spinner-border spinner-border-sm text-secondary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i data-feather="shuffle" class="me-2"></i>
+                    Agent Substitution Status
+                </h5>
+                <span class="badge bg-info">Auto-replacement when uncertain</span>
+            </div>
+            <div class="card-body">
+                <div id="substitution-status-container">
+                    <div class="text-center py-3">
+                        <div class="spinner-border spinner-border-sm text-secondary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Agent Substitution Map -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i data-feather="shuffle" class="me-2"></i>
+                    Agent Substitution Map
+                </h5>
+                <span class="badge bg-info">Auto-replacement recommendations</span>
+            </div>
+            <div class="card-body">
+                <div id="substitution-container">
+                    <div class="text-center py-3">
+                        <div class="spinner-border spinner-border-sm text-secondary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-2 mb-0">Loading substitution map...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -181,6 +564,291 @@ setTimeout(() => {
         }
     }
 }, 2000);
+
+// Load substitution map
+async function loadSubstitutionMap() {
+    const container = document.getElementById('substitution-container');
+    if (!container) return;
+    
+    try {
+        const resp = await fetch('/dashboard/api/substitutions');
+        const data = await resp.json();
+        
+        if (data.total_substitutions === 0) {
+            container.innerHTML = `
+                <div class="text-center py-4">
+                    <i data-feather="check-circle" class="text-success mb-2" style="width: 48px; height: 48px;"></i>
+                    <p class="text-muted mb-1">No substitutions needed</p>
+                    <small class="text-muted">All agents performing well in current regime</small>
+                </div>
+            `;
+            if (typeof feather !== 'undefined') feather.replace();
+            return;
+        }
+        
+        let html = '<div class="table-responsive"><table class="table table-sm table-hover"><thead><tr><th>Regime</th><th>Failing Agent</th><th>Substitute</th><th>Confidence</th></tr></thead><tbody>';
+        
+        for (const [regime, subs] of Object.entries(data.by_regime)) {
+            for (const sub of subs) {
+                const conf = sub.confidence > 0.7 ? 'High' : sub.confidence > 0.4 ? 'Medium' : 'Low';
+                const confClass = sub.confidence > 0.7 ? 'success' : sub.confidence > 0.4 ? 'warning' : 'secondary';
+                html += `<tr>
+                    <td><span class="badge bg-secondary">${regime}</span></td>
+                    <td><span class="text-danger">${sub.failed_agent}</span></td>
+                    <td><span class="text-success">${sub.substitute}</span></td>
+                    <td><span class="badge bg-${confClass}">${conf}</span></td>
+                </tr>`;
+            }
+        }
+        
+        html += '</tbody></table></div>';
+        html += `<small class="text-muted">Last updated: ${new Date(data.last_built).toLocaleString()}</small>`;
+        container.innerHTML = html;
+        
+    } catch (e) {
+        container.innerHTML = '<p class="text-muted text-center">Could not load substitution data</p>';
+    }
+}
+loadSubstitutionMap();
+setInterval(loadSubstitutionMap, 60000);
+
+// SPY + Signals Chart with Meta-Agent weight overlay and regime detection
+(async function() {
+    const ctx = document.getElementById('spyChart');
+    if (!ctx) return;
+    
+    const periodSel = document.getElementById('spy-period');
+    const reloadBtn = document.getElementById('spy-reload-btn');
+    let chart;
+    let showDisabled = false;
+    let regimeMap = {};
+
+    function severityOrder(s) {
+        return ({low:1, medium:2, high:3, critical:4}[s] || 0);
+    }
+
+    function hexToRgba(hex, alpha) {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    function nearestRegime(dateStr) {
+        if (regimeMap[dateStr]) return regimeMap[dateStr];
+        const d = new Date(dateStr);
+        for (let i = 0; i < 7; i++) {
+            const key = d.toISOString().slice(0, 10);
+            if (regimeMap[key]) return regimeMap[key];
+            d.setDate(d.getDate() - 1);
+        }
+        return 'unknown';
+    }
+
+    async function loadData() {
+        const period = periodSel ? periodSel.value : "6mo";
+
+        const [seriesResp, sigResp, regimeResp, decayResp] = await Promise.all([
+            fetch(`/api/series/spy?period=${encodeURIComponent(period)}`),
+            fetch(`/api/dashboard/signals`),
+            fetch(`/api/eval/regimes`),
+            fetch(`/api/decay`)
+        ]);
+
+        const seriesJson = await seriesResp.json();
+        const sigJson = await sigResp.json();
+        
+        let decayData = { agents: {}, uncertainty_score: 0, uncertainty_spike: false };
+        try {
+            decayData = await decayResp.json();
+        } catch (e) {
+            console.warn('Could not load decay data:', e);
+        }
+        
+        try {
+            const regimes = await regimeResp.json();
+            if (Array.isArray(regimes)) {
+                regimes.forEach(r => {
+                    regimeMap[r.date.slice(0, 10)] = r.regime;
+                });
+            }
+        } catch (e) {
+            console.warn('Could not load regime data:', e);
+        }
+
+        const points = seriesJson.points || [];
+        const signals = sigJson.signals || [];
+        const schedule = sigJson.schedule || {};
+        
+        let avgDecaySeries = [];
+        const agentDecays = Object.values(decayData.agents || {});
+        if (agentDecays.length > 0) {
+            const maxLen = Math.max(...agentDecays.map(s => s.length));
+            for (let i = 0; i < maxLen; i++) {
+                let sum = 0, count = 0;
+                agentDecays.forEach(s => {
+                    if (s[i] !== undefined) { sum += s[i]; count++; }
+                });
+                avgDecaySeries.push(count > 0 ? sum / count : 0);
+            }
+        }
+
+        const closeByDate = {};
+        points.forEach(p => closeByDate[p.t] = p.close);
+
+        const lastClose = points.length ? points[points.length - 1].close : null;
+
+        const markerPoints = signals
+            .filter(s => s.symbol === "SPY" || s.symbol === "^VIX" || s.symbol === "^GSPC")
+            .filter(s => showDisabled || s.enabled !== false)
+            .map(s => {
+                const weight = s.weight || 1.0;
+                const opacity = Math.max(0.3, Math.min(1.0, weight));
+                const regime = nearestRegime(s.t);
+                return {
+                    x: s.t,
+                    y: closeByDate[s.t] ?? lastClose,
+                    title: s.title,
+                    agent: s.agent,
+                    severity: s.severity,
+                    confidence: s.confidence,
+                    color: s.color,
+                    enabled: s.enabled,
+                    weight: weight,
+                    rank: s.rank,
+                    opacity: opacity,
+                    regime: regime,
+                    colorWithOpacity: hexToRgba(s.color || '#64748b', opacity)
+                };
+            })
+            .filter(p => p.y !== null);
+
+        const bestPerDay = {};
+        markerPoints.forEach(m => {
+            const key = `${m.x}-${m.agent}`;
+            const prev = bestPerDay[key];
+            if (!prev || severityOrder(m.severity) > severityOrder(prev.severity)) bestPerDay[key] = m;
+        });
+
+        const markers = Object.values(bestPerDay);
+        const labels = points.map(p => p.t);
+        const closes = points.map(p => p.close);
+        
+        const decaySampled = [];
+        if (avgDecaySeries.length > 0 && labels.length > 0) {
+            const step = labels.length / avgDecaySeries.length;
+            for (let i = 0; i < labels.length; i++) {
+                const idx = Math.min(Math.floor(i / step), avgDecaySeries.length - 1);
+                decaySampled.push(avgDecaySeries[idx] || 0);
+            }
+        }
+
+        return { labels, closes, markers, schedule, decaySeries: decaySampled, uncertaintySpike: decayData.uncertainty_spike };
+    }
+
+    async function render() {
+        const { labels, closes, markers, schedule, decaySeries, uncertaintySpike } = await loadData();
+
+        const markerDataset = {
+            type: 'scatter',
+            label: 'Signals',
+            data: markers.map(m => ({ x: m.x, y: m.y, _meta: m })),
+            pointRadius: (c) => {
+                const m = c.raw?._meta;
+                if (!m) return 6;
+                return m.enabled === false ? 4 : 4 + (m.weight || 1) * 2;
+            },
+            pointHoverRadius: 10,
+            showLine: false,
+            parsing: false,
+            pointBackgroundColor: (c) => c.raw?._meta?.colorWithOpacity || '#64748b',
+            pointBorderColor: (c) => c.raw?._meta?.enabled === false ? '#9ca3af' : '#111827',
+            pointBorderWidth: (c) => c.raw?._meta?.enabled === false ? 1 : 2,
+            pointStyle: (c) => c.raw?._meta?.enabled === false ? 'crossRot' : 'circle'
+        };
+
+        const priceDataset = {
+            type: 'line',
+            label: 'SPY Close',
+            data: labels.map((d, i) => ({ x: d, y: closes[i] })),
+            borderColor: '#3b82f6',
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.15,
+            fill: false,
+            yAxisID: 'y'
+        };
+        
+        const decayDataset = {
+            type: 'line',
+            label: 'Avg Decay',
+            data: decaySeries.length > 0 ? labels.map((d, i) => ({ x: d, y: decaySeries[i] || 0 })) : [],
+            borderColor: uncertaintySpike ? '#f59e0b' : '#10b981',
+            borderWidth: 2,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            tension: 0.3,
+            fill: false,
+            yAxisID: 'y1'
+        };
+
+        if (chart) chart.destroy();
+        
+        const datasets = [priceDataset, markerDataset];
+        if (decaySeries.length > 0) datasets.push(decayDataset);
+
+        chart = new Chart(ctx, {
+            data: { datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'nearest', intersect: false },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const raw = context.raw;
+                                const m = raw?._meta;
+                                if (context.dataset.label === 'Avg Decay') {
+                                    return `Decay: ${context.parsed.y.toFixed(2)}`;
+                                }
+                                if (!m) return `SPY: $${context.parsed.y.toFixed(2)}`;
+                                const status = m.enabled === false ? '[DISABLED]' : `wt=${m.weight?.toFixed(2) || '1.00'}`;
+                                const rankStr = m.rank ? ` #${m.rank}` : '';
+                                const regimeLabel = m.regime ? ` [${m.regime.replace('_', '-')}]` : '';
+                                return `${m.severity.toUpperCase()}${rankStr}${regimeLabel} | ${m.title} | ${m.agent} | ${status}`;
+                            }
+                        }
+                    },
+                    legend: { display: true, position: 'top' }
+                },
+                scales: {
+                    x: { type: 'category', ticks: { maxTicksLimit: 12, maxRotation: 45 } },
+                    y: { 
+                        beginAtZero: false, 
+                        title: { display: true, text: 'Price ($)' },
+                        position: 'left'
+                    },
+                    y1: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Decay Score' },
+                        position: 'right',
+                        grid: { drawOnChartArea: false }
+                    }
+                }
+            }
+        });
+
+        const enabledCount = markers.filter(m => m.enabled !== false).length;
+        const disabledCount = markers.filter(m => m.enabled === false).length;
+        console.log(`Chart: ${enabledCount} enabled, ${disabledCount} disabled signals`);
+    }
+
+    if (reloadBtn) reloadBtn.addEventListener('click', render);
+    if (periodSel) periodSel.addEventListener('change', render);
+
+    await render();
+})();
 </script>
 {% endblock %}
 
@@ -257,4 +925,690 @@ setTimeout(() => {
     font-size: 0.75rem;
 }
 </style>
+
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script>
+// Regime State Indicator
+(async function() {
+    const label = document.getElementById('regime-label');
+    const distDiv = document.getElementById('regime-distribution');
+    if (!label) return;
+    
+    const colors = {
+        'risk_on': '#22c55e',
+        'risk_off': '#ef4444',
+        'inflation': '#f97316',
+        'deflation': '#3b82f6'
+    };
+    
+    try {
+        const resp = await fetch('/api/regime_state');
+        const r = await resp.json();
+        
+        if (r.error) {
+            label.innerText = 'Unknown';
+            label.style.backgroundColor = '#6b7280';
+            return;
+        }
+        
+        const regimeText = r.active_regime.toUpperCase().replace('_', ' ');
+        const confPct = Math.round(r.confidence * 100);
+        label.innerText = `${regimeText} (${confPct}%)`;
+        label.style.backgroundColor = colors[r.active_regime] || '#6b7280';
+        label.style.color = '#fff';
+        label.style.opacity = r.transition ? 0.6 : 1.0;
+        
+        if (r.distribution && distDiv) {
+            distDiv.innerHTML = Object.entries(r.distribution)
+                .map(([k, v]) => `<span class="badge" style="background:${colors[k] || '#6b7280'}33;color:${colors[k] || '#6b7280'}">${k.replace('_', ' ')}: ${Math.round(v*100)}%</span>`)
+                .join('');
+        }
+    } catch (e) {
+        console.error('Error loading regime state:', e);
+        label.innerText = 'Error';
+        label.style.backgroundColor = '#6b7280';
+    }
+})();
+</script>
+<script>
+// Regime Effectiveness Heatmap
+(async function() {
+    const container = document.getElementById('regime-heatmap');
+    if (!container) return;
+    
+    try {
+        const resp = await fetch('/api/eval/regime_heatmap');
+        const data = await resp.json();
+        
+        if (!data || data.length === 0 || data.error) {
+            container.innerHTML = '<p class="text-muted text-center">No regime data available yet.</p>';
+            return;
+        }
+        
+        const regimes = [...new Set(data.map(d => d.regime))];
+        
+        const traces = regimes.map(regime => {
+            const filtered = data.filter(d => d.regime === regime);
+            return {
+                x: filtered.map(d => d.date),
+                y: Array(filtered.length).fill(regime),
+                mode: 'markers',
+                marker: {
+                    size: 14,
+                    color: filtered.map(d => d.mean_return),
+                    colorscale: 'RdYlGn',
+                    cmin: -0.05,
+                    cmax: 0.05,
+                    colorbar: regime === regimes[0] ? { title: 'Mean Return', tickformat: '.1%' } : undefined
+                },
+                name: regime,
+                text: filtered.map(d => `${regime}<br>Return: ${(d.mean_return*100).toFixed(2)}%<br>Hit Rate: ${(d.hit_rate*100).toFixed(0)}%<br>Count: ${d.count}`),
+                hovertemplate: '%{text}<extra></extra>'
+            };
+        });
+        
+        container.innerHTML = '';
+        
+        Plotly.newPlot(container, traces, {
+            title: '',
+            yaxis: { type: 'category', title: 'Regime' },
+            xaxis: { title: 'Date' },
+            height: 350,
+            margin: { t: 20, l: 100, r: 50, b: 50 },
+            showlegend: false,
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            plot_bgcolor: 'rgba(0,0,0,0)'
+        }, { responsive: true });
+        
+    } catch (e) {
+        console.error('Error loading regime heatmap:', e);
+        container.innerHTML = '<p class="text-danger text-center">Error loading regime heatmap.</p>';
+    }
+})();
+</script>
+<script>
+// Agent Decay Visualization
+(async function() {
+    const container = document.getElementById('decay-container');
+    const badge = document.getElementById('uncertainty-badge');
+    if (!container) return;
+    
+    async function loadDecay() {
+        try {
+            const resp = await fetch('/api/decay');
+            const data = await resp.json();
+            
+            if (data.error) {
+                container.innerHTML = '<p class="text-muted text-center">Error loading decay data.</p>';
+                return;
+            }
+            
+            const agents = data.agents || {};
+            const uncertaintySpike = data.uncertainty_spike;
+            const uncertaintyScore = data.uncertainty_score || 0;
+            
+            if (badge) {
+                if (uncertaintySpike) {
+                    badge.className = 'badge bg-warning';
+                    badge.textContent = `Uncertainty Spike: ${(uncertaintyScore * 100).toFixed(0)}%`;
+                } else if (uncertaintyScore > 0.5) {
+                    badge.className = 'badge bg-info';
+                    badge.textContent = `Uncertainty: ${(uncertaintyScore * 100).toFixed(0)}%`;
+                } else {
+                    badge.className = 'badge bg-success';
+                    badge.textContent = `Calm: ${(uncertaintyScore * 100).toFixed(0)}%`;
+                }
+            }
+            
+            if (Object.keys(agents).length === 0) {
+                container.innerHTML = '<p class="text-muted text-center">No decay data available yet. Agents will show here after they run.</p>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            Object.entries(agents).forEach(([agent, series]) => {
+                const col = document.createElement('div');
+                col.className = 'col-md-4 col-lg-3 mb-3';
+                
+                const card = document.createElement('div');
+                card.className = 'card h-100';
+                if (uncertaintySpike) card.style.opacity = '0.7';
+                
+                const cardBody = document.createElement('div');
+                cardBody.className = 'card-body p-2';
+                
+                const title = document.createElement('h6');
+                title.className = 'card-title mb-1 small';
+                title.textContent = agent.replace('Agent', '');
+                
+                const sparkline = document.createElement('div');
+                sparkline.className = 'decay-sparkline';
+                sparkline.style.cssText = 'height: 40px; font-family: monospace; font-size: 10px; color: #6b7280; overflow: hidden;';
+                
+                if (series.length > 0) {
+                    const last20 = series.slice(-20);
+                    const max = Math.max(...last20, 1);
+                    const normalized = last20.map(v => Math.round((v / max) * 8));
+                    const bars = normalized.map(n => '▁▂▃▄▅▆▇█'[Math.min(n, 7)]).join('');
+                    sparkline.textContent = bars;
+                    
+                    const current = last20[last20.length - 1] || 0;
+                    const prev = last20[last20.length - 2] || current;
+                    const trend = current >= prev ? '↑' : '↓';
+                    const trendColor = current >= prev ? '#22c55e' : '#ef4444';
+                    
+                    const trendSpan = document.createElement('span');
+                    trendSpan.style.color = trendColor;
+                    trendSpan.textContent = ` ${trend} ${current.toFixed(1)}`;
+                    sparkline.appendChild(trendSpan);
+                } else {
+                    sparkline.textContent = 'No data';
+                }
+                
+                cardBody.appendChild(title);
+                cardBody.appendChild(sparkline);
+                card.appendChild(cardBody);
+                col.appendChild(card);
+                container.appendChild(col);
+            });
+            
+        } catch (e) {
+            console.error('Error loading decay data:', e);
+            container.innerHTML = '<p class="text-danger text-center">Error loading decay data.</p>';
+        }
+    }
+    
+    loadDecay();
+    setInterval(loadDecay, 60000);
+})();
+</script>
+<script>
+// Agent Failure Heatmap Visualization
+(async function() {
+    const container = document.getElementById('agent-heatmap-container');
+    if (!container) return;
+    
+    async function loadHeatmap() {
+        try {
+            const resp = await fetch('/api/agent_heatmap');
+            const data = await resp.json();
+            
+            if (data.error) {
+                container.innerHTML = '<p class="text-muted text-center">Error loading heatmap data.</p>';
+                return;
+            }
+            
+            const agents = data.agents || {};
+            const regimes = data.regimes || [];
+            const recentHistory = data.recent_regime_history || [];
+            
+            if (Object.keys(agents).length === 0 || regimes.length === 0) {
+                container.innerHTML = '<p class="text-muted text-center">No heatmap data available yet. Agents will show here after running in different regimes.</p>';
+                return;
+            }
+            
+            container.innerHTML = '';
+            
+            const table = document.createElement('table');
+            table.className = 'table table-sm table-hover';
+            
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            headerRow.innerHTML = '<th>Agent</th>';
+            regimes.forEach(regime => {
+                const th = document.createElement('th');
+                th.className = 'text-center';
+                th.textContent = regime;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+            
+            const tbody = document.createElement('tbody');
+            
+            Object.entries(agents).forEach(([agent, regimeData]) => {
+                const row = document.createElement('tr');
+                
+                const agentCell = document.createElement('td');
+                agentCell.textContent = agent.replace('Agent', '');
+                agentCell.style.fontWeight = '500';
+                row.appendChild(agentCell);
+                
+                regimes.forEach(regime => {
+                    const cell = document.createElement('td');
+                    cell.className = 'text-center';
+                    const info = regimeData[regime] || { avg: 0, count: 0 };
+                    
+                    if (info.count === 0) {
+                        cell.innerHTML = '<span class="text-muted">-</span>';
+                    } else {
+                        const intensity = Math.min(info.avg / 10, 1);
+                        const r = Math.round(255 * (1 - intensity));
+                        const g = Math.round(255 * intensity);
+                        cell.style.backgroundColor = `rgba(${r}, ${g}, 100, 0.3)`;
+                        cell.innerHTML = `<span title="Avg: ${info.avg}, Count: ${info.count}">${info.avg}</span>`;
+                    }
+                    row.appendChild(cell);
+                });
+                
+                tbody.appendChild(row);
+            });
+            
+            table.appendChild(tbody);
+            container.appendChild(table);
+            
+            if (recentHistory.length > 0) {
+                const historyDiv = document.createElement('div');
+                historyDiv.className = 'mt-2 small text-muted';
+                historyDiv.innerHTML = '<strong>Recent regimes:</strong> ' + recentHistory.slice(-10).join(' → ');
+                container.appendChild(historyDiv);
+            }
+            
+        } catch (e) {
+            console.error('Error loading agent heatmap:', e);
+            container.innerHTML = '<p class="text-danger text-center">Error loading agent heatmap.</p>';
+        }
+    }
+    
+    loadHeatmap();
+    setInterval(loadHeatmap, 60000);
+})();
+</script>
+<script>
+// Technical Analysis Chart (Candlesticks + RSI + Signal Markers)
+(async function() {
+    const candleContainer = document.getElementById('taCandle');
+    const rsiContainer = document.getElementById('taRSI');
+    const loadBtn = document.getElementById('taLoadBtn');
+    const symbolInput = document.getElementById('taSymbol');
+    const periodSelect = document.getElementById('taPeriod');
+    const regimeBadge = document.getElementById('taRegimeBadge');
+    
+    if (!candleContainer || !rsiContainer) return;
+
+    async function loadTA() {
+        const sym = (symbolInput.value || 'SPY').trim().toUpperCase();
+        const period = periodSelect.value || '6mo';
+        
+        candleContainer.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div></div>';
+        rsiContainer.innerHTML = '';
+        
+        try {
+            const [overlayRes, regimeRes] = await Promise.all([
+                fetch(`/api/ta_overlay?symbol=${encodeURIComponent(sym)}&period=${encodeURIComponent(period)}`),
+                fetch(`/api/ta_regime?symbol=${encodeURIComponent(sym)}&period=1y`)
+            ]);
+            
+            const data = await overlayRes.json();
+            const regimeData = await regimeRes.json();
+            
+            // Update regime badge
+            if (regimeData.ok) {
+                const regimeText = regimeData.ta_regime || 'mixed';
+                const direction = regimeData.trend_direction || 'neutral';
+                const conf = (regimeData.confidence * 100).toFixed(0);
+                regimeBadge.textContent = `${regimeText} (${direction}) ${conf}%`;
+                regimeBadge.className = 'badge ms-2 ' + (
+                    regimeText === 'trend' ? 'bg-success' : 
+                    regimeText === 'mean_reversion' ? 'bg-warning' : 'bg-secondary'
+                );
+            }
+            
+            if (!data.ok) {
+                candleContainer.innerHTML = `<p class="text-danger text-center">TA error: ${data.reason || 'unknown'}</p>`;
+                return;
+            }
+
+            const t = data.ohlc.t;
+            const open = data.ohlc.open;
+            const high = data.ohlc.high;
+            const low = data.ohlc.low;
+            const close = data.ohlc.close;
+
+            const ma20 = data.ta.ma20;
+            const ma50 = data.ta.ma50;
+            const bb_u = data.ta.bb_u;
+            const bb_l = data.ta.bb_l;
+
+            const markerTs = (data.markers || []).map(m => m.t);
+            const markerText = (data.markers || []).map(m => 
+                `${(m.severity || '').toUpperCase()} · ${m.agent} · ${((m.confidence || 0.5)*100).toFixed(0)}% · ${m.title}`
+            );
+
+            const candleTrace = {
+                type: 'candlestick',
+                x: t, open, high, low, close,
+                name: data.symbol,
+                increasing: {line: {color: '#22c55e'}},
+                decreasing: {line: {color: '#ef4444'}}
+            };
+
+            const ma20Trace = {type:'scatter', mode:'lines', x:t, y:ma20, name:'MA20', line:{color:'#3b82f6', width:1}};
+            const ma50Trace = {type:'scatter', mode:'lines', x:t, y:ma50, name:'MA50', line:{color:'#f59e0b', width:1}};
+            const bbuTrace = {type:'scatter', mode:'lines', x:t, y:bb_u, name:'BB Upper', line:{color:'#8b5cf6', width:1, dash:'dot'}};
+            const bblTrace = {type:'scatter', mode:'lines', x:t, y:bb_l, name:'BB Lower', line:{color:'#8b5cf6', width:1, dash:'dot'}};
+
+            const shapes = markerTs.map(ts => ({
+                type: 'line',
+                x0: ts, x1: ts,
+                y0: 0, y1: 1,
+                yref: 'paper',
+                line: {width: 1, dash: 'dot', color: '#f97316'}
+            }));
+
+            const annotations = markerTs.map((ts, i) => ({
+                x: ts, y: 1.02, yref:'paper',
+                text: '●',
+                showarrow: false,
+                hovertext: markerText[i],
+                font: {size: 10, color: '#f97316'}
+            }));
+
+            // Load uncertainty events and add as vertical bands
+            try {
+                const uncResp = await fetch('/api/uncertainty');
+                const uncEvents = await uncResp.json();
+                uncEvents.forEach(e => {
+                    if (e.spike) {
+                        shapes.push({
+                            type: 'rect',
+                            x0: e.timestamp, x1: e.timestamp,
+                            y0: 0, y1: 1,
+                            yref: 'paper',
+                            fillcolor: 'rgba(255, 0, 0, 0.08)',
+                            line: {width: 0}
+                        });
+                        annotations.push({
+                            x: e.timestamp, y: 0.98, yref: 'paper',
+                            text: '⚠',
+                            showarrow: false,
+                            hovertext: `Uncertainty Spike: ${(e.score*100).toFixed(0)}% | ${e.active_regime || 'unknown'}`,
+                            font: {size: 8, color: '#dc2626'}
+                        });
+                    }
+                });
+            } catch (uncErr) {
+                console.debug('Uncertainty overlay skipped:', uncErr);
+            }
+
+            Plotly.newPlot(candleContainer,
+                [candleTrace, ma20Trace, ma50Trace, bbuTrace, bblTrace],
+                {
+                    title: {text: `${data.symbol} · Candles + Bands + MAs`, font: {size: 14}},
+                    shapes: shapes,
+                    annotations: annotations,
+                    xaxis: {rangeslider: {visible: false}},
+                    yaxis: {title: 'Price'},
+                    margin: {t: 40, l: 50, r: 20, b: 40},
+                    legend: {orientation: 'h', y: 1.1}
+                },
+                {displayModeBar: false, responsive: true}
+            );
+
+            // RSI chart
+            const rsi14 = data.ta.rsi14;
+            Plotly.newPlot(rsiContainer,
+                [
+                    {type:'scatter', mode:'lines', x:t, y:rsi14, name:'RSI(14)', line:{color:'#06b6d4', width:1.5}},
+                    {type:'scatter', mode:'lines', x:[t[0], t[t.length-1]], y:[70, 70], name:'Overbought', line:{color:'#ef4444', width:1, dash:'dash'}},
+                    {type:'scatter', mode:'lines', x:[t[0], t[t.length-1]], y:[30, 30], name:'Oversold', line:{color:'#22c55e', width:1, dash:'dash'}},
+                ],
+                {
+                    title: {text: 'RSI(14)', font: {size: 12}},
+                    margin: {t: 30, l: 50, r: 20, b: 30},
+                    yaxis: {range: [0, 100]},
+                    legend: {orientation: 'h', y: 1.15},
+                    showlegend: false
+                },
+                {displayModeBar: false, responsive: true}
+            );
+
+        } catch (e) {
+            console.error('Error loading TA chart:', e);
+            candleContainer.innerHTML = '<p class="text-danger text-center">Error loading TA chart.</p>';
+        }
+    }
+
+    if (loadBtn) loadBtn.addEventListener('click', loadTA);
+    loadTA();
+})();
+</script>
+<script>
+// Why Inactive Modal
+document.getElementById('whyInactiveModal')?.addEventListener('show.bs.modal', async function() {
+    const content = document.getElementById('why-inactive-content');
+    content.innerHTML = '<div class="text-center"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div></div>';
+    
+    try {
+        const resp = await fetch('/api/agents/inactive/explain');
+        const data = await resp.json();
+        
+        if (data.error) {
+            content.innerHTML = `<div class="alert alert-warning">${data.error}</div>`;
+            return;
+        }
+        
+        let html = `<div class="mb-3"><span class="badge bg-primary">Current Regime: ${data.regime || 'unknown'}</span></div>`;
+        
+        if (!data.inactive_agents || data.inactive_agents.length === 0) {
+            html += '<div class="alert alert-success">All agents are currently active. No substitutions or high ignore rates detected.</div>';
+        } else {
+            html += '<div class="table-responsive"><table class="table table-sm table-striped">';
+            html += '<thead><tr><th>Agent</th><th>Reason</th><th>Ignore Rate</th><th>Votes</th><th>Substituted By</th></tr></thead><tbody>';
+            
+            data.inactive_agents.forEach(agent => {
+                const ignoreRate = agent.ignore_rate ? `${(agent.ignore_rate * 100).toFixed(1)}%` : '-';
+                const subBy = agent.substituted_by || '-';
+                const reason = agent.reason === 'high_ignore_rate' ? 'High Ignore Rate' : agent.reason;
+                
+                html += `<tr>
+                    <td><strong>${agent.agent.replace('Agent', '')}</strong></td>
+                    <td><span class="badge bg-warning text-dark">${reason}</span></td>
+                    <td>${ignoreRate}</td>
+                    <td>${agent.votes || 0}</td>
+                    <td>${subBy.replace('Agent', '')}</td>
+                </tr>`;
+            });
+            
+            html += '</tbody></table></div>';
+            html += '<div class="small text-muted mt-2"><strong>Note:</strong> Agents with ignore_rate &gt; 55% and at least 12 council votes are substituted with their backups to maintain portfolio performance.</div>';
+        }
+        
+        content.innerHTML = html;
+        feather.replace();
+    } catch (e) {
+        console.error('Error loading inactive agents:', e);
+        content.innerHTML = '<div class="alert alert-danger">Failed to load agent explanations.</div>';
+    }
+});
+</script>
+<script>
+// Risk Governor Panel
+(async function() {
+  const badge = document.getElementById('govBadge');
+  const body = document.getElementById('govBody');
+  const bar = document.getElementById('govDDBar');
+  if (!badge || !body) return;
+  
+  async function loadGovernor() {
+    try {
+      const r = await fetch('/api/governor_state');
+      const j = await r.json();
+      if (!j.ok && j.error) throw new Error(j.error);
+
+      const ddPct = (j.dd * 100);
+      const limitPct = (j.dd_limit * 100);
+      const ddAbs = Math.min(100, Math.max(0, Math.abs(ddPct) / Math.abs(limitPct) * 100));
+
+      let cls = 'bg-success';
+      if (j.reason !== 'ok' && j.reason !== 'insufficient_history') cls = j.block_new_act ? 'bg-danger' : 'bg-warning';
+
+      badge.className = `badge ${cls}`;
+      badge.textContent = j.reason === 'ok' ? 'Normal' : (j.reason === 'insufficient_history' ? 'Warming Up' : (j.block_new_act ? 'HARD RISK-OFF' : 'Risk-Reduced'));
+
+      body.textContent =
+        `DD: ${ddPct.toFixed(2)}% (limit ${limitPct.toFixed(2)}%) | ` +
+        `risk_mult=${j.risk_multiplier.toFixed(2)} | cadence_mult=${j.cadence_multiplier.toFixed(2)} | ` +
+        `block_new_act=${j.block_new_act}`;
+
+      if (bar) {
+        bar.className = `progress-bar ${cls}`;
+        bar.style.width = `${ddAbs.toFixed(0)}%`;
+      }
+    } catch (e) {
+      console.error('Error loading governor:', e);
+      badge.textContent = 'Error';
+      body.textContent = 'Could not load governor state.';
+    }
+  }
+  
+  loadGovernor();
+  setInterval(loadGovernor, 60000);
+})();
+</script>
+<script>
+// IC Memo Panel
+(async function() {
+  const stamp = document.getElementById('icMemoStamp');
+  const body = document.getElementById('icMemoBody');
+  if (!body) return;
+  
+  async function loadICMemo() {
+    try {
+      const r = await fetch('/api/ic_memo/latest?hours=24');
+      const j = await r.json();
+      if (!j.ok && j.error) throw new Error(j.error);
+
+      if (stamp) {
+        stamp.className = 'badge bg-info';
+        stamp.textContent = `Last 24h • ${new Date(j.generated_at).toLocaleString()}`;
+      }
+      body.textContent = `${j.headline}\n\n${j.thesis}`;
+    } catch (e) {
+      console.error('Error loading IC memo:', e);
+      if (stamp) stamp.textContent = 'Error';
+      body.textContent = 'Could not load IC memo.';
+    }
+  }
+  
+  loadICMemo();
+  setInterval(loadICMemo, 120000);
+})();
+</script>
+<script>
+// Agent vs SPY by Regime Panel
+(async function() {
+  const sel = document.getElementById('agentVsSpySelect');
+  const btn = document.getElementById('agentVsSpyReload');
+  const chartDiv = document.getElementById('agentVsSpyChart');
+  const tableDiv = document.getElementById('agentVsSpyTable');
+  if (!sel || !chartDiv || !tableDiv) return;
+
+  async function loadAgents() {
+    const r = await fetch('/api/agents/list');
+    const j = await r.json();
+    return (j.agents || []).filter(a => a && a.includes('Agent'));
+  }
+
+  async function loadOne(agent) {
+    const r = await fetch(`/api/eval/agent_vs_spy?agent=${encodeURIComponent(agent)}`);
+    return await r.json();
+  }
+
+  const render = async () => {
+    const agent = sel.value;
+    if (!agent) {
+      chartDiv.innerHTML = '<p class="text-muted">Select an agent to view performance.</p>';
+      tableDiv.innerHTML = '';
+      return;
+    }
+    
+    chartDiv.innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary" role="status"></div></div>';
+    
+    const j = await loadOne(agent);
+    if (!j.ok) {
+      chartDiv.innerHTML = `<p class="text-danger">Error: ${j.error || 'unknown'}</p>`;
+      tableDiv.innerHTML = '';
+      return;
+    }
+
+    const rows = j.by_regime || [];
+    if (!rows.length) {
+      chartDiv.innerHTML = `<p class="text-muted">No regime stats yet for ${agent}.</p>`;
+      tableDiv.innerHTML = '';
+      return;
+    }
+
+    const regimes = rows.map(r => r.regime);
+    const alpha = rows.map(r => ((r.agent_alpha_mean || 0) * 100));
+
+    chartDiv.innerHTML = '';
+    Plotly.newPlot(chartDiv, [{
+      type: 'bar',
+      x: regimes,
+      y: alpha,
+      text: alpha.map(v => `${v.toFixed(2)}%`),
+      textposition: 'auto',
+      marker: { color: alpha.map(v => v >= 0 ? '#22c55e' : '#ef4444') },
+      hovertemplate: '%{x}<br>Alpha(mean): %{y:.2f}%<extra></extra>'
+    }], {
+      title: `${j.agent} — Mean Alpha vs SPY by Regime`,
+      yaxis: { title: 'Alpha (mean return diff, %)' },
+      margin: { t: 40, l: 60, r: 20, b: 60 },
+      height: 320,
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)'
+    }, { responsive: true });
+
+    const fmtPct = (x) => `${((x || 0)*100).toFixed(2)}%`;
+    let html = `
+      <div class="table-responsive">
+      <table class="table table-sm table-hover">
+        <thead>
+          <tr>
+            <th>Regime</th>
+            <th>Agent days</th>
+            <th>Agent mean</th>
+            <th>SPY mean</th>
+            <th>Alpha mean</th>
+          </tr>
+        </thead><tbody>
+    `;
+    rows.forEach(r => {
+      const alphaVal = (r.agent_alpha_mean || 0) * 100;
+      const alphaColor = alphaVal >= 0 ? 'text-success' : 'text-danger';
+      html += `
+        <tr>
+          <td><span class="badge bg-secondary">${r.regime}</span></td>
+          <td>${r.agent_days || 0}</td>
+          <td>${fmtPct(r.agent_mean)}</td>
+          <td>${fmtPct(r.spy_mean)}</td>
+          <td><strong class="${alphaColor}">${fmtPct(r.agent_alpha_mean)}</strong></td>
+        </tr>
+      `;
+    });
+    html += `</tbody></table></div>`;
+    tableDiv.innerHTML = html;
+  };
+
+  if (!sel.options.length) {
+    const agents = await loadAgents();
+    if (agents.length === 0) {
+      chartDiv.innerHTML = '<p class="text-muted">No agents registered yet.</p>';
+      return;
+    }
+    agents.forEach(a => {
+      const opt = document.createElement('option');
+      opt.value = a;
+      opt.textContent = a.replace('Agent', '');
+      sel.appendChild(opt);
+    });
+  }
+
+  if (btn) btn.onclick = render;
+  sel.onchange = render;
+  await render();
+})();
+</script>
 {% endblock %}

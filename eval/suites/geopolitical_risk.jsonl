@@ -1,0 +1,1 @@
+{"id":"geo_smoke","input":{},"schema":{"type":"list","item":{"type":"dict","required_keys":["region","risk_score","headline"]}}}

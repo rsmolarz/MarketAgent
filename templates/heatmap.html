@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}Forward Return Heatmap - Market Inefficiency Agent Platform{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2 class="mb-1">
+                        <i data-feather="grid" class="me-2"></i>
+                        Agent Forward Returns Heatmap
+                    </h2>
+                    <p class="text-muted mb-0">Mean forward returns by agent and time horizon</p>
+                </div>
+                <div>
+                    <button class="btn btn-outline-primary" onclick="loadHeatmap()">
+                        <i data-feather="refresh-cw" class="me-1"></i>
+                        Refresh
+                    </button>
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary ms-2">
+                        <i data-feather="arrow-left" class="me-1"></i>
+                        Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i data-feather="bar-chart-2" class="me-2"></i>
+                        Forward Return Matrix
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div id="heatmap-loading" class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2 text-muted">Loading heatmap data...</p>
+                    </div>
+                    <div id="heatmap-container" style="display: none;">
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-hover" id="heatmap-table">
+                                <thead class="table-dark">
+                                </thead>
+                                <tbody>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div id="heatmap-error" style="display: none;" class="alert alert-warning">
+                        <i data-feather="alert-triangle" class="me-2"></i>
+                        <span id="heatmap-error-text"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h6 class="mb-0">Legend</h6>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex align-items-center gap-4">
+                        <div class="d-flex align-items-center">
+                            <div style="width: 24px; height: 24px; background: #22c55e; border-radius: 4px;" class="me-2"></div>
+                            <span>Strong Positive (&gt;2%)</span>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <div style="width: 24px; height: 24px; background: #86efac; border-radius: 4px;" class="me-2"></div>
+                            <span>Positive (0-2%)</span>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <div style="width: 24px; height: 24px; background: #fef3c7; border-radius: 4px;" class="me-2"></div>
+                            <span>Neutral (-1% to 0%)</span>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <div style="width: 24px; height: 24px; background: #fca5a5; border-radius: 4px;" class="me-2"></div>
+                            <span>Negative (-2% to -1%)</span>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <div style="width: 24px; height: 24px; background: #ef4444; border-radius: 4px;" class="me-2"></div>
+                            <span>Strong Negative (&lt;-2%)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+function getColor(val) {
+    if (val > 0.02) return '#22c55e';
+    if (val > 0) return '#86efac';
+    if (val > -0.01) return '#fef3c7';
+    if (val > -0.02) return '#fca5a5';
+    return '#ef4444';
+}
+
+function loadHeatmap() {
+    const loading = document.getElementById('heatmap-loading');
+    const container = document.getElementById('heatmap-container');
+    const errorDiv = document.getElementById('heatmap-error');
+    
+    loading.style.display = 'block';
+    container.style.display = 'none';
+    errorDiv.style.display = 'none';
+
+    fetch('/api/eval/heatmap')
+        .then(r => r.json())
+        .then(data => {
+            loading.style.display = 'none';
+            
+            if (data.error) {
+                errorDiv.style.display = 'block';
+                document.getElementById('heatmap-error-text').textContent = data.error;
+                return;
+            }
+            
+            container.style.display = 'block';
+            
+            const cols = data.columns || [];
+            const agents = data.agents || [];
+            const vals = data.values || [];
+            
+            const table = document.getElementById('heatmap-table');
+            const thead = table.querySelector('thead');
+            const tbody = table.querySelector('tbody');
+            
+            let headerHtml = '<tr><th>Agent</th>';
+            cols.forEach(c => {
+                const label = c.replace('fwd_ret_', '').replace('d', ' Day');
+                headerHtml += `<th class="text-center">${label}</th>`;
+            });
+            headerHtml += '</tr>';
+            thead.innerHTML = headerHtml;
+            
+            let bodyHtml = '';
+            for (let i = 0; i < agents.length; i++) {
+                bodyHtml += `<tr><td class="fw-bold">${agents[i]}</td>`;
+                for (let j = 0; j < cols.length; j++) {
+                    const v = vals[i][j] || 0;
+                    const color = getColor(v);
+                    const textColor = (v > 0.02 || v < -0.02) ? 'white' : 'black';
+                    bodyHtml += `<td class="text-center" style="background-color: ${color}; color: ${textColor}; font-weight: 500;">
+                        ${(v * 100).toFixed(2)}%
+                    </td>`;
+                }
+                bodyHtml += '</tr>';
+            }
+            tbody.innerHTML = bodyHtml;
+            
+            if (typeof feather !== 'undefined') {
+                feather.replace();
+            }
+        })
+        .catch(err => {
+            loading.style.display = 'none';
+            errorDiv.style.display = 'block';
+            document.getElementById('heatmap-error-text').textContent = 'Failed to load heatmap: ' + err.message;
+        });
+}
+
+document.addEventListener('DOMContentLoaded', loadHeatmap);
+</script>
+{% endblock %}

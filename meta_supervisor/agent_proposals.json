@@ -1,0 +1,46 @@
+{
+  "generated_at": "2026-01-04T23:51:42.881754Z",
+  "proposals": [
+    {
+      "agent_name": "OptionsSkewFundingAgent",
+      "category": "Cross-market inefficiency",
+      "markets": [
+        "BTC",
+        "ETH"
+      ],
+      "horizon": "hours",
+      "inefficiency_type": "Derivatives mispricing",
+      "data_required": [
+        "perp funding rates",
+        "options IV skew",
+        "open interest by strike"
+      ],
+      "why_missing": "Current agents treat funding and options independently",
+      "expected_edge": "Funding extremes + skew inversion precede sharp mean reversion",
+      "risk_profile": "Event-driven, convex",
+      "test_plan": "Paper trade funding extremes when 25-delta skew flips sign",
+      "confidence": 0.82
+    },
+    {
+      "agent_name": "ForcedSellerLiquidityAgent",
+      "category": "Distressed asset flow",
+      "markets": [
+        "Crypto",
+        "Rates",
+        "Equities"
+      ],
+      "horizon": "intraday",
+      "inefficiency_type": "Liquidity shock",
+      "data_required": [
+        "order book depth",
+        "liquidation feeds",
+        "ETF flow data"
+      ],
+      "why_missing": "No agent currently models forced sellers explicitly",
+      "expected_edge": "Forced selling creates short-lived price dislocations",
+      "risk_profile": "High volatility, short duration",
+      "test_plan": "Simulate entries after liquidation clusters",
+      "confidence": 0.76
+    }
+  ]
+}

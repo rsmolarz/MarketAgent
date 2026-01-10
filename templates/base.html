@@ -59,6 +59,18 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link{% if 'deals' in request.endpoint %} active{% endif %}" href="{{ url_for('deals.deal_list') }}">
+                            <i data-feather="briefcase" class="me-1"></i>
+                            Deals
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link{% if 'distressed' in request.endpoint %} active{% endif %}" href="{{ url_for('distressed_platform.distressed_dashboard') }}">
+                            <i data-feather="trending-down" class="me-1"></i>
+                            Distressed
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link{% if request.endpoint == 'dashboard.system_status' %} active{% endif %}" href="{{ url_for('dashboard.system_status') }}">
                             <i data-feather="activity" class="me-1"></i>
                             System Status

@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-01-08T15:41:25.422101",
+  "portfolio_value": 1000000,
+  "targets": {
+    "YIELD_CURVE": 199999.99999999997
+  },
+  "cash": 800000.0,
+  "agent_contributions": {
+    "BondStressAgent": 0.7200000000000002
+  }
+}

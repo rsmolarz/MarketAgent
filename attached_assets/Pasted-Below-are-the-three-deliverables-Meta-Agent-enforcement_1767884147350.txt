@@ -1,0 +1,515 @@
+Below are the three deliverables (Meta-Agent enforcement hook + Forward-return heatmap + Regime overlay) as a drop-in set that works with your current architecture:
+
+Findings live in DB (models.Finding)
+
+SPY price comes from yfinance (same as your dashboard overlay)
+
+Scheduler reads agent_schedule.json (or can)
+
+This creates a closed loop:
+
+agents → findings → forward returns → ranking → disable/weight → scheduler enforcement → dashboard visualization
+
+0) One assumption (matches your repo)
+
+You have agent_schedule.json and/or scheduler config controlling enabled/disabled and interval.
+
+You have models.Finding with at least: agent_name, timestamp, severity, symbol, title, description, finding_metadata.
+
+If your schedule file format differs, adjust the JSON update function in Meta-Agent (shown below).
+
+1️⃣ Meta-Agent enforcement hook (auto-disable weak agents)
+A. Create: meta/meta_agent.py
+import json
+import math
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Dict, List, Tuple, Optional
+
+import pandas as pd
+
+from models import db, Finding
+
+
+SEVERITY_WEIGHT = {
+    "low": 0.5,
+    "medium": 1.0,
+    "high": 1.5,
+    "critical": 2.0,
+}
+
+DEFAULT_HORIZONS = [1, 5, 20]  # trading days
+DEFAULT_SYMBOL_FOR_LABELING = "SPY"  # benchmark for forward returns
+
+
+@dataclass
+class AgentScore:
+    agent: str
+    n: int
+    score: float
+    avg_ret_5d: float
+    hit_rate_5d: float
+
+
+def _load_spy(start: str = "2007-01-01") -> pd.DataFrame:
+    import yfinance as yf
+    df = yf.download("SPY", start=start, progress=False)
+    df = df.reset_index()
+    df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
+    df = df[["Date", "Close"]].dropna()
+    df = df.sort_values("Date")
+    return df
+
+
+def _nearest_trading_index(dates: pd.Series, t: pd.Timestamp) -> Optional[int]:
+    # first date >= t
+    idx = dates.searchsorted(t)
+    if idx >= len(dates):
+        return None
+    return int(idx)
+
+
+def label_forward_returns(
+    events: pd.DataFrame,
+    spy: pd.DataFrame,
+    horizons: List[int] = None,
+) -> pd.DataFrame:
+    horizons = horizons or DEFAULT_HORIZONS
+
+    spy_dates = spy["Date"].values
+    spy_close = spy["Close"].values
+
+    out_rows = []
+    for _, e in events.iterrows():
+        ts = pd.to_datetime(e["timestamp"]).to_pydatetime()
+        t = pd.Timestamp(ts).tz_localize(None)
+
+        i0 = _nearest_trading_index(pd.Series(spy_dates), t)
+        if i0 is None:
+            continue
+
+        p0 = float(spy_close[i0])
+
+        row = dict(e)
+        for h in horizons:
+            i1 = i0 + h
+            if i1 >= len(spy_close):
+                row[f"fwd_ret_{h}d"] = None
+            else:
+                p1 = float(spy_close[i1])
+                row[f"fwd_ret_{h}d"] = (p1 / p0) - 1.0
+        out_rows.append(row)
+
+    return pd.DataFrame(out_rows)
+
+
+def compute_agent_scores(
+    labeled: pd.DataFrame,
+    min_signals: int = 15,
+    primary_horizon: int = 5,
+) -> List[AgentScore]:
+    if labeled.empty:
+        return []
+
+    hcol = f"fwd_ret_{primary_horizon}d"
+    labeled = labeled.dropna(subset=[hcol])
+
+    scores: List[AgentScore] = []
+
+    for agent, g in labeled.groupby("agent_name"):
+        n = len(g)
+        if n < min_signals:
+            continue
+
+        # Severity-weighted returns
+        w = g["severity"].map(lambda s: SEVERITY_WEIGHT.get(str(s).lower(), 1.0)).astype(float)
+        r = g[hcol].astype(float)
+
+        wr = (w * r)
+        avg = float(wr.sum() / max(w.sum(), 1e-9))
+        hit = float((r > 0).mean())
+
+        # Conservative score: reward positive avg + hit rate, penalize volatility
+        vol = float(r.std(ddof=1)) if n > 1 else 0.0
+        sharpe_like = avg / (vol + 1e-6)
+
+        # Blend (tuneable)
+        score = (0.55 * avg) + (0.35 * (hit - 0.5)) + (0.10 * sharpe_like)
+
+        scores.append(AgentScore(
+            agent=agent,
+            n=n,
+            score=float(score),
+            avg_ret_5d=avg,
+            hit_rate_5d=hit,
+        ))
+
+    scores.sort(key=lambda x: x.score, reverse=True)
+    return scores
+
+
+def write_schedule_updates(
+    scores: List[AgentScore],
+    schedule_path: str = "agent_schedule.json",
+    disable_bottom_quantile: float = 0.25,
+    min_signals: int = 15,
+) -> Dict:
+    """
+    Updates schedule JSON with:
+      - disabled: true/false
+      - weight: float
+    Keeps everything else untouched.
+    """
+    try:
+        with open(schedule_path, "r") as f:
+            schedule = json.load(f)
+    except FileNotFoundError:
+        schedule = {}
+
+    eligible = [s for s in scores if s.n >= min_signals]
+    if not eligible:
+        return schedule
+
+    cutoff_index = max(0, int(math.floor(len(eligible) * (1.0 - disable_bottom_quantile))) - 1)
+    cutoff_score = eligible[cutoff_index].score if eligible else -999
+
+    top_score = eligible[0].score
+    bottom_score = eligible[-1].score
+    denom = (top_score - bottom_score) if (top_score != bottom_score) else 1.0
+
+    for s in eligible:
+        # normalize weight ~ [0.25, 1.75]
+        norm = (s.score - bottom_score) / denom
+        weight = 0.25 + 1.50 * norm
+
+        disabled = (s.score < cutoff_score)
+
+        # schedule format options:
+        # Option A: schedule is dict keyed by agent name
+        if isinstance(schedule, dict):
+            schedule.setdefault(s.agent, {})
+            schedule[s.agent]["disabled"] = bool(disabled)
+            schedule[s.agent]["weight"] = float(weight)
+            schedule[s.agent]["meta"] = {
+                "score": s.score,
+                "n": s.n,
+                "avg_ret_5d": s.avg_ret_5d,
+                "hit_rate_5d": s.hit_rate_5d,
+                "asof": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
+            }
+
+    with open(schedule_path, "w") as f:
+        json.dump(schedule, f, indent=2, sort_keys=True)
+
+    return schedule
+
+
+def run_meta_agent(
+    lookback_days: int = 365 * 5,
+    schedule_path: str = "agent_schedule.json",
+    min_signals: int = 15,
+) -> List[AgentScore]:
+    """
+    Pull findings from DB, label forward returns vs SPY, compute ranking,
+    write schedule updates (weights + disabled flags).
+    """
+    cutoff = datetime.utcnow() - timedelta(days=lookback_days)
+
+    q = (
+        db.session.query(Finding)
+        .filter(Finding.timestamp >= cutoff)
+        .order_by(Finding.timestamp.asc())
+    )
+    rows = []
+    for f in q.all():
+        rows.append({
+            "id": f.id,
+            "timestamp": f.timestamp,
+            "agent_name": f.agent_name,
+            "severity": f.severity,
+            "symbol": f.symbol,
+            "title": f.title,
+        })
+
+    events = pd.DataFrame(rows)
+    if events.empty:
+        return []
+
+    spy = _load_spy(start="2007-01-01")
+    labeled = label_forward_returns(events, spy, horizons=DEFAULT_HORIZONS)
+
+    scores = compute_agent_scores(labeled, min_signals=min_signals, primary_horizon=5)
+
+    write_schedule_updates(
+        scores,
+        schedule_path=schedule_path,
+        disable_bottom_quantile=0.25,
+        min_signals=min_signals,
+    )
+    return scores
+
+B. Enforce it in scheduler (non-breaking)
+
+In scheduler.py, inside whatever method actually launches jobs (often start_agent()), add a single guard.
+
+Add helper in scheduler.py
+import json
+
+def _is_agent_disabled(agent_name: str, schedule_path: str = "agent_schedule.json") -> bool:
+    try:
+        with open(schedule_path, "r") as f:
+            sched = json.load(f)
+        cfg = sched.get(agent_name, {})
+        return bool(cfg.get("disabled", False))
+    except Exception:
+        return False
+
+Use it when scheduling or running an agent
+if _is_agent_disabled(agent_name):
+    self.logger.info(f"Meta-Agent disabled {agent_name}; skipping schedule.")
+    return
+
+
+That’s it: weak agents stop running without breaking live operation.
+
+C. Schedule the Meta-Agent to run
+
+If you already have _run_meta_supervisor, call run_meta_agent() inside it.
+
+Example:
+
+def _run_meta_supervisor(self):
+    from meta.meta_agent import run_meta_agent
+    scores = run_meta_agent(lookback_days=365*5, schedule_path="agent_schedule.json")
+    self.logger.info(f"Meta-Agent updated schedule for {len(scores)} agents.")
+
+2️⃣ Forward return heatmap (1D / matrix view)
+A. Add endpoint: app.py
+@app.route("/api/eval/heatmap")
+def eval_heatmap():
+    from meta.meta_agent import _load_spy, label_forward_returns
+    import pandas as pd
+    from models import Finding
+
+    spy = _load_spy(start="2007-01-01")
+
+    findings = (
+        Finding.query
+        .order_by(Finding.timestamp.asc())
+        .all()
+    )
+
+    rows = [{
+        "timestamp": f.timestamp,
+        "agent_name": f.agent_name,
+        "severity": f.severity,
+        "symbol": f.symbol,
+        "title": f.title,
+    } for f in findings]
+
+    events = pd.DataFrame(rows)
+    labeled = label_forward_returns(events, spy, horizons=[1, 5, 20])
+
+    # agent x horizon mean forward returns
+    pivot = labeled.pivot_table(
+        index="agent_name",
+        values=["fwd_ret_1d", "fwd_ret_5d", "fwd_ret_20d"],
+        aggfunc="mean"
+    ).fillna(0.0)
+
+    return jsonify({
+        "agents": pivot.index.tolist(),
+        "columns": pivot.columns.tolist(),
+        "values": pivot.values.tolist(),
+    })
+
+B. Add a simple page: templates/heatmap.html
+<!doctype html>
+<html>
+<head>
+  <title>Forward Return Heatmap</title>
+  <style>
+    table { border-collapse: collapse; font-family: Arial; }
+    td, th { border: 1px solid #ddd; padding: 6px 10px; text-align: right; }
+    th { background: #f5f5f5; }
+  </style>
+</head>
+<body>
+<h2>Agent Forward Returns (mean)</h2>
+<div id="tbl"></div>
+
+<script>
+fetch("/api/eval/heatmap").then(r=>r.json()).then(d=>{
+  const cols = d.columns;
+  const agents = d.agents;
+  const vals = d.values;
+
+  let html = "<table><thead><tr><th>Agent</th>";
+  cols.forEach(c => html += `<th>${c}</th>`);
+  html += "</tr></thead><tbody>";
+
+  for (let i=0; i<agents.length; i++){
+    html += `<tr><td style="text-align:left">${agents[i]}</td>`;
+    for (let j=0; j<cols.length; j++){
+      const v = vals[i][j];
+      html += `<td>${(v*100).toFixed(2)}%</td>`;
+    }
+    html += "</tr>";
+  }
+  html += "</tbody></table>";
+  document.getElementById("tbl").innerHTML = html;
+});
+</script>
+</body>
+</html>
+
+C. Route it
+@app.route("/heatmap")
+def heatmap_page():
+    return render_template("heatmap.html")
+
+3️⃣ Regime detection overlay (risk-on / risk-off)
+
+This is a lightweight regime classifier that works from SPY + VIX.
+
+A. Create meta/regime.py
+import pandas as pd
+
+def compute_regime(spy: pd.DataFrame, vix: pd.DataFrame) -> pd.DataFrame:
+    """
+    Output: Date, regime in {"risk_on","risk_off","transition"}
+    Rules:
+      - risk_on: SPY above 200d MA and VIX < 20
+      - risk_off: SPY below 200d MA or VIX >= 25
+      - transition: everything else
+    """
+    s = spy.copy()
+    s["Date"] = pd.to_datetime(s["Date"]).dt.tz_localize(None)
+    s = s.sort_values("Date")
+    s["ma200"] = s["Close"].rolling(200).mean()
+
+    v = vix.copy()
+    v["Date"] = pd.to_datetime(v["Date"]).dt.tz_localize(None)
+    v = v.sort_values("Date")[["Date","Close"]].rename(columns={"Close":"VIX"})
+
+    df = pd.merge_asof(s[["Date","Close","ma200"]], v, on="Date", direction="backward")
+    df = df.dropna()
+
+    def label(row):
+        above = row["Close"] >= row["ma200"]
+        vix = row["VIX"]
+        if above and vix < 20:
+            return "risk_on"
+        if (not above) or vix >= 25:
+            return "risk_off"
+        return "transition"
+
+    df["regime"] = df.apply(label, axis=1)
+    return df[["Date","regime","VIX","Close","ma200"]]
+
+B. Expose regimes endpoint
+@app.route("/api/eval/regimes")
+def regimes():
+    import yfinance as yf
+    import pandas as pd
+    from meta.regime import compute_regime
+
+    spy = yf.download("SPY", start="2007-01-01", progress=False).reset_index()[["Date","Close"]]
+    vix = yf.download("^VIX", start="2007-01-01", progress=False).reset_index()[["Date","Close"]]
+
+    df = compute_regime(spy, vix)
+    # compact payload
+    return jsonify([
+        {"date": r["Date"].isoformat(), "regime": r["regime"]}
+        for _, r in df.iterrows()
+    ])
+
+C. Overlay regimes on your existing SPY chart (minimal)
+
+In dashboard.html, after fetching signals, also fetch regimes and use it to color background bands or filter markers.
+
+Fast approach (no fancy band rendering): show regime label in tooltip by nearest date.
+
+Add to your dashboard JS:
+
+Promise.all([
+  fetch("/api/dashboard/signals").then(r=>r.json()),
+  fetch("/api/eval/regimes").then(r=>r.json())
+]).then(([signals, regimes]) => {
+  // build a quick map date->regime
+  const reg = regimes.map(x => ({ t: new Date(x.date), r: x.regime }));
+
+  function nearestRegime(t){
+    // simple linear scan; optimize later if needed
+    let best = reg[0];
+    for (const x of reg){
+      if (x.t <= t) best = x;
+      else break;
+    }
+    return best?.r || "unknown";
+  }
+
+  // when building markers:
+  const markers = signals.map(s => {
+    const ts = new Date(s.timestamp);
+    return {
+      x: ts,
+      y: prices.find(p => p.x >= ts)?.y,
+      label: `[${nearestRegime(ts)}] ${s.title}`,
+      borderColor: severityColor[s.severity]
+    }
+  }).filter(m => m.y);
+
+  // keep rest as-is
+});
+
+
+That gives you regime-aware signal inspection immediately.
+
+How this helps backtesting (directly)
+
+Forward labeling makes every finding measurable.
+
+Heatmap makes performance visible per horizon.
+
+Regime overlay prevents false confidence (agents often only work in specific regimes).
+
+Meta-Agent enforcement stops weak agents from polluting live output.
+
+This is structural backtesting capability, not “yet another report.”
+
+Run checklist (so you know it’s working)
+
+Confirm endpoints:
+
+/status
+
+/api/dashboard/signals
+
+/api/eval/heatmap
+
+/api/eval/regimes
+
+Confirm pages:
+
+/dashboard
+
+/heatmap
+
+Confirm Meta-Agent writes schedule updates:
+
+python - << 'EOF'
+from meta.meta_agent import run_meta_agent
+scores = run_meta_agent()
+print("scores:", len(scores))
+print(scores[:5])
+EOF
+
+
+Confirm scheduler respects disable flag:
+
+Set one agent disabled in agent_schedule.json
+
+Restart app
+
+Ensure logs show “Meta-Agent disabled X; skipping schedule.”

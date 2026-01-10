@@ -1,0 +1,892 @@
+Below is the exact implementation plan + code to deliver all four items:
+
+TA chart overlay on dashboard (candles + RSI + signal markers)
+
+TA → 3-LLM consensus hook (agree → boost, conflict → uncertainty spike)
+
+TA regime attribution (trend vs mean-reversion) feeding rotation
+
+TA backtest report vs SPY
+
+I’m writing this to fit your existing architecture (Flask + templates, YahooFinanceClient, Finding table, scheduler).
+
+0) Where these files go
+
+Add these new files:
+
+ta/indicators.py
+
+ta/regime.py
+
+services/ta_overlay_service.py
+
+services/llm_council.py
+
+services/llm_consensus_hook.py
+
+backtests/ta_backtest_report.py
+
+Modify these existing files:
+
+agents/technical_analysis_agent.py (you already created; small update to include richer marker metadata)
+
+app.py (or wherever your Flask routes live) OR routes/dashboard.py (wherever / dashboard is defined)
+
+templates/dashboard.html (add a TA section + JS)
+
+meta/regime_rotation.py (add TA regime input)
+
+scheduler.py (wire consensus hook + TA regime rotation input)
+
+If your routes aren’t in app.py, use grep to find them:
+
+grep -R "render_template(\"dashboard.html" -n .
+grep -R "@app.route" -n . | head
+grep -R "recent_findings" -n templates static services app* routes*
+
+1) TA Overlay on Dashboard (Candles + RSI + Signal Markers)
+1.1 TA indicator utilities
+ta/indicators.py
+import pandas as pd
+
+def rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    delta = close.diff()
+    gain = delta.where(delta > 0, 0.0).rolling(period).mean()
+    loss = (-delta.where(delta < 0, 0.0)).rolling(period).mean()
+    rs = gain / loss.replace(0, 1e-9)
+    return 100 - (100 / (1 + rs))
+
+def ema(series: pd.Series, span: int) -> pd.Series:
+    return series.ewm(span=span, adjust=False).mean()
+
+def macd(close: pd.Series, fast=12, slow=26, signal=9):
+    fast_ema = ema(close, fast)
+    slow_ema = ema(close, slow)
+    macd_line = fast_ema - slow_ema
+    signal_line = ema(macd_line, signal)
+    hist = macd_line - signal_line
+    return macd_line, signal_line, hist
+
+def bollinger(close: pd.Series, window=20, n_std=2.0):
+    ma = close.rolling(window).mean()
+    sd = close.rolling(window).std()
+    upper = ma + n_std * sd
+    lower = ma - n_std * sd
+    return ma, upper, lower
+
+def ma(close: pd.Series, window: int):
+    return close.rolling(window).mean()
+
+1.2 TA overlay service (returns JSON for chart)
+services/ta_overlay_service.py
+from datetime import datetime
+from typing import Dict, Any, List
+import pandas as pd
+
+from data_sources.yahoo_finance_client import YahooFinanceClient
+from ta.indicators import rsi, macd, bollinger, ma
+
+DEFAULT_SYMBOL = "SPY"
+
+def _df_to_ohlc(df: pd.DataFrame) -> Dict[str, list]:
+    df = df.dropna().copy()
+    idx = df.index
+    # ensure datetime serialization
+    ts = [x.isoformat() if hasattr(x, "isoformat") else str(x) for x in idx]
+    return {
+        "t": ts,
+        "open": df["Open"].astype(float).tolist(),
+        "high": df["High"].astype(float).tolist(),
+        "low": df["Low"].astype(float).tolist(),
+        "close": df["Close"].astype(float).tolist(),
+        "volume": (df["Volume"].astype(float).tolist() if "Volume" in df.columns else []),
+    }
+
+def _compute_ta(df: pd.DataFrame) -> Dict[str, Any]:
+    close = df["Close"].astype(float)
+    out = {}
+
+    out["rsi14"] = rsi(close, 14).fillna(50.0).astype(float).tolist()
+
+    macd_line, signal_line, hist = macd(close)
+    out["macd"] = macd_line.fillna(0.0).astype(float).tolist()
+    out["macd_signal"] = signal_line.fillna(0.0).astype(float).tolist()
+    out["macd_hist"] = hist.fillna(0.0).astype(float).tolist()
+
+    ma20, bb_u, bb_l = bollinger(close, 20, 2.0)
+    out["ma20"] = ma20.fillna(method="bfill").fillna(method="ffill").astype(float).tolist()
+    out["bb_u"] = bb_u.fillna(method="bfill").fillna(method="ffill").astype(float).tolist()
+    out["bb_l"] = bb_l.fillna(method="bfill").fillna(method="ffill").astype(float).tolist()
+
+    out["ma50"] = ma(close, 50).fillna(method="bfill").fillna(method="ffill").astype(float).tolist()
+    out["ma200"] = ma(close, 200).fillna(method="bfill").fillna(method="ffill").astype(float).tolist()
+
+    return out
+
+def _find_markers_from_findings(findings: List[dict], symbol: str) -> List[dict]:
+    """
+    Convert Finding rows into marker points for the chart.
+    Expect Finding.finding_metadata may include a TA signal snapshot.
+    """
+    markers = []
+    for f in findings:
+        if (f.get("symbol") or "").upper() != symbol.upper():
+            continue
+        ts = f.get("timestamp")
+        if not ts:
+            continue
+        sev = f.get("severity", "medium")
+        markers.append({
+            "t": ts,
+            "title": f.get("title", "Signal"),
+            "severity": sev,
+            "confidence": float(f.get("confidence") or 0.5),
+            "agent": f.get("agent_name") or f.get("agent") or "Unknown",
+        })
+    return markers
+
+def build_ta_overlay(symbol: str, period: str, findings: List[dict]) -> Dict[str, Any]:
+    yahoo = YahooFinanceClient()
+    df = yahoo.get_price_data(symbol, period=period)
+    if df is None or df.empty or len(df) < 60:
+        return {"ok": False, "reason": "insufficient_price_data"}
+
+    ohlc = _df_to_ohlc(df)
+    ta = _compute_ta(df)
+    markers = _find_markers_from_findings(findings, symbol)
+
+    return {
+        "ok": True,
+        "symbol": symbol,
+        "period": period,
+        "ohlc": ohlc,
+        "ta": ta,
+        "markers": markers,
+        "generated_at": datetime.utcnow().isoformat(),
+    }
+
+1.3 Route to serve chart JSON
+
+Add a route (wherever your Flask routes are):
+
+from flask import jsonify, request
+from services.ta_overlay_service import build_ta_overlay
+from models import Finding
+
+@app.route("/api/ta_overlay")
+def api_ta_overlay():
+    symbol = request.args.get("symbol", "SPY")
+    period = request.args.get("period", "6mo")
+
+    # pull recent findings for markers
+    rows = (
+        Finding.query
+        .order_by(Finding.timestamp.desc())
+        .limit(500)
+        .all()
+    )
+    findings = []
+    for r in rows:
+        findings.append({
+            "id": getattr(r, "id", None),
+            "title": r.title,
+            "severity": r.severity,
+            "confidence": r.confidence,
+            "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+            "symbol": r.symbol,
+            "agent_name": r.agent_name,
+        })
+
+    payload = build_ta_overlay(symbol=symbol, period=period, findings=findings)
+    return jsonify(payload)
+
+1.4 Dashboard HTML + JS (Plotly candlesticks + RSI pane + markers)
+
+In templates/dashboard.html, add a section:
+
+<hr/>
+<h3>Technical Analysis</h3>
+
+<div style="display:flex; gap:12px; align-items:center; margin-bottom:8px;">
+  <label>Symbol</label>
+  <input id="taSymbol" value="SPY" style="width:120px;">
+  <label>Period</label>
+  <select id="taPeriod">
+    <option value="6mo">6mo</option>
+    <option value="1y">1y</option>
+    <option value="2y">2y</option>
+    <option value="5y">5y</option>
+    <option value="max">max</option>
+  </select>
+  <button id="taLoadBtn">Load</button>
+</div>
+
+<div id="taCandle" style="height:460px;"></div>
+<div id="taRSI" style="height:220px;"></div>
+
+<script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+<script>
+async function loadTA() {
+  const sym = document.getElementById("taSymbol").value.trim() || "SPY";
+  const period = document.getElementById("taPeriod").value;
+  const res = await fetch(`/api/ta_overlay?symbol=${encodeURIComponent(sym)}&period=${encodeURIComponent(period)}`);
+  const data = await res.json();
+  if (!data.ok) {
+    alert("TA overlay error: " + (data.reason || "unknown"));
+    return;
+  }
+
+  const t = data.ohlc.t;
+  const open = data.ohlc.open;
+  const high = data.ohlc.high;
+  const low = data.ohlc.low;
+  const close = data.ohlc.close;
+
+  const ma20 = data.ta.ma20;
+  const ma50 = data.ta.ma50;
+  const bb_u = data.ta.bb_u;
+  const bb_l = data.ta.bb_l;
+
+  // marker points: place at close price nearest timestamp
+  // (simple: render as annotation dots at last close; or map by timestamp if present)
+  const markerTs = (data.markers || []).map(m => m.t);
+  const markerText = (data.markers || []).map(m => `${m.severity.toUpperCase()} · ${m.agent} · ${(m.confidence*100).toFixed(0)}% · ${m.title}`);
+
+  const candleTrace = {
+    type: "candlestick",
+    x: t, open, high, low, close,
+    name: data.symbol
+  };
+
+  const ma20Trace = {type:"scatter", mode:"lines", x:t, y:ma20, name:"MA20"};
+  const ma50Trace = {type:"scatter", mode:"lines", x:t, y:ma50, name:"MA50"};
+  const bbuTrace = {type:"scatter", mode:"lines", x:t, y:bb_u, name:"BB Upper"};
+  const bblTrace = {type:"scatter", mode:"lines", x:t, y:bb_l, name:"BB Lower"};
+
+  // Signal markers: draw as vertical lines + hover text
+  const shapes = (markerTs || []).map(ts => ({
+    type: "line",
+    x0: ts, x1: ts,
+    y0: 0, y1: 1,
+    yref: "paper",
+    line: {width: 1, dash: "dot"}
+  }));
+
+  const annotations = (markerTs || []).map((ts, i) => ({
+    x: ts, y: 1.02, yref:"paper",
+    text: "●",
+    showarrow: false,
+    hovertext: markerText[i],
+    font: {size: 12}
+  }));
+
+  Plotly.newPlot("taCandle",
+    [candleTrace, ma20Trace, ma50Trace, bbuTrace, bblTrace],
+    {
+      title: `${data.symbol} Candles + Bands + MAs`,
+      shapes: shapes,
+      annotations: annotations,
+      xaxis: {rangeslider: {visible: false}},
+      margin: {t: 40, l: 40, r: 20, b: 40}
+    },
+    {displayModeBar: false}
+  );
+
+  // RSI pane
+  const rsi14 = data.ta.rsi14;
+  Plotly.newPlot("taRSI",
+    [
+      {type:"scatter", mode:"lines", x:t, y:rsi14, name:"RSI(14)"},
+      {type:"scatter", mode:"lines", x:[t[0], t[t.length-1]], y:[70, 70], name:"70"},
+      {type:"scatter", mode:"lines", x:[t[0], t[t.length-1]], y:[30, 30], name:"30"},
+    ],
+    {
+      title: "RSI(14)",
+      margin: {t: 40, l: 40, r: 20, b: 40},
+      yaxis: {range: [0, 100]}
+    },
+    {displayModeBar: false}
+  );
+}
+
+document.getElementById("taLoadBtn").addEventListener("click", loadTA);
+loadTA();
+</script>
+
+
+That gives you: candles + MA20/MA50 + Bollinger + RSI + vertical signal markers.
+
+2) TA → 3-LLM Consensus Hook (boost or uncertainty spike)
+
+You already have ai_analysis.py (Claude). We’ll create a council layer that:
+
+calls Claude + GPT + Gemini (if keys exist)
+
+normalizes each into a strict JSON verdict
+
+computes consensus + disagreement score
+
+persists result + emits uncertainty events
+
+optionally auto-email when consensus says ACT and severity is critical
+
+2.1 Council implementation
+services/llm_council.py
+import os
+import json
+import logging
+from typing import Dict, Any, List, Optional
+
+logger = logging.getLogger(__name__)
+
+def _safe_json_extract(text: str) -> Optional[dict]:
+    # Expect models to return JSON only; still protect against stray text.
+    try:
+        return json.loads(text)
+    except Exception:
+        # try to find first {...}
+        try:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start >= 0 and end > start:
+                return json.loads(text[start:end+1])
+        except Exception:
+            return None
+    return None
+
+COUNCIL_SYSTEM = """Return ONLY valid JSON with this schema:
+{
+  "verdict": "ACT" | "WATCH" | "IGNORE",
+  "confidence": 0.0-1.0,
+  "key_reasons": ["...","..."],
+  "trade_bias": "risk_on"|"risk_off"|"neutral",
+  "time_horizon": "intraday"|"swing"|"position",
+  "ta_alignment": "aligned"|"conflict"|"unknown"
+}
+No extra keys. No markdown. No prose outside JSON.
+"""
+
+def _build_prompt(finding: dict, ta_snapshot: dict) -> str:
+    return f"""
+Finding:
+title={finding.get("title")}
+severity={finding.get("severity")}
+confidence={finding.get("confidence")}
+symbol={finding.get("symbol")}
+agent={finding.get("agent_name") or finding.get("agent")}
+description={finding.get("description")}
+
+TA Snapshot (same symbol/timeframe):
+{json.dumps(ta_snapshot or {}, indent=2)}
+"""
+
+def call_claude(prompt: str) -> Optional[dict]:
+    try:
+        import anthropic
+        key = os.getenv("ANTHROPIC_API_KEY")
+        if not key:
+            return None
+        client = anthropic.Anthropic(api_key=key)
+        resp = client.messages.create(
+            model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-20250514"),
+            max_tokens=800,
+            system=COUNCIL_SYSTEM,
+            messages=[{"role":"user","content":prompt}]
+        )
+        txt = resp.content[0].text if resp.content else ""
+        return _safe_json_extract(txt)
+    except Exception as e:
+        logger.warning(f"Claude council call failed: {e}")
+        return None
+
+def call_gpt(prompt: str) -> Optional[dict]:
+    try:
+        from openai import OpenAI
+        key = os.getenv("OPENAI_API_KEY")
+        if not key:
+            return None
+        client = OpenAI(api_key=key)
+        resp = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+            messages=[
+                {"role":"system","content":COUNCIL_SYSTEM},
+                {"role":"user","content":prompt}
+            ],
+            temperature=0.2,
+            max_tokens=800
+        )
+        txt = resp.choices[0].message.content or ""
+        return _safe_json_extract(txt)
+    except Exception as e:
+        logger.warning(f"GPT council call failed: {e}")
+        return None
+
+def call_gemini(prompt: str) -> Optional[dict]:
+    try:
+        import google.generativeai as genai
+        key = os.getenv("GEMINI_API_KEY")
+        if not key:
+            return None
+        genai.configure(api_key=key)
+        model = genai.GenerativeModel(os.getenv("GEMINI_MODEL", "gemini-1.5-pro"))
+        resp = model.generate_content(COUNCIL_SYSTEM + "\n\n" + prompt)
+        txt = getattr(resp, "text", "") or ""
+        return _safe_json_extract(txt)
+    except Exception as e:
+        logger.warning(f"Gemini council call failed: {e}")
+        return None
+
+def compute_consensus(votes: List[dict]) -> Dict[str, Any]:
+    """
+    votes: list of {"model":name, "data":json}
+    """
+    # tally
+    tally = {"ACT":0, "WATCH":0, "IGNORE":0}
+    confs = []
+    align = {"aligned":0, "conflict":0, "unknown":0}
+    reasons = []
+
+    for v in votes:
+        d = v["data"]
+        verdict = d.get("verdict", "WATCH")
+        tally[verdict] = tally.get(verdict, 0) + 1
+        confs.append(float(d.get("confidence", 0.5)))
+        align[d.get("ta_alignment","unknown")] = align.get(d.get("ta_alignment","unknown"), 0) + 1
+        for r in (d.get("key_reasons") or [])[:2]:
+            reasons.append(r)
+
+    winner = max(tally.items(), key=lambda x: x[1])[0]
+    consensus_strength = max(tally.values()) / max(len(votes), 1)
+
+    # disagreement: 0=all same, 1=all different
+    unique = sum(1 for k,v in tally.items() if v > 0)
+    disagreement = (unique - 1) / 2.0  # 0..1
+
+    return {
+        "verdict": winner,
+        "consensus_strength": float(consensus_strength),
+        "mean_confidence": float(sum(confs)/len(confs)) if confs else 0.0,
+        "disagreement": float(disagreement),
+        "ta_alignment_mode": max(align.items(), key=lambda x: x[1])[0],
+        "reasons": reasons[:5]
+    }
+
+def run_council(finding: dict, ta_snapshot: dict) -> Dict[str, Any]:
+    prompt = _build_prompt(finding, ta_snapshot)
+
+    raw = []
+    c = call_claude(prompt)
+    if c: raw.append({"model":"claude", "data":c})
+    g = call_gpt(prompt)
+    if g: raw.append({"model":"gpt", "data":g})
+    m = call_gemini(prompt)
+    if m: raw.append({"model":"gemini", "data":m})
+
+    if not raw:
+        return {"ok": False, "reason": "no_llm_keys_configured"}
+
+    consensus = compute_consensus(raw)
+    return {
+        "ok": True,
+        "votes": raw,
+        "consensus": consensus
+    }
+
+2.2 Hook: compare TA vs Agent, boost or uncertainty spike
+services/llm_consensus_hook.py
+import logging
+from datetime import datetime
+from typing import Dict, Any
+from services.llm_council import run_council
+
+logger = logging.getLogger(__name__)
+
+UNCERTAINTY_SPIKE_THRESHOLD = 0.55  # tune
+ACT_THRESHOLD = 0.60                # consensus_strength threshold
+
+def _extract_ta_snapshot_from_finding(finding) -> dict:
+    # If your Finding.finding_metadata stores TA snapshots, pull them.
+    meta = getattr(finding, "finding_metadata", None) or {}
+    # common keys:
+    if isinstance(meta, dict):
+        return meta.get("ta_snapshot") or meta.get("ta") or {}
+    return {}
+
+def should_spike(consensus: dict) -> bool:
+    d = consensus.get("disagreement", 0.0)
+    align = consensus.get("ta_alignment_mode", "unknown")
+    return (d >= UNCERTAINTY_SPIKE_THRESHOLD) or (align == "conflict")
+
+def apply_confidence_boost(finding, consensus: dict):
+    """
+    If TA aligns and council says ACT with strong consensus, boost confidence slightly.
+    """
+    try:
+        if consensus.get("verdict") != "ACT":
+            return
+        if consensus.get("consensus_strength", 0) < ACT_THRESHOLD:
+            return
+        if consensus.get("ta_alignment_mode") != "aligned":
+            return
+
+        base = float(getattr(finding, "confidence", 0.5) or 0.5)
+        boosted = min(base + 0.10, 1.0)
+        setattr(finding, "confidence", boosted)
+    except Exception:
+        return
+
+def persist_council_result(db, CouncilResult, finding_id: int, payload: dict):
+    row = CouncilResult(
+        finding_id=finding_id,
+        created_at=datetime.utcnow(),
+        payload=payload
+    )
+    db.session.add(row)
+    db.session.commit()
+
+def persist_uncertainty_event(db, UncertaintyEvent, finding_id: int, payload: dict):
+    row = UncertaintyEvent(
+        finding_id=finding_id,
+        created_at=datetime.utcnow(),
+        payload=payload
+    )
+    db.session.add(row)
+    db.session.commit()
+
+def run_and_persist(db, Finding, CouncilResult, UncertaintyEvent, finding_id: int):
+    finding = Finding.query.get(finding_id)
+    if not finding:
+        return
+
+    finding_dict = {
+        "id": finding.id,
+        "title": finding.title,
+        "description": finding.description,
+        "severity": finding.severity,
+        "confidence": finding.confidence,
+        "symbol": finding.symbol,
+        "agent_name": finding.agent_name,
+        "timestamp": finding.timestamp.isoformat() if finding.timestamp else None,
+    }
+
+    ta_snapshot = _extract_ta_snapshot_from_finding(finding)
+    result = run_council(finding_dict, ta_snapshot)
+    if not result.get("ok"):
+        logger.warning(f"Council not run: {result.get('reason')}")
+        return
+
+    persist_council_result(db, CouncilResult, finding_id, result)
+
+    consensus = result["consensus"]
+    if should_spike(consensus):
+        persist_uncertainty_event(db, UncertaintyEvent, finding_id, {
+            "type": "llm_uncertainty_spike",
+            "consensus": consensus
+        })
+
+    apply_confidence_boost(finding, consensus)
+    db.session.commit()
+
+2.3 Persist council results (DB models)
+
+Add to models.py:
+
+from sqlalchemy.dialects.postgresql import JSONB
+
+class CouncilResult(db.Model):
+    __tablename__ = "council_results"
+    id = db.Column(db.Integer, primary_key=True)
+    finding_id = db.Column(db.Integer, db.ForeignKey("findings.id"), nullable=False, index=True)
+    created_at = db.Column(db.DateTime, nullable=False)
+    payload = db.Column(JSONB, nullable=False)
+
+class UncertaintyEvent(db.Model):
+    __tablename__ = "uncertainty_events"
+    id = db.Column(db.Integer, primary_key=True)
+    finding_id = db.Column(db.Integer, db.ForeignKey("findings.id"), nullable=True, index=True)
+    created_at = db.Column(db.DateTime, nullable=False)
+    payload = db.Column(JSONB, nullable=False)
+
+
+If you’re on SQLite, replace JSONB with db.JSON.
+
+You’ll need a migration (or quick create). If you’re not using Alembic, simplest is:
+
+delete DB and recreate (dev)
+
+or manually create tables
+
+2.4 Automatically run council on critical findings + email on ACT consensus
+
+Modify your scheduler _run_agent right after committing findings.
+
+Add (near the section where you store findings):
+
+import threading
+from services.llm_consensus_hook import run_and_persist
+
+# after db.session.commit() or after adding findings rows:
+db.session.commit()
+
+# AUTO: trigger council on critical findings
+try:
+    from models import CouncilResult, UncertaintyEvent
+    critical_ids = []
+    if findings:
+        # pull IDs after commit by re-querying last inserted rows
+        # simplest: query last N findings for this agent & symbol window
+        recent = (
+            Finding.query
+            .filter_by(agent_name=agent_name)
+            .order_by(Finding.timestamp.desc())
+            .limit(25)
+            .all()
+        )
+        for r in recent:
+            if r.severity == "critical":
+                critical_ids.append(r.id)
+
+    for fid in set(critical_ids):
+        def _bg(fid=fid):
+            with self.app.app_context():
+                from models import db, Finding, CouncilResult, UncertaintyEvent
+                run_and_persist(db, Finding, CouncilResult, UncertaintyEvent, fid)
+
+                # optional: email on ACT consensus
+                from services.alert_email_service import maybe_email_consensus_act
+                maybe_email_consensus_act(fid)
+
+        threading.Thread(target=_bg, daemon=True).start()
+
+except Exception as e:
+    logger.warning(f"Council auto-run hook failed: {e}")
+
+
+Now add services/alert_email_service.py:
+
+from models import db, CouncilResult, Finding
+from notifiers.email_meta import send_meta_email
+
+WHITELIST_ONLY = True
+
+def maybe_email_consensus_act(finding_id: int):
+    f = Finding.query.get(finding_id)
+    if not f:
+        return
+    r = (CouncilResult.query
+         .filter_by(finding_id=finding_id)
+         .order_by(CouncilResult.created_at.desc())
+         .first())
+    if not r:
+        return
+
+    consensus = (r.payload or {}).get("consensus", {})
+    if consensus.get("verdict") != "ACT":
+        return
+    if float(consensus.get("consensus_strength", 0)) < 0.60:
+        return
+
+    subject = f"[ACT] {f.title} ({f.symbol})"
+    text = (
+        f"Finding: {f.title}\n"
+        f"Symbol: {f.symbol}\n"
+        f"Severity: {f.severity}\n"
+        f"Agent: {f.agent_name}\n\n"
+        f"Consensus:\n{consensus}\n\n"
+        f"Description:\n{f.description}\n"
+    )
+    html = "<pre>" + text + "</pre>"
+    send_meta_email(subject, text, html)
+
+3) TA Regime Attribution (Trend vs Mean-Reversion) → Regime Rotation
+3.1 TA regime classifier
+ta/regime.py
+import pandas as pd
+import numpy as np
+from ta.indicators import ma, rsi
+
+def classify_ta_regime(df: pd.DataFrame) -> dict:
+    """
+    Returns: {"ta_regime": "trend"|"mean_reversion"|"mixed", "confidence": 0..1}
+    Heuristic:
+    - trend if MA200 slope positive and price above MA200 and RSI not choppy
+    - mean-reversion if price oscillates around MA20 and RSI mean-reverts frequently
+    """
+    close = df["Close"].astype(float).dropna()
+    if len(close) < 260:
+        return {"ta_regime": "mixed", "confidence": 0.3}
+
+    ma20 = ma(close, 20)
+    ma200 = ma(close, 200)
+
+    # MA200 slope over last 40 sessions
+    y = ma200.dropna().tail(40).values
+    if len(y) < 10:
+        return {"ta_regime": "mixed", "confidence": 0.3}
+
+    x = np.arange(len(y))
+    slope = np.polyfit(x, y, 1)[0]
+
+    price = close.iloc[-1]
+    above_200 = price > ma200.iloc[-1]
+
+    r = rsi(close, 14).dropna().tail(90)
+    r_crosses = ((r.shift(1) < 50) & (r >= 50)).sum() + ((r.shift(1) > 50) & (r <= 50)).sum()
+
+    # oscillation: distance from MA20
+    dist = (close.tail(90) - ma20.tail(90)).abs()
+    osc = float(dist.mean() / max(price, 1e-9))
+
+    # rules
+    trend_score = 0.0
+    if slope > 0 and above_200:
+        trend_score += 0.6
+    if r_crosses < 10:
+        trend_score += 0.2
+    if osc > 0.01:
+        trend_score += 0.2
+
+    mr_score = 0.0
+    if r_crosses >= 10:
+        mr_score += 0.5
+    if osc < 0.01:
+        mr_score += 0.4
+    if not above_200:
+        mr_score += 0.1
+
+    if trend_score > mr_score + 0.15:
+        return {"ta_regime": "trend", "confidence": min(1.0, trend_score)}
+    if mr_score > trend_score + 0.15:
+        return {"ta_regime": "mean_reversion", "confidence": min(1.0, mr_score)}
+    return {"ta_regime": "mixed", "confidence": 0.35}
+
+3.2 Feed TA regime into your scheduler regime update
+
+In your scheduler.py _update_regime_weights, add:
+
+from ta.regime import classify_ta_regime
+
+
+After loading spy:
+
+ta_state = classify_ta_regime(spy)
+ta_regime = ta_state["ta_regime"]
+ta_conf = float(ta_state["confidence"])
+
+
+Then modify your call:
+
+_regime_weights = apply_regime_rotation(
+    base_weights,
+    state["active_regime"],
+    state["confidence"],
+    ta_regime=ta_regime,
+    ta_confidence=ta_conf
+)
+
+3.3 Update apply_regime_rotation signature
+
+In meta/regime_rotation.py:
+
+def apply_regime_rotation(base_weights, active_regime, confidence, ta_regime=None, ta_confidence=0.0):
+    weights = dict(base_weights)
+
+    # existing regime logic here...
+
+    # TA regime tilt (small, additive)
+    if ta_regime == "trend" and ta_confidence >= 0.5:
+        # trend-friendly agents up-weight
+        for a in weights:
+            if "Momentum" in a or "Breakout" in a or "Trend" in a:
+                weights[a] *= 1.15
+            if "MeanReversion" in a:
+                weights[a] *= 0.85
+
+    if ta_regime == "mean_reversion" and ta_confidence >= 0.5:
+        for a in weights:
+            if "MeanReversion" in a:
+                weights[a] *= 1.15
+            if "Momentum" in a or "Breakout" in a:
+                weights[a] *= 0.85
+
+    return weights
+
+
+This immediately gives you TA regime attribution driving live rotation.
+
+4) TA Backtest Report vs SPY
+backtests/ta_backtest_report.py
+import pandas as pd
+from data_sources.price_loader import load_spy
+from ta.indicators import rsi, ma
+
+def run_report(start="2007-01-01"):
+    spy = load_spy(start=start, use_cache=True)
+    spy = spy.dropna().copy()
+    close = spy["Close"].astype(float)
+
+    spy["rsi14"] = rsi(close, 14)
+    spy["ma20"] = ma(close, 20)
+    spy["ma50"] = ma(close, 50)
+
+    # Example TA signals:
+    # mean reversion: RSI < 30
+    spy["sig_rsi_oversold"] = (spy["rsi14"] < 30).astype(int)
+
+    # trend: MA20 > MA50
+    spy["sig_trend_up"] = (spy["ma20"] > spy["ma50"]).astype(int)
+
+    # forward returns
+    for d in [1, 5, 20, 60]:
+        spy[f"fwd_{d}d"] = close.shift(-d) / close - 1.0
+
+    def summarize(sig_col):
+        sub = spy[spy[sig_col] == 1].dropna()
+        out = {"signal": sig_col, "n": int(len(sub))}
+        for d in [1, 5, 20, 60]:
+            r = sub[f"fwd_{d}d"]
+            out[f"mean_{d}d"] = float(r.mean())
+            out[f"hit_{d}d"] = float((r > 0).mean())
+        return out
+
+    rows = [summarize("sig_rsi_oversold"), summarize("sig_trend_up")]
+    report = pd.DataFrame(rows).sort_values("n", ascending=False)
+    report.to_csv("ta_backtest_report.csv", index=False)
+    return report
+
+if __name__ == "__main__":
+    df = run_report()
+    print(df)
+
+
+Run:
+
+python backtests/ta_backtest_report.py
+
+
+You’ll get ta_backtest_report.csv.
+
+What you get immediately after these changes
+Dashboard
+
+Candles + RSI pane + signal markers (from Findings)
+
+Fast, self-contained /api/ta_overlay
+
+Council
+
+3-model consensus stored in DB
+
+“uncertainty spike” events stored
+
+optional: auto-email when consensus = ACT + strength threshold
+
+Rotation
+
+TA regime (trend / mean reversion) tilts weights
+
+integrates into your existing _regime_weights gating
+
+Backtesting
+
+Baseline TA effectiveness report vs SPY since 2007

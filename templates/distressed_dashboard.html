@@ -1,0 +1,725 @@
+{% extends "base.html" %}
+
+{% block title %}Distressed Investing Platform{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-chart-line text-primary"></i> Distressed Investing Platform</h2>
+        <div>
+            <button class="btn btn-outline-primary me-2" onclick="refreshAll()">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+            <a href="/deals/" class="btn btn-primary">
+                <i class="fas fa-building"></i> Deal Pipeline
+            </a>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs mb-4" id="platformTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="portfolio-tab" data-bs-toggle="tab" data-bs-target="#portfolio" type="button" role="tab">
+                <i class="fas fa-briefcase"></i> Portfolio
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="backtest-tab" data-bs-toggle="tab" data-bs-target="#backtest" type="button" role="tab">
+                <i class="fas fa-history"></i> Backtesting
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="risk-tab" data-bs-toggle="tab" data-bs-target="#risk" type="button" role="tab">
+                <i class="fas fa-shield-alt"></i> Risk
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="feeds-tab" data-bs-toggle="tab" data-bs-target="#feeds" type="button" role="tab">
+                <i class="fas fa-rss"></i> Data Feeds
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="platformTabContent">
+        <div class="tab-pane fade show active" id="portfolio" role="tabpanel">
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="card bg-primary text-white mb-3">
+                        <div class="card-body">
+                            <h6 class="card-subtitle mb-2 opacity-75">NAV</h6>
+                            <h3 class="card-title mb-0" id="nav-value">$0</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-success text-white mb-3">
+                        <div class="card-body">
+                            <h6 class="card-subtitle mb-2 opacity-75">Total P&L</h6>
+                            <h3 class="card-title mb-0" id="pnl-value">$0</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-info text-white mb-3">
+                        <div class="card-body">
+                            <h6 class="card-subtitle mb-2 opacity-75">Invested</h6>
+                            <h3 class="card-title mb-0" id="invested-value">$0</h3>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card bg-secondary text-white mb-3">
+                        <div class="card-body">
+                            <h6 class="card-subtitle mb-2 opacity-75">Positions</h6>
+                            <h3 class="card-title mb-0" id="positions-count">0</h3>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="card mb-4">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span><i class="fas fa-list"></i> Positions</span>
+                            <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addPositionModal">
+                                <i class="fas fa-plus"></i> Add Position
+                            </button>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Company</th>
+                                            <th>Security</th>
+                                            <th>Face</th>
+                                            <th>Entry</th>
+                                            <th>Current</th>
+                                            <th>P&L</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="positions-table">
+                                        <tr>
+                                            <td colspan="7" class="text-center text-muted py-4">
+                                                No positions yet. Click "Add Position" to start.
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card mb-4">
+                        <div class="card-header"><i class="fas fa-chart-pie"></i> Exposure by Status</div>
+                        <div class="card-body">
+                            <canvas id="statusChart" height="200"></canvas>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <div class="card-header"><i class="fas fa-industry"></i> Exposure by Industry</div>
+                        <div class="card-body">
+                            <canvas id="industryChart" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="backtest" role="tabpanel">
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="card mb-4">
+                        <div class="card-header"><i class="fas fa-cogs"></i> Backtest Configuration</div>
+                        <div class="card-body">
+                            <form id="backtestForm">
+                                <div class="mb-3">
+                                    <label class="form-label">Strategy</label>
+                                    <select class="form-select" id="strategySelect">
+                                        <option value="fulcrum_hunter">Fulcrum Hunter</option>
+                                        <option value="deep_value">Deep Value</option>
+                                        <option value="z_score_distress">Z-Score Distress</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Start Date</label>
+                                    <input type="date" class="form-control" id="startDate" value="2001-01-01">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">End Date</label>
+                                    <input type="date" class="form-control" id="endDate" value="2023-12-31">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Initial Capital ($)</label>
+                                    <input type="number" class="form-control" id="initialCapital" value="10000000">
+                                </div>
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i class="fas fa-play"></i> Run Backtest
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header"><i class="fas fa-dice"></i> Monte Carlo</div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Simulations</label>
+                                <input type="number" class="form-control" id="nSimulations" value="1000">
+                            </div>
+                            <button class="btn btn-outline-primary w-100" onclick="runMonteCarlo()">
+                                <i class="fas fa-random"></i> Run Simulation
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-8">
+                    <div class="card mb-4">
+                        <div class="card-header"><i class="fas fa-chart-line"></i> Backtest Results</div>
+                        <div class="card-body">
+                            <div id="backtestResults" class="text-center text-muted py-5">
+                                <i class="fas fa-chart-area fa-3x mb-3 opacity-25"></i>
+                                <p>Run a backtest to see results</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="fas fa-database"></i> Historical Cases
+                            <span class="badge bg-secondary ms-2" id="casesCount">0</span>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                                <table class="table table-sm table-hover mb-0">
+                                    <thead class="table-light sticky-top">
+                                        <tr>
+                                            <th>Company</th>
+                                            <th>Industry</th>
+                                            <th>Filing</th>
+                                            <th>Outcome</th>
+                                            <th>Recovery</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="casesTable">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="risk" role="tabpanel">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card mb-4">
+                        <div class="card-header"><i class="fas fa-tachometer-alt"></i> Risk Metrics</div>
+                        <div class="card-body" id="riskMetrics">
+                            <div class="row g-3">
+                                <div class="col-6">
+                                    <div class="border rounded p-3 text-center">
+                                        <small class="text-muted">VaR (95%)</small>
+                                        <h4 id="var95">-</h4>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="border rounded p-3 text-center">
+                                        <small class="text-muted">Max Drawdown</small>
+                                        <h4 id="maxDrawdown">-</h4>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="border rounded p-3 text-center">
+                                        <small class="text-muted">Sharpe Ratio</small>
+                                        <h4 id="sharpeRatio">-</h4>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="border rounded p-3 text-center">
+                                        <small class="text-muted">Volatility</small>
+                                        <h4 id="volatility">-</h4>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header"><i class="fas fa-exclamation-triangle"></i> Risk Alerts</div>
+                        <div class="card-body p-0">
+                            <div class="list-group list-group-flush" id="alertsList">
+                                <div class="list-group-item text-center text-muted py-4">
+                                    No active alerts
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="fas fa-bolt"></i> Stress Testing
+                            <button class="btn btn-sm btn-outline-primary float-end" onclick="runStressTest()">
+                                Run Test
+                            </button>
+                        </div>
+                        <div class="card-body" id="stressResults">
+                            <div class="text-center text-muted py-4">
+                                <i class="fas fa-chart-bar fa-3x mb-3 opacity-25"></i>
+                                <p>Click "Run Test" to see stress test results</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="feeds" role="tabpanel">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="fas fa-rss"></i> Data Sources
+                            <button class="btn btn-sm btn-outline-primary float-end" onclick="refreshFeeds()">
+                                <i class="fas fa-sync-alt"></i> Refresh All
+                            </button>
+                        </div>
+                        <div class="card-body p-0">
+                            <div class="list-group list-group-flush" id="feedsList">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header"><i class="fas fa-info-circle"></i> Feed Status</div>
+                        <div class="card-body" id="feedStatus">
+                            <p class="text-muted">Loading feed status...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="addPositionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Position</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addPositionForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Company Name</label>
+                        <input type="text" class="form-control" name="company_name" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Security Type</label>
+                            <select class="form-select" name="security_type">
+                                <option value="secured_bond">Secured Bond</option>
+                                <option value="senior_unsecured">Senior Unsecured</option>
+                                <option value="subordinated">Subordinated</option>
+                                <option value="convertible">Convertible</option>
+                                <option value="equity">Equity</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Industry</label>
+                            <input type="text" class="form-control" name="industry">
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Face Amount ($)</label>
+                            <input type="number" class="form-control" name="face_amount" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Entry Price (cents)</label>
+                            <input type="number" class="form-control" name="entry_price" step="0.01" required>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Case Status</label>
+                            <select class="form-select" name="case_status">
+                                <option value="performing">Performing</option>
+                                <option value="stressed">Stressed</option>
+                                <option value="distressed">Distressed</option>
+                                <option value="bankruptcy">Bankruptcy</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Recovery Estimate (%)</label>
+                            <input type="number" class="form-control" name="recovery_estimate" value="50">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Position</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const API_BASE = '/distressed/api';
+let statusChart, industryChart;
+
+document.addEventListener('DOMContentLoaded', function() {
+    initCharts();
+    loadPortfolioSummary();
+    loadPositions();
+    loadHistoricalCases();
+    loadDataSources();
+    loadFeedStatus();
+});
+
+function initCharts() {
+    const statusCtx = document.getElementById('statusChart').getContext('2d');
+    statusChart = new Chart(statusCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Performing', 'Stressed', 'Distressed', 'Bankruptcy'],
+            datasets: [{
+                data: [0, 0, 0, 0],
+                backgroundColor: ['#198754', '#ffc107', '#fd7e14', '#dc3545']
+            }]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+    });
+
+    const industryCtx = document.getElementById('industryChart').getContext('2d');
+    industryChart = new Chart(industryCtx, {
+        type: 'bar',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Exposure',
+                data: [],
+                backgroundColor: '#0d6efd'
+            }]
+        },
+        options: { responsive: true, indexAxis: 'y', plugins: { legend: { display: false } } }
+    });
+}
+
+function formatCurrency(value) {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 }).format(value);
+}
+
+function formatPercent(value) {
+    return (value * 100).toFixed(2) + '%';
+}
+
+async function loadPortfolioSummary() {
+    try {
+        const resp = await fetch(`${API_BASE}/portfolio/summary`);
+        const data = await resp.json();
+        
+        document.getElementById('nav-value').textContent = formatCurrency(data.nav || 0);
+        document.getElementById('pnl-value').textContent = formatCurrency(data.total_pnl || 0);
+        document.getElementById('invested-value').textContent = formatCurrency(data.invested || 0);
+        document.getElementById('positions-count').textContent = data.position_count || 0;
+
+        if (data.exposure_by_status) {
+            const statuses = ['performing', 'stressed', 'distressed', 'bankruptcy'];
+            statusChart.data.datasets[0].data = statuses.map(s => data.exposure_by_status[s] || 0);
+            statusChart.update();
+        }
+
+        if (data.exposure_by_industry) {
+            const industries = Object.keys(data.exposure_by_industry);
+            industryChart.data.labels = industries;
+            industryChart.data.datasets[0].data = industries.map(i => data.exposure_by_industry[i]);
+            industryChart.update();
+        }
+    } catch (e) {
+        console.error('Error loading portfolio summary:', e);
+    }
+}
+
+async function loadPositions() {
+    try {
+        const resp = await fetch(`${API_BASE}/portfolio/positions`);
+        const data = await resp.json();
+        
+        const tbody = document.getElementById('positions-table');
+        if (!data.positions || data.positions.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-4">No positions yet. Click "Add Position" to start.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.positions.map(p => `
+            <tr>
+                <td><strong>${p.company_name}</strong></td>
+                <td><span class="badge bg-secondary">${p.security_type.value || p.security_type}</span></td>
+                <td>${formatCurrency(p.face_amount)}</td>
+                <td>${p.entry_price}¢</td>
+                <td>${p.current_price}¢</td>
+                <td class="${p.unrealized_pnl >= 0 ? 'text-success' : 'text-danger'}">
+                    ${formatCurrency(p.unrealized_pnl)} (${formatPercent(p.unrealized_pnl_pct)})
+                </td>
+                <td><span class="badge bg-${getStatusColor(p.case_status)}">${p.case_status}</span></td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        console.error('Error loading positions:', e);
+    }
+}
+
+function getStatusColor(status) {
+    const colors = { performing: 'success', stressed: 'warning', distressed: 'orange', bankruptcy: 'danger' };
+    return colors[status] || 'secondary';
+}
+
+async function loadHistoricalCases() {
+    try {
+        const resp = await fetch(`${API_BASE}/backtest/cases?limit=20`);
+        const data = await resp.json();
+        
+        document.getElementById('casesCount').textContent = data.count || 0;
+        
+        const tbody = document.getElementById('casesTable');
+        if (!data.cases || data.cases.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No historical cases available</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = data.cases.map(c => `
+            <tr>
+                <td>${c.company_name}</td>
+                <td>${c.industry}</td>
+                <td>${c.filing_date}</td>
+                <td><span class="badge bg-info">${c.outcome.value || c.outcome}</span></td>
+                <td>${c.senior_unsecured_recovery}%</td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        console.error('Error loading cases:', e);
+    }
+}
+
+document.getElementById('backtestForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const btn = this.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Running...';
+    
+    try {
+        const resp = await fetch(`${API_BASE}/backtest/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                strategy_name: document.getElementById('strategySelect').value,
+                start_date: document.getElementById('startDate').value,
+                end_date: document.getElementById('endDate').value,
+                initial_capital: parseFloat(document.getElementById('initialCapital').value)
+            })
+        });
+        
+        const data = await resp.json();
+        displayBacktestResults(data.result);
+    } catch (e) {
+        console.error('Backtest error:', e);
+        document.getElementById('backtestResults').innerHTML = '<div class="alert alert-danger">Error running backtest</div>';
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-play"></i> Run Backtest';
+    }
+});
+
+function displayBacktestResults(result) {
+    const div = document.getElementById('backtestResults');
+    div.innerHTML = `
+        <div class="row text-center mb-4">
+            <div class="col-3">
+                <h4 class="${result.total_return >= 0 ? 'text-success' : 'text-danger'}">${formatPercent(result.total_return)}</h4>
+                <small class="text-muted">Total Return</small>
+            </div>
+            <div class="col-3">
+                <h4>${result.sharpe_ratio.toFixed(2)}</h4>
+                <small class="text-muted">Sharpe Ratio</small>
+            </div>
+            <div class="col-3">
+                <h4 class="text-danger">${formatPercent(result.max_drawdown)}</h4>
+                <small class="text-muted">Max Drawdown</small>
+            </div>
+            <div class="col-3">
+                <h4>${formatPercent(result.win_rate)}</h4>
+                <small class="text-muted">Win Rate</small>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-6">
+                <table class="table table-sm">
+                    <tr><td>Total Trades</td><td class="text-end">${result.total_trades}</td></tr>
+                    <tr><td>Winning Trades</td><td class="text-end text-success">${result.winning_trades}</td></tr>
+                    <tr><td>Losing Trades</td><td class="text-end text-danger">${result.losing_trades}</td></tr>
+                    <tr><td>Avg Holding Period</td><td class="text-end">${result.avg_holding_period.toFixed(0)} days</td></tr>
+                </table>
+            </div>
+            <div class="col-6">
+                <table class="table table-sm">
+                    <tr><td>Annualized Return</td><td class="text-end">${formatPercent(result.annualized_return)}</td></tr>
+                    <tr><td>Volatility</td><td class="text-end">${formatPercent(result.volatility)}</td></tr>
+                    <tr><td>VaR (95%)</td><td class="text-end">${formatPercent(result.var_95)}</td></tr>
+                    <tr><td>Profit Factor</td><td class="text-end">${result.profit_factor.toFixed(2)}</td></tr>
+                </table>
+            </div>
+        </div>
+    `;
+}
+
+async function runMonteCarlo() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    
+    try {
+        const resp = await fetch(`${API_BASE}/backtest/monte-carlo`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                strategy_name: document.getElementById('strategySelect').value,
+                n_simulations: parseInt(document.getElementById('nSimulations').value)
+            })
+        });
+        
+        const data = await resp.json();
+        alert(`Monte Carlo Complete!\nMean Return: ${(data.result.mean_return * 100).toFixed(2)}%\n5th Percentile: ${(data.result.percentile_5 * 100).toFixed(2)}%\n95th Percentile: ${(data.result.percentile_95 * 100).toFixed(2)}%`);
+    } catch (e) {
+        console.error('Monte Carlo error:', e);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-random"></i> Run Simulation';
+    }
+}
+
+async function runStressTest() {
+    try {
+        const resp = await fetch(`${API_BASE}/portfolio/stress-test`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        
+        const data = await resp.json();
+        
+        const div = document.getElementById('stressResults');
+        if (!data.scenarios || data.scenarios.length === 0) {
+            div.innerHTML = '<div class="alert alert-info">No stress test results</div>';
+            return;
+        }
+        
+        div.innerHTML = `
+            <div class="list-group">
+                ${data.scenarios.map(s => `
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>${s.name}</strong>
+                                <p class="mb-0 text-muted small">${s.description}</p>
+                            </div>
+                            <span class="badge ${s.impact < 0 ? 'bg-danger' : 'bg-success'} fs-6">
+                                ${formatCurrency(s.impact)}
+                            </span>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    } catch (e) {
+        console.error('Stress test error:', e);
+    }
+}
+
+async function loadDataSources() {
+    try {
+        const resp = await fetch(`${API_BASE}/feeds/sources`);
+        const data = await resp.json();
+        
+        const div = document.getElementById('feedsList');
+        div.innerHTML = data.sources.map(s => `
+            <div class="list-group-item d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>${s.name}</strong>
+                    <p class="mb-0 text-muted small">${s.description}</p>
+                </div>
+                <span class="badge bg-success">Connected</span>
+            </div>
+        `).join('');
+    } catch (e) {
+        console.error('Error loading data sources:', e);
+    }
+}
+
+async function loadFeedStatus() {
+    try {
+        const resp = await fetch(`${API_BASE}/feeds/status`);
+        const data = await resp.json();
+        
+        document.getElementById('feedStatus').innerHTML = `
+            <p><strong>Last Update:</strong> ${data.last_update || 'Never'}</p>
+            <p><strong>Status:</strong> <span class="badge bg-${data.status === 'healthy' ? 'success' : 'warning'}">${data.status || 'Unknown'}</span></p>
+        `;
+    } catch (e) {
+        document.getElementById('feedStatus').innerHTML = '<p class="text-muted">Unable to load feed status</p>';
+    }
+}
+
+async function refreshFeeds() {
+    try {
+        await fetch(`${API_BASE}/feeds/refresh`, { method: 'POST' });
+        loadFeedStatus();
+        alert('Feeds refreshed successfully');
+    } catch (e) {
+        console.error('Error refreshing feeds:', e);
+    }
+}
+
+function refreshAll() {
+    loadPortfolioSummary();
+    loadPositions();
+    loadHistoricalCases();
+    loadFeedStatus();
+}
+
+document.getElementById('addPositionForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const data = Object.fromEntries(formData.entries());
+    data.company_id = 'comp-' + Date.now();
+    data.security_id = 'sec-' + Date.now();
+    
+    try {
+        const resp = await fetch(`${API_BASE}/portfolio/positions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        
+        if (resp.ok) {
+            bootstrap.Modal.getInstance(document.getElementById('addPositionModal')).hide();
+            this.reset();
+            loadPortfolioSummary();
+            loadPositions();
+        }
+    } catch (e) {
+        console.error('Error adding position:', e);
+    }
+});
+</script>
+{% endblock %}

@@ -1,3 +1,12 @@
+from agents.earnings_surprise_drift_agent import EarningsSurpriseDriftAgent
+from agents.intraday_volatility_spike_agent import IntradayVolatilitySpikeAgent
+from agents.earnings_whisper_surprise_agent import EarningsWhisperSurpriseAgent
+from agents.insider_trading_signal_agent import InsiderTradingSignalAgent
+from agents.intraday_order_book_imbalance_agent import IntradayOrderBookImbalanceAgent
+from agents.intraday_volume_spike_agent import IntradayVolumeSpikeAgent
+from agents.unusual_options_volume_agent import UnusualOptionsVolumeAgent
+from agents.crypto_stablecoin_premium_agent import CryptoStablecoinPremiumAgent
+from agents.distressed_property_agent import DistressedPropertyAgent
 """
 Market Inefficiency Detection Agents
 
@@ -14,6 +23,14 @@ logger = logging.getLogger(__name__)
 
 # Available agent classes
 AVAILABLE_AGENTS = [
+    "CryptoStablecoinPremiumAgent",
+    "UnusualOptionsVolumeAgent",
+    "IntradayVolumeSpikeAgent",
+    "IntradayOrderBookImbalanceAgent",
+    "InsiderTradingSignalAgent",
+    "EarningsWhisperSurpriseAgent",
+    "IntradayVolatilitySpikeAgent",
+    "EarningsSurpriseDriftAgent",
     'MacroWatcherAgent',
     'WhaleWalletWatcherAgent', 
     'ArbitrageFinderAgent',
@@ -27,7 +44,9 @@ AVAILABLE_AGENTS = [
     'HeartbeatAgent',
     'GreatestTradeAgent',
     'DailyPredictionAgent',
-    'CryptoPredictionAgent'
+    'CryptoPredictionAgent',
+    'TechnicalAnalysisAgent',
+    'DistressedPropertyAgent'
 ]
 
 def get_agent_class(agent_name: str) -> Optional[Type[BaseAgent]]:

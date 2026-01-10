@@ -1,0 +1,479 @@
+1) Per-regime allocation caps (risk-off throttling)
+A. Add meta_supervisor/regime_policy.py
+import json
+from pathlib import Path
+
+POLICY = Path("meta_supervisor/policy/regime_policy.json")
+
+DEFAULT_POLICY = {
+  "caps": {
+    "RISK_OFF": 0.20,
+    "HIGH_VOL": 0.35,
+    "MIXED": 0.60,
+    "RISK_ON": 1.00
+  },
+  "unknown_cap": 0.50,
+  "min_data_points": 20
+}
+
+def load_policy():
+    if not POLICY.exists():
+        POLICY.parent.mkdir(parents=True, exist_ok=True)
+        POLICY.write_text(json.dumps(DEFAULT_POLICY, indent=2))
+        return DEFAULT_POLICY
+    return json.loads(POLICY.read_text())
+
+def regime_cap(regime: str | None) -> float:
+    p = load_policy()
+    caps = p.get("caps", {})
+    if not regime:
+        return float(p.get("unknown_cap", 0.5))
+    return float(caps.get(str(regime).upper(), p.get("unknown_cap", 0.5)))
+
+B. Apply caps inside your meta_supervisor/allocation.py
+
+Add at top:
+
+from meta_supervisor.regime_policy import regime_cap
+
+
+Then in compute_weights(...), right after you compute capped and before returning, apply portfolio regime cap:
+
+# --- Apply portfolio regime cap (throttle total risk) ---
+# Expect build_meta_report to set report["fleet"]["current_regime"]
+# If not present, cap defaults to unknown_cap.
+try:
+    from meta_supervisor.state.fleet_state import get_current_regime  # optional helper below
+    current_reg = get_current_regime()
+except Exception:
+    current_reg = None
+
+cap = regime_cap(current_reg)  # e.g. 0.2 in RISK_OFF
+if cap < 0.999:
+    capped = {k: v * cap for k, v in capped.items()}
+    s = sum(capped.values()) or 1.0
+    capped = {k: v / s for k, v in capped.items()}  # keep normalized weights
+
+C. Add meta_supervisor/state/fleet_state.py (optional)
+import json
+from pathlib import Path
+
+FLEET = Path("meta_supervisor/state/fleet.json")
+
+def save_fleet(fleet: dict):
+    FLEET.parent.mkdir(parents=True, exist_ok=True)
+    FLEET.write_text(json.dumps(fleet, indent=2))
+
+def get_current_regime() -> str | None:
+    if not FLEET.exists():
+        return None
+    try:
+        data = json.loads(FLEET.read_text())
+        return data.get("current_regime")
+    except Exception:
+        return None
+
+D. In build_meta_report.py after computing fleet
+
+Persist it:
+
+from meta_supervisor.state.fleet_state import save_fleet
+save_fleet(report["fleet"])
+
+2) Capital-at-risk accounting per agent
+A. Add meta_supervisor/capital.py
+import json
+from pathlib import Path
+from datetime import datetime, timezone
+
+CAPITAL_STATE = Path("meta_supervisor/state/capital.json")
+
+DEFAULT = {
+  "as_of": None,
+  "nav_usd": 1_000_000,
+  "risk_budget_pct": 0.02,  # 2% portfolio risk budget per day/horizon
+  "agent_risk_caps": {},    # per agent max risk share (optional)
+}
+
+def _now():
+    return datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+
+def load_capital():
+    if not CAPITAL_STATE.exists():
+        CAPITAL_STATE.parent.mkdir(parents=True, exist_ok=True)
+        CAPITAL_STATE.write_text(json.dumps(DEFAULT, indent=2))
+        return DEFAULT
+    try:
+        return json.loads(CAPITAL_STATE.read_text())
+    except Exception:
+        return DEFAULT
+
+def save_capital(s: dict):
+    s["as_of"] = _now()
+    CAPITAL_STATE.parent.mkdir(parents=True, exist_ok=True)
+    CAPITAL_STATE.write_text(json.dumps(s, indent=2))
+
+def capital_at_risk_by_agent(weights: dict, report: dict) -> dict:
+    cap = load_capital()
+    nav = float(cap.get("nav_usd", 0))
+    risk_budget = nav * float(cap.get("risk_budget_pct", 0.02))
+
+    # Use portfolio CVaR if present; else fallback to 1% of NAV.
+    fleet = report.get("fleet", {}) if report else {}
+    portfolio_cvar_bps = float(fleet.get("portfolio_cvar95_bps", 0) or 0)
+    if portfolio_cvar_bps <= 0:
+        portfolio_cvar_usd = 0.01 * nav
+    else:
+        portfolio_cvar_usd = (portfolio_cvar_bps / 10_000.0) * nav
+
+    # Allocate risk budget proportional to weights, but cap per-agent if configured.
+    caps = cap.get("agent_risk_caps", {}) or {}
+    out = {}
+    for a, w in (weights or {}).items():
+        w = float(w)
+        agent_cap = float(caps.get(a, 1.0))  # multiplier cap; 1.0 means no cap
+        alloc_risk = risk_budget * w * agent_cap
+        out[a] = {
+            "weight": round(w, 6),
+            "risk_budget_usd": round(alloc_risk, 2),
+            "portfolio_cvar_usd": round(portfolio_cvar_usd, 2),
+        }
+    return out
+
+B. Add to build_meta_report.py after weights computed
+from meta_supervisor.capital import capital_at_risk_by_agent
+report["capital"] = capital_at_risk_by_agent(report["allocation"]["weights"], report)
+
+3) Weekly IC memo auto-generation (LLM) + Email
+A. Add meta_supervisor/ic_memo.py
+
+Uses your existing OpenAI wrapper (you already have services/ai_analysis.py with OpenAI client). If you prefer, point this at that client; below is minimal and self-contained.
+
+import json
+import os
+from pathlib import Path
+from datetime import datetime, timezone, timedelta
+
+REPORT = Path("meta_supervisor/reports/meta_report.json")
+OUT_MD = Path("meta_supervisor/reports/ic_weekly.md")
+
+def _load():
+    if not REPORT.exists():
+        return {}
+    return json.loads(REPORT.read_text())
+
+def build_prompt(report: dict) -> str:
+    agents = report.get("agents", {})
+    fleet = report.get("fleet", {})
+    strategy_cvar = report.get("strategy_cvar", {})
+    capital = report.get("capital", {})
+
+    top = sorted(agents.items(), key=lambda kv: kv[1].get("pnl_sum_bps", 0), reverse=True)[:8]
+    bottom = sorted(agents.items(), key=lambda kv: kv[1].get("pnl_sum_bps", 0))[:8]
+
+    payload = {
+        "fleet": fleet,
+        "top_agents": [{ "agent": a, **s } for a, s in top],
+        "bottom_agents": [{ "agent": a, **s } for a, s in bottom],
+        "strategy_cvar": strategy_cvar,
+        "capital": capital,
+        "decisions": {
+            "promote": [a for a, s in agents.items() if s.get("decision") == "PROMOTE"],
+            "kill": [a for a, s in agents.items() if s.get("decision") in ("KILL", "RETIRE")],
+        }
+    }
+
+    return (
+        "You are the portfolio PM writing a weekly IC memo for a quant multi-agent trading system.\n"
+        "Write a crisp memo with: Executive summary, performance, risk, what changed, decisions, and next-week plan.\n"
+        "Be specific and cite metrics from the JSON.\n\n"
+        f"JSON:\n{json.dumps(payload, indent=2)}"
+    )
+
+def generate_ic_memo_llm(report: dict) -> str:
+    # Minimal OpenAI call using env vars (aligns with your repo patterns)
+    from openai import OpenAI
+
+    key = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    base = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
+    model = os.environ.get("IC_MEMO_MODEL", "gpt-4.1-mini")
+
+    client = OpenAI(api_key=key, base_url=base) if base else OpenAI(api_key=key)
+    prompt = build_prompt(report)
+
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "Output markdown only."},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.2,
+        max_tokens=1800,
+    )
+    return resp.choices[0].message.content
+
+def main():
+    report = _load()
+    if not report:
+        return None
+
+    memo = generate_ic_memo_llm(report)
+    OUT_MD.parent.mkdir(parents=True, exist_ok=True)
+    OUT_MD.write_text(memo, encoding="utf-8")
+    return memo
+
+B. Email the memo (SendGrid) — meta_supervisor/email_ic_memo.py
+import os
+from pathlib import Path
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail, Email, To, Content
+
+MEMO = Path("meta_supervisor/reports/ic_weekly.md")
+
+def send_ic_memo():
+    if not MEMO.exists():
+        return False
+
+    api_key = os.environ.get("SENDGRID_API_KEY")
+    to_list = [x.strip() for x in os.environ.get("META_EMAIL_TO","").split(",") if x.strip()]
+    from_email = os.environ.get("EMAIL_FROM", "rsmolarz@medmoneyshow.com")
+
+    if not api_key or not to_list:
+        return False
+
+    subject = os.environ.get("IC_MEMO_SUBJECT", "[IC Weekly] MarketAgents Memo")
+    text = MEMO.read_text(encoding="utf-8")
+    html = "<pre style='font-family:ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap'>" + text.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;") + "</pre>"
+
+    sg = SendGridAPIClient(api_key)
+    for r in to_list:
+        msg = Mail(
+            from_email=Email(from_email),
+            to_emails=To(r),
+            subject=subject,
+            plain_text_content=Content("text/plain", text),
+            html_content=Content("text/html", html),
+        )
+        sg.send(msg)
+    return True
+
+if __name__ == "__main__":
+    send_ic_memo()
+
+C. Schedule weekly memo in your existing scheduler
+
+In your AgentScheduler.schedule_daily_emails() add another job:
+
+self.scheduler.add_job(
+    func=self._send_weekly_ic_memo,
+    trigger=CronTrigger(day_of_week="sun", hour=12, minute=0),  # Sunday 12:00 UTC
+    id="weekly_ic_memo",
+    replace_existing=True
+)
+
+
+Add method:
+
+def _send_weekly_ic_memo(self):
+    with self.app.app_context():
+        from meta_supervisor.ic_memo import main as build_memo
+        from meta_supervisor.email_ic_memo import send_ic_memo
+        build_memo()
+        send_ic_memo()
+
+4) Agent auto-spawn + auto-kill feedback loop
+
+This stays “quant-grade” by making it proposal-based, never direct code mutation.
+
+A. Add proposal schema file: meta_supervisor/agent_proposals.json
+{
+  "proposals": []
+}
+
+B. Add “regime-triggered agent generator”: meta_supervisor/agent_generator.py
+
+This reads: current regime + strategy gaps + failure forensics, then writes proposals.
+
+import json
+import os
+from pathlib import Path
+from openai import OpenAI
+
+REPORT = Path("meta_supervisor/reports/meta_report.json")
+OUT = Path("meta_supervisor/agent_proposals_regime.json")
+
+def _load():
+    if not REPORT.exists():
+        return {}
+    return json.loads(REPORT.read_text())
+
+def main():
+    report = _load()
+    if not report:
+        return {}
+
+    payload = {
+        "fleet": report.get("fleet", {}),
+        "strategy_cvar": report.get("strategy_cvar", {}),
+        "agents": report.get("agents", {}),
+        "research": report.get("research", {}),
+    }
+
+    key = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    base = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
+    model = os.environ.get("AGENT_GEN_MODEL", "gpt-4.1-mini")
+    client = OpenAI(api_key=key, base_url=base) if base else OpenAI(api_key=key)
+
+    schema = {
+        "proposals": [
+            {
+                "name": "string",
+                "strategy_class": "string",
+                "regime_trigger": "string",
+                "thesis": "string",
+                "data_sources": ["string"],
+                "signals": ["string"],
+                "eval_plan": {"offline": ["string"], "live_shadow": ["string"]},
+                "risk_controls": ["string"],
+                "expected_edge": "string"
+            }
+        ]
+    }
+
+    prompt = (
+        "You design new agents for a market-inefficiency platform.\n"
+        "Given the current report JSON, propose 3-8 new agents that fit gaps: trades, inefficiencies, distressed assets.\n"
+        "Make them implementable in this codebase.\n"
+        "Output JSON matching this schema exactly.\n\n"
+        f"SCHEMA:\n{json.dumps(schema, indent=2)}\n\n"
+        f"REPORT:\n{json.dumps(payload, indent=2)}"
+    )
+
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[{"role":"system","content":"Output strict JSON only."},
+                  {"role":"user","content":prompt}],
+        temperature=0.2,
+        max_tokens=1800,
+        response_format={"type":"json_object"},
+    )
+
+    out = json.loads(resp.choices[0].message.content)
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_text(json.dumps(out, indent=2))
+    return out
+
+if __name__ == "__main__":
+    main()
+
+C. Add strategy-class kill-list (not just agents): meta_supervisor/kill_list.py
+import json
+from pathlib import Path
+
+KILL = Path("meta_supervisor/policy/kill_list.json")
+
+DEFAULT = {
+  "agents": [],
+  "strategy_classes": []
+}
+
+def load_kill_list():
+    if not KILL.exists():
+        KILL.parent.mkdir(parents=True, exist_ok=True)
+        KILL.write_text(json.dumps(DEFAULT, indent=2))
+        return DEFAULT
+    return json.loads(KILL.read_text())
+
+def is_killed(agent: str, strategy_class: str | None = None) -> bool:
+    k = load_kill_list()
+    if agent in (k.get("agents") or []):
+        return True
+    if strategy_class and strategy_class in (k.get("strategy_classes") or []):
+        return True
+    return False
+
+D. Enforce kill-list in scheduler run path (hard safety)
+
+In AgentScheduler._run_agent, before instantiating the agent:
+
+from meta_supervisor.kill_list import is_killed
+
+# Optional: strategy_class can be stored in AgentStatus or a map
+strategy_class = None
+if is_killed(agent_name, strategy_class):
+    logger.warning(f"Kill-list active: skipping {agent_name}")
+    return
+
+E. Auto-kill loop: when Meta-Supervisor marks KILL, append to kill-list
+
+Add meta_supervisor/auto_kill.py:
+
+import json
+from pathlib import Path
+from meta_supervisor.kill_list import load_kill_list
+
+KILL = Path("meta_supervisor/policy/kill_list.json")
+
+def apply_auto_kills(report: dict):
+    k = load_kill_list()
+    agents = report.get("agents", {}) or {}
+
+    to_kill = [a for a, s in agents.items() if s.get("decision") in ("KILL", "RETIRE")]
+    changed = False
+    for a in to_kill:
+        if a not in k["agents"]:
+            k["agents"].append(a)
+            changed = True
+
+    if changed:
+        KILL.parent.mkdir(parents=True, exist_ok=True)
+        KILL.write_text(json.dumps(k, indent=2))
+    return {"killed": to_kill, "changed": changed}
+
+
+Call it in your meta_supervisor/orchestrator.py after report is built:
+
+from meta_supervisor.auto_kill import apply_auto_kills
+result["auto_kill"] = apply_auto_kills(report)
+
+Final “snap-in” checklist (exact edits)
+
+Add new files:
+
+meta_supervisor/policy/regime_policy.json (auto-created on first run)
+
+meta_supervisor/regime_policy.py
+
+meta_supervisor/state/fleet_state.py
+
+meta_supervisor/capital.py
+
+meta_supervisor/ic_memo.py
+
+meta_supervisor/email_ic_memo.py
+
+meta_supervisor/agent_generator.py
+
+meta_supervisor/policy/kill_list.json (auto-created)
+
+meta_supervisor/kill_list.py
+
+meta_supervisor/auto_kill.py
+
+Edit build_meta_report.py:
+
+save_fleet(report["fleet"])
+
+report["capital"] = capital_at_risk_by_agent(...)
+
+report["regime_proposals"] = ... (already in your file; keep)
+
+Edit allocation.py:
+
+Apply portfolio regime cap (as shown)
+
+Edit scheduler:
+
+Add weekly IC memo cron
+
+Enforce kill-list in _run_agent

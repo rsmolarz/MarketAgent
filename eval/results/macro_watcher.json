@@ -1,0 +1,24 @@
+{
+  "module": "agents.macro_watcher_agent",
+  "callable": "MacroWatcherAgent.analyze",
+  "suite": "eval/suites/macro_watcher.jsonl",
+  "results": [
+    {
+      "id": "macro_smoke",
+      "ok": true,
+      "latency_s": 0.0,
+      "output": [
+        {
+          "symbol": "^VIX",
+          "name": "VIX",
+          "signal": "spike",
+          "value": 34.7,
+          "daily_change": 0.11,
+          "timestamp": "2026-01-07T23:38:07.032003Z"
+        }
+      ],
+      "error": null,
+      "reward": 1.0
+    }
+  ]
+}

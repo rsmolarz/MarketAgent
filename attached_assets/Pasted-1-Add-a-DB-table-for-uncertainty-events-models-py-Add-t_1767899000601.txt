@@ -1,0 +1,438 @@
+1) Add a DB table for uncertainty events (models.py)
+
+Add this model (keep it near your other tables). If you already have Alembic/migrations, do it properly; if not, db.create_all() will create it.
+
+# models.py
+from datetime import datetime
+from sqlalchemy import Index
+
+class UncertaintyEvent(db.Model):
+    __tablename__ = "uncertainty_event"
+
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    # high-level
+    label = db.Column(db.String(32), nullable=False)  # risk_off | transition | shock | calm
+    score = db.Column(db.Float, nullable=False, default=0.0)  # 0..1
+    spike = db.Column(db.Boolean, nullable=False, default=False)
+
+    # council diagnostics
+    disagreement = db.Column(db.Float, nullable=False, default=0.0)  # 0..1
+    votes = db.Column(db.JSON, nullable=True)  # raw council outputs
+
+    # optional: tie to regime
+    active_regime = db.Column(db.String(64), nullable=True)
+    regime_confidence = db.Column(db.Float, nullable=True)
+
+    # what we did about it
+    cadence_multiplier = db.Column(db.Float, nullable=False, default=1.0)
+    decay_multiplier = db.Column(db.Float, nullable=False, default=1.0)
+
+Index("ix_uncertainty_event_ts", UncertaintyEvent.timestamp)
+
+2) Create an uncertainty + council module (new files)
+2.1 meta/llm_council.py
+
+This is the interface. It supports real API calls later, but won’t break if keys are missing (it will degrade to “single-model off” safely).
+
+# meta/llm_council.py
+import os
+import math
+from typing import Dict, Any, List
+
+def _clamp(x: float, lo: float = 0.0, hi: float = 1.0) -> float:
+    return max(lo, min(hi, x))
+
+def _softmax(xs: List[float]) -> List[float]:
+    m = max(xs)
+    ex = [math.exp(x - m) for x in xs]
+    s = sum(ex) or 1.0
+    return [e / s for e in ex]
+
+def _normalize_vote(v: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Expected vote format:
+      {
+        "model": "gpt|claude|gemini",
+        "uncertainty": 0..1,
+        "label": "calm|risk_off|transition|shock",
+        "confidence": 0..1
+      }
+    """
+    return {
+        "model": v.get("model", "unknown"),
+        "uncertainty": _clamp(float(v.get("uncertainty", 0.0))),
+        "label": v.get("label", "calm"),
+        "confidence": _clamp(float(v.get("confidence", 0.5))),
+        "meta": v.get("meta", {}),
+    }
+
+def _disagreement(votes: List[Dict[str, Any]]) -> float:
+    if len(votes) <= 1:
+        return 0.0
+    u = [v["uncertainty"] for v in votes]
+    mean = sum(u) / len(u)
+    var = sum((x - mean) ** 2 for x in u) / (len(u) - 1)
+    # map stddev ~0..0.35 into 0..1
+    std = math.sqrt(var)
+    return _clamp(std / 0.35)
+
+def _aggregate_label(votes: List[Dict[str, Any]]) -> str:
+    # weighted vote by confidence
+    buckets = {"calm": 0.0, "risk_off": 0.0, "transition": 0.0, "shock": 0.0}
+    for v in votes:
+        lbl = v["label"] if v["label"] in buckets else "calm"
+        buckets[lbl] += v["confidence"]
+    # choose max
+    return max(buckets.items(), key=lambda kv: kv[1])[0]
+
+def _aggregate_uncertainty(votes: List[Dict[str, Any]]) -> float:
+    # weighted mean by confidence
+    wsum = sum(v["confidence"] for v in votes) or 1.0
+    return sum(v["uncertainty"] * v["confidence"] for v in votes) / wsum
+
+def run_llm_council(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    payload can include:
+      - regime_state
+      - top_findings
+      - market_snapshot (spy/vix/tnx features)
+    """
+    votes: List[Dict[str, Any]] = []
+
+    # --- GPT vote (placeholder: “available” if OPENAI_API_KEY set) ---
+    if os.getenv("OPENAI_API_KEY"):
+        # Replace with your actual OpenAI call (keep return format)
+        votes.append({"model": "gpt", "uncertainty": 0.35, "label": "transition", "confidence": 0.65})
+
+    # --- Claude vote ---
+    if os.getenv("ANTHROPIC_API_KEY"):
+        votes.append({"model": "claude", "uncertainty": 0.40, "label": "transition", "confidence": 0.60})
+
+    # --- Gemini vote ---
+    if os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"):
+        votes.append({"model": "gemini", "uncertainty": 0.30, "label": "risk_off", "confidence": 0.55})
+
+    # Safe fallback if no keys:
+    if not votes:
+        votes.append({"model": "fallback", "uncertainty": 0.15, "label": "calm", "confidence": 0.40})
+
+    votes = [_normalize_vote(v) for v in votes]
+    disagreement = _disagreement(votes)
+    score = _aggregate_uncertainty(votes)
+    label = _aggregate_label(votes)
+
+    # Disagreement spike: if council spread is high OR score is high
+    spike = (score >= 0.65) or (disagreement >= 0.60)
+
+    return {
+        "score": float(score),
+        "label": label,
+        "spike": bool(spike),
+        "disagreement": float(disagreement),
+        "votes": votes,
+    }
+
+2.2 meta/uncertainty.py
+
+This converts council output into cadence + decay multipliers, plus a small decay curve so you don’t whipsaw.
+
+# meta/uncertainty.py
+from typing import Dict, Any
+from datetime import datetime
+
+def compute_controls(state: Dict[str, Any], prev: Dict[str, Any] | None) -> Dict[str, Any]:
+    """
+    Returns:
+      - cadence_multiplier: >1 means run more frequently (shorter intervals)
+      - decay_multiplier: <1 means allocator becomes more conservative
+      - spike: bool
+      - label/score/disagreement/votes passthrough
+    """
+    score = float(state.get("score", 0.0))
+    label = state.get("label", "calm")
+    spike = bool(state.get("spike", False))
+
+    # base controls from label
+    if label == "shock":
+        cadence = 3.0
+        decay = 0.35
+    elif label == "transition":
+        cadence = 2.0
+        decay = 0.55
+    elif label == "risk_off":
+        cadence = 1.7
+        decay = 0.65
+    else:
+        cadence = 1.0
+        decay = 1.0
+
+    # score refines
+    # score 0..1 -> cadence 1..(label cap)
+    cadence = min(cadence, 1.0 + 2.0 * score)
+
+    # --- decay curve smoothing (prevents instant snapback) ---
+    # If we had a previous event, fade back in gradually.
+    if prev:
+        prev_decay = float(prev.get("decay_multiplier", 1.0))
+        prev_cad = float(prev.get("cadence_multiplier", 1.0))
+
+        # if no spike now, recover slowly
+        if not spike and score < 0.35:
+            decay = min(1.0, prev_decay + 0.10)   # +10% per step
+            cadence = max(1.0, prev_cad - 0.15)   # -15% per step
+
+        # if spike persists, tighten slightly
+        if spike and score > 0.75:
+            decay = max(0.25, min(decay, prev_decay * 0.90))
+
+    return {
+        **state,
+        "cadence_multiplier": float(cadence),
+        "decay_multiplier": float(decay),
+        "asof": datetime.utcnow().isoformat()
+    }
+
+3) Patch your scheduler with the hook (minimal changes)
+3.1 Add imports + globals at top of scheduler.py
+
+Add these near your other imports:
+
+from meta.llm_council import run_llm_council
+from meta.uncertainty import compute_controls
+
+
+Add globals near your existing _cached_regime_state:
+
+_uncertainty_state = None
+
+3.2 Schedule an uncertainty updater
+
+In init_app(), add:
+
+self.schedule_uncertainty()
+
+
+Add the schedule + worker methods:
+
+def schedule_uncertainty(self):
+    """Schedule uncertainty state updates every 5 minutes"""
+    try:
+        self.scheduler.add_job(
+            func=self._update_uncertainty_state,
+            trigger=IntervalTrigger(minutes=5),
+            id="uncertainty_state",
+            replace_existing=True
+        )
+        self._update_uncertainty_state()
+        logger.info("Scheduled uncertainty state updates every 5 minutes")
+    except Exception as e:
+        logger.error(f"Error scheduling uncertainty updates: {e}")
+
+def _update_uncertainty_state(self):
+    """Update global uncertainty state using LLM council + recent findings"""
+    global _uncertainty_state, _cached_regime_state
+
+    with self.app.app_context():
+        try:
+            from models import db, UncertaintyEvent
+
+            # recent top findings (lightweight)
+            recent = (
+                Finding.query
+                .order_by(Finding.timestamp.desc())
+                .limit(25)
+                .all()
+            )
+            top_findings = [{
+                "agent": f.agent_name,
+                "title": f.title,
+                "severity": f.severity,
+                "symbol": f.symbol,
+                "market_type": f.market_type
+            } for f in recent]
+
+            payload = {
+                "regime_state": _cached_regime_state,
+                "top_findings": top_findings,
+            }
+
+            council = run_llm_council(payload)
+            controls = compute_controls(council, _uncertainty_state)
+
+            # persist event
+            evt = UncertaintyEvent()
+            evt.label = controls["label"]
+            evt.score = controls["score"]
+            evt.spike = controls["spike"]
+            evt.disagreement = controls.get("disagreement", 0.0)
+            evt.votes = controls.get("votes", [])
+            evt.active_regime = (_cached_regime_state or {}).get("active_regime") if isinstance(_cached_regime_state, dict) else None
+            evt.regime_confidence = (_cached_regime_state or {}).get("confidence") if isinstance(_cached_regime_state, dict) else None
+            evt.cadence_multiplier = controls["cadence_multiplier"]
+            evt.decay_multiplier = controls["decay_multiplier"]
+
+            db.session.add(evt)
+            db.session.commit()
+
+            _uncertainty_state = controls
+
+            logger.info(
+                f"Uncertainty updated: label={evt.label} score={evt.score:.2f} "
+                f"spike={evt.spike} disagree={evt.disagreement:.2f} "
+                f"cadence_x{evt.cadence_multiplier:.2f} decay_x{evt.decay_multiplier:.2f}"
+            )
+
+        except Exception as e:
+            logger.error(f"Uncertainty update error: {e}")
+
+4) Enforce it: cadence modulation + allocator softening
+4.1 Cadence modulation in _rebalance_agent_allocation
+
+Modify your _rebalance_agent_allocation() like this (only the budget/interval math changes):
+
+def _rebalance_agent_allocation(self):
+    """Rebalance agent scheduling based on reward performance"""
+    from models import db
+    global _uncertainty_state
+
+    try:
+        self.allocator.ingest_events()
+
+        agent_names = list(self.active_jobs.keys())
+        if not agent_names:
+            return
+
+        # --- uncertainty controls ---
+        cadence_mult = float((_uncertainty_state or {}).get("cadence_multiplier", 1.0))
+        decay_mult = float((_uncertainty_state or {}).get("decay_multiplier", 1.0))
+
+        # soften allocator aggressiveness by shrinking the effective budget
+        base_budget = 30
+        effective_budget = max(10, int(base_budget * decay_mult))
+
+        quotas, scores = self.allocator.allocate(
+            agents=agent_names,
+            min_runs={"MacroWatcherAgent": 1},
+            max_runs={"ArbitrageFinderAgent": 12},
+            total_budget_runs=effective_budget
+        )
+
+        with self.app.app_context():
+            for agent_name, runs in quotas.items():
+                status = AgentStatus.query.filter_by(agent_name=agent_name).first()
+                if not status:
+                    continue
+
+                # cadence modulation: if cadence_mult>1, run more frequently
+                # existing formula: new_interval = max(1, int(60 / max(runs, 1)))
+                base_interval = max(1, int(60 / max(runs, 1)))
+                new_interval = max(1, int(base_interval / max(1.0, cadence_mult)))
+
+                if status.schedule_interval != new_interval:
+                    self.update_agent_interval(agent_name, new_interval)
+
+        logger.info(f"Rebalanced agent allocation (budget={effective_budget}, cadence_x{cadence_mult:.2f}): {scores}")
+    except Exception as e:
+        logger.error(f"Error rebalancing agent allocation: {e}")
+
+
+This implements:
+
+reduce allocator aggressiveness (smaller budget via decay_mult)
+
+increase cadence (shorter interval via cadence_mult)
+
+4.2 Optional: enforce “provisional” mode during spikes
+
+At the top of _run_agent(), after the meta/regime checks, add:
+
+global _uncertainty_state
+if (_uncertainty_state or {}).get("spike"):
+    # you can tag findings as provisional without changing agents
+    logger.warning(f"Uncertainty spike active: signals are provisional ({(_uncertainty_state or {}).get('label')})")
+
+
+If you want, you can also inject a metadata flag when saving findings:
+
+finding.finding_metadata = {
+    **(finding_data.get("metadata", {}) or {}),
+    "provisional": bool((_uncertainty_state or {}).get("spike", False)),
+    "uncertainty_label": (_uncertainty_state or {}).get("label"),
+    "uncertainty_score": (_uncertainty_state or {}).get("score"),
+}
+
+5) “Which agents fail first during uncertainty” (failure logging)
+
+You already track status.error_count and last_error. To make this queryable, add a small event table (optional but recommended).
+
+5.1 Add model (models.py)
+class AgentFailureEvent(db.Model):
+    __tablename__ = "agent_failure_event"
+    id = db.Column(db.Integer, primary_key=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+    agent_name = db.Column(db.String(128), index=True, nullable=False)
+    error = db.Column(db.Text, nullable=False)
+
+    uncertainty_label = db.Column(db.String(32), nullable=True)
+    uncertainty_score = db.Column(db.Float, nullable=True)
+    regime = db.Column(db.String(64), nullable=True)
+
+5.2 Log it in _run_agent() exception block
+
+Inside your except Exception as e: block:
+
+from models import AgentFailureEvent
+
+ufe = AgentFailureEvent()
+ufe.agent_name = agent_name
+ufe.error = str(e)
+ufe.uncertainty_label = (_uncertainty_state or {}).get("label")
+ufe.uncertainty_score = (_uncertainty_state or {}).get("score")
+ufe.regime = (_cached_regime_state or {}).get("active_regime") if isinstance(_cached_regime_state, dict) else None
+db.session.add(ufe)
+db.session.commit()
+
+
+Now you can build:
+
+“failures by agent during spikes”
+
+“failures by regime/uncertainty label”
+
+6) What I still need from you to wire the dashboard overlay correctly
+
+To do the vertical uncertainty bands + agent failure heatmap on the dashboard, paste:
+
+your app.py route section for the dashboard (you already showed / + Finding.query)
+
+templates/dashboard.html (or whatever template renders your page)
+
+With that, I’ll give you the exact overlay code:
+
+SPY price series chart
+
+vertical shaded regions for uncertainty events
+
+heatmap table for failure counts by agent x label/regime
+
+7) Quick verification commands
+
+Run these after adding the modules + scheduler hook:
+
+python - << 'EOF'
+from app import app
+from models import UncertaintyEvent
+with app.app_context():
+    latest = UncertaintyEvent.query.order_by(UncertaintyEvent.timestamp.desc()).first()
+    print("Latest uncertainty:", latest.label, latest.score, latest.spike, latest.cadence_multiplier, latest.decay_multiplier)
+EOF
+
+
+And check scheduler log for:
+
+Scheduled uncertainty state updates...
+
+Uncertainty updated: label=... cadence_x... decay_x...

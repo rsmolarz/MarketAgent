@@ -1,0 +1,167 @@
+Add commit support (required)
+A. Add helpers to write files to GitHub
+
+Add this below _headers():
+
+def _get_file_sha(path: str):
+    url = f"{GITHUB_API}/repos/{REPO}/contents/{path}?ref={HEAD}"
+    r = requests.get(url, headers=_headers())
+    if r.status_code == 200:
+        return r.json().get("sha")
+    return None
+
+
+def commit_file(path: str, content: str, message: str):
+    """
+    Create or update a file on HEAD branch.
+    """
+    url = f"{GITHUB_API}/repos/{REPO}/contents/{path}"
+    payload = {
+        "message": message,
+        "content": content.encode("utf-8").decode("utf-8"),
+        "branch": HEAD,
+    }
+
+    sha = _get_file_sha(path)
+    if sha:
+        payload["sha"] = sha
+
+    r = requests.put(url, headers=_headers(), json=payload)
+    r.raise_for_status()
+    return r.json()
+
+2️⃣ Ensure branch exists AND is fresh
+
+Patch maybe_create_pr() at the top:
+
+if not create_branch_if_not_exists():
+    logger.error("Failed to ensure promotion branch")
+    return None
+
+
+Optional (recommended): rotate branch per run:
+
+global HEAD
+HEAD = f"meta/supervisor-{meta.get('generated_at','').replace(':','').replace('-','')}"
+
+3️⃣ Commit strategy disables automatically (CRITICAL)
+
+You already compute strategy breaches elsewhere. Now wire it.
+
+A. Load strategy attribution + breaches
+
+Inside maybe_create_pr():
+
+strategy_report = {}
+try:
+    p = Path("meta_supervisor/state/strategy_attribution.json")
+    if p.exists():
+        strategy_report = json.loads(p.read_text())
+except Exception:
+    pass
+
+breaches = strategy_report.get("breaches", [])
+
+B. Update strategy_kill_list.yaml when breached
+
+Add this helper:
+
+import yaml
+
+def update_strategy_kill_list(breaches: list):
+    path = Path("meta_supervisor/strategy_kill_list.yaml")
+    current = {}
+    if path.exists():
+        current = yaml.safe_load(path.read_text()) or {}
+
+    for b in breaches:
+        s = b["strategy"]
+        current[s] = {
+            "status": "DISABLED",
+            "reason": "; ".join(b["reasons"]),
+            "disabled_at": datetime.now(timezone.utc).isoformat().replace("+00:00","Z")
+        }
+
+    return yaml.dump(current, default_flow_style=False)
+
+C. Commit the updated kill list
+
+Inside maybe_create_pr() before create_pr():
+
+if breaches:
+    yaml_body = update_strategy_kill_list(breaches)
+    commit_file(
+        path="meta_supervisor/strategy_kill_list.yaml",
+        content=yaml_body,
+        message="[AUTO] Disable breached strategy classes"
+    )
+
+
+This makes the PR actionable.
+
+4️⃣ Enforce regime-conditioned CVaR in PR body
+
+Enhance the PR body for strategy disables:
+
+if breaches:
+    body_parts.append("### 🚨 STRATEGY DISABLES (CVaR BREACH)")
+    for b in breaches:
+        body_parts.append(
+            f"- **{b['strategy']}** | PnL: {b['pnl_sum_bps']} bps | "
+            f"Hit: {b['hit_rate']} | Reason: {', '.join(b['reasons'])}"
+        )
+    body_parts.append("")
+
+
+Now LPs, IC, and reviewers see why.
+
+5️⃣ Promotion PRs should tag files too (optional but strong)
+
+If you promote agents, you should also commit a manifest update (even if symbolic):
+
+if promote:
+    commit_file(
+        path="meta_supervisor/state/promoted_agents.json",
+        content=json.dumps({
+            "generated_at": meta.get("generated_at"),
+            "agents": promote
+        }, indent=2),
+        message="[AUTO] Mark agents as promotable"
+    )
+
+
+This creates a reviewable diff, not just a comment.
+
+WHAT YOU NOW HAVE (IMPORTANT)
+
+After these changes, your system:
+
+✅ Detects agent & strategy failures
+✅ Disables entire strategy classes automatically
+✅ Commits governance changes to GitHub
+✅ Opens PRs with real diffs
+✅ Forces human approval before merge
+✅ Leaves a permanent audit trail
+
+This is exactly how institutional quant platforms operate.
+
+FINAL SANITY CHECK (DO THIS)
+
+Set env vars:
+
+export GITHUB_REPO=yourorg/yourrepo
+export GITHUB_TOKEN=ghp_xxx
+
+
+Run:
+
+python meta_supervisor/github_pr.py
+
+
+Verify:
+
+A new branch exists
+
+strategy_kill_list.yaml changed
+
+PR opens with diff + explanation

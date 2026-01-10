@@ -240,3 +240,141 @@ class EquityMomentumAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error calculating RSI: {e}")
             return prices * 0 + 50  # Return neutral RSI on error
+
+    def analyze_ctx(self, ctx) -> List[Dict[str, Any]]:
+        """
+        Backtest-compatible analysis using BacktestContext.
+        Called by backtest runner - does NOT call any network APIs.
+        """
+        findings = []
+        symbols = ctx.meta.get("symbols", self.instruments)
+        
+        for symbol in symbols:
+            df = ctx.frame(symbol)
+            if df is None or df.empty or len(df) < 20:
+                continue
+            
+            findings.extend(self._check_momentum_divergence_ctx(symbol, df))
+            findings.extend(self._check_volume_price_divergence_ctx(symbol, df))
+            findings.extend(self._check_momentum_exhaustion_ctx(symbol, df))
+        
+        return findings
+
+    def _check_momentum_divergence_ctx(self, symbol: str, data) -> List[Dict[str, Any]]:
+        """Backtest version of momentum divergence check"""
+        findings = []
+        try:
+            close = data['Close'].astype(float)
+            rsi = self._calculate_rsi(close)
+            
+            recent_prices = close.tail(5)
+            recent_rsi = rsi.tail(5)
+            
+            if len(recent_prices) < 5 or len(recent_rsi) < 5:
+                return findings
+            
+            price_trend = float(recent_prices.iloc[-1]) - float(recent_prices.iloc[0])
+            rsi_trend = float(recent_rsi.iloc[-1]) - float(recent_rsi.iloc[0])
+            
+            if price_trend > 0 and rsi_trend < -5:
+                findings.append(self.create_finding(
+                    title=f"Bearish RSI Divergence in {symbol}",
+                    description=f"Price up while RSI declined. RSI: {float(recent_rsi.iloc[-1]):.1f}",
+                    severity='medium',
+                    confidence=0.7,
+                    symbol=symbol,
+                    market_type='equity',
+                    metadata={'current_rsi': float(recent_rsi.iloc[-1]), 'divergence_type': 'bearish'}
+                ))
+            elif price_trend < 0 and rsi_trend > 5:
+                findings.append(self.create_finding(
+                    title=f"Bullish RSI Divergence in {symbol}",
+                    description=f"Price down while RSI increased. RSI: {float(recent_rsi.iloc[-1]):.1f}",
+                    severity='medium',
+                    confidence=0.7,
+                    symbol=symbol,
+                    market_type='equity',
+                    metadata={'current_rsi': float(recent_rsi.iloc[-1]), 'divergence_type': 'bullish'}
+                ))
+        except Exception as e:
+            self.logger.debug(f"Error in momentum divergence for {symbol}: {e}")
+        return findings
+
+    def _check_volume_price_divergence_ctx(self, symbol: str, data) -> List[Dict[str, Any]]:
+        """Backtest version of volume-price divergence check"""
+        findings = []
+        try:
+            if 'Volume' not in data.columns:
+                return findings
+            
+            close = data['Close'].astype(float)
+            volume = data['Volume'].astype(float)
+            recent_data = data.tail(10)
+            
+            if len(recent_data) < 10:
+                return findings
+            
+            price_change = (float(close.iloc[-1]) - float(close.iloc[-10])) / float(close.iloc[-10])
+            avg_volume_recent = float(volume.tail(5).mean())
+            avg_volume_earlier = float(volume.iloc[-10:-5].mean())
+            
+            if avg_volume_earlier <= 0:
+                return findings
+            
+            volume_change = (avg_volume_recent - avg_volume_earlier) / avg_volume_earlier
+            
+            if price_change > 0.01 and volume_change < -0.1:
+                findings.append(self.create_finding(
+                    title=f"Volume Divergence in {symbol}",
+                    description=f"Price +{price_change*100:.1f}% with volume -{abs(volume_change)*100:.1f}%",
+                    severity='medium',
+                    confidence=0.7,
+                    symbol=symbol,
+                    market_type='equity',
+                    metadata={'price_change': price_change, 'volume_change': volume_change}
+                ))
+            elif price_change < -0.01 and volume_change > 0.1:
+                findings.append(self.create_finding(
+                    title=f"Selling Pressure in {symbol}",
+                    description=f"Price {price_change*100:.1f}% with volume +{volume_change*100:.1f}%",
+                    severity='high',
+                    confidence=0.8,
+                    symbol=symbol,
+                    market_type='equity',
+                    metadata={'price_change': price_change, 'volume_change': volume_change}
+                ))
+        except Exception as e:
+            self.logger.debug(f"Error in volume divergence for {symbol}: {e}")
+        return findings
+
+    def _check_momentum_exhaustion_ctx(self, symbol: str, data) -> List[Dict[str, Any]]:
+        """Backtest version of momentum exhaustion check"""
+        findings = []
+        try:
+            close = data['Close'].astype(float)
+            rsi = self._calculate_rsi(close)
+            current_rsi = float(rsi.iloc[-1])
+            
+            if current_rsi > 80:
+                findings.append(self.create_finding(
+                    title=f"Overbought Condition in {symbol}",
+                    description=f"RSI at {current_rsi:.1f}",
+                    severity='medium',
+                    confidence=0.6,
+                    symbol=symbol,
+                    market_type='equity',
+                    metadata={'rsi': current_rsi, 'condition': 'overbought'}
+                ))
+            elif current_rsi < 20:
+                findings.append(self.create_finding(
+                    title=f"Oversold Condition in {symbol}",
+                    description=f"RSI at {current_rsi:.1f}",
+                    severity='medium',
+                    confidence=0.6,
+                    symbol=symbol,
+                    market_type='equity',
+                    metadata={'rsi': current_rsi, 'condition': 'oversold'}
+                ))
+        except Exception as e:
+            self.logger.debug(f"Error in momentum exhaustion for {symbol}: {e}")
+        return findings

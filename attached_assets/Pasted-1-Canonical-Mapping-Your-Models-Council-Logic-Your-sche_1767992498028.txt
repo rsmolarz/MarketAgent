@@ -1,0 +1,278 @@
+1️⃣ Canonical Mapping (Your Models ↔ Council Logic)
+
+Your schema already supports everything:
+
+Concept	Where it lives
+Per-finding consensus	Finding.consensus_action, consensus_confidence
+Raw LLM votes	Finding.llm_votes
+Disagreement flag	Finding.llm_disagreement
+Auto-analysis tracking	Finding.auto_analyzed
+Persistent council history	LLMCouncilResult
+Uncertainty spikes	UncertaintyEvent
+Fail-first per regime	AgentCouncilStat
+Substitutions	AgentSubstitution
+
+We will reuse all of these.
+
+2️⃣ Single Entry Point: LLM Council Runner (NEW)
+
+Create one service that everything calls:
+
+📁 services/llm_council_runner.py
+
+from datetime import datetime
+from collections import Counter
+from typing import Dict, Any, List
+
+from services.llm_council import run_council
+from models import (
+    db,
+    Finding,
+    LLMCouncilResult,
+    UncertaintyEvent,
+    AgentCouncilStat,
+)
+
+DISAGREEMENT_SPIKE = 0.55
+ACT_THRESHOLD = 0.60
+
+
+def run_llm_council_for_finding(finding_id: int, active_regime: str | None = None):
+    finding = Finding.query.get(finding_id)
+    if not finding or finding.auto_analyzed:
+        return
+
+    ta_snapshot = (finding.finding_metadata or {}).get("ta_snapshot", {})
+
+    result = run_council(finding.to_dict(), ta_snapshot)
+    if not result.get("ok"):
+        return
+
+    consensus = result["consensus"]
+    votes = result["votes"]
+
+    # -----------------------------
+    # Persist canonical fields
+    # -----------------------------
+    finding.consensus_action = consensus["verdict"]
+    finding.consensus_confidence = consensus["consensus_strength"]
+    finding.llm_votes = votes
+    finding.llm_disagreement = consensus["disagreement"] >= DISAGREEMENT_SPIKE
+    finding.auto_analyzed = True
+
+    # -----------------------------
+    # Persist council history
+    # -----------------------------
+    council_row = LLMCouncilResult(
+        finding_id=finding.id,
+        agent_name=finding.agent_name,
+        consensus=consensus["verdict"],
+        agreement=consensus["consensus_strength"],
+        uncertainty=consensus["disagreement"],
+        models_used=[v["model"] for v in votes],
+        raw_votes=votes,
+        analyses=None,
+        severity=finding.severity,
+        confidence=finding.confidence,
+        created_at=datetime.utcnow(),
+    )
+    db.session.add(council_row)
+
+    # -----------------------------
+    # Uncertainty Event
+    # -----------------------------
+    if consensus["disagreement"] >= DISAGREEMENT_SPIKE:
+        ue = UncertaintyEvent(
+            label="llm_disagreement",
+            score=consensus["disagreement"],
+            spike=True,
+            disagreement=consensus["disagreement"],
+            votes=votes,
+            active_regime=active_regime,
+            cadence_multiplier=0.7,
+            decay_multiplier=0.8,
+        )
+        db.session.add(ue)
+
+    # -----------------------------
+    # Agent fail-first learning
+    # -----------------------------
+    _update_agent_council_stats(
+        agent=finding.agent_name,
+        regime=active_regime or "unknown",
+        verdict=consensus["verdict"],
+    )
+
+    # -----------------------------
+    # Confidence boost if aligned
+    # -----------------------------
+    if (
+        consensus["verdict"] == "ACT"
+        and consensus["consensus_strength"] >= ACT_THRESHOLD
+        and consensus["ta_alignment_mode"] == "aligned"
+    ):
+        finding.confidence = min(1.0, finding.confidence + 0.10)
+
+    db.session.commit()
+
+3️⃣ Fail-First Learning (Already Modeled, Just Not Wired)
+
+You already created AgentCouncilStat.
+Now we use it.
+
+Add to the same file:
+
+def _update_agent_council_stats(agent: str, regime: str, verdict: str):
+    stat = (
+        AgentCouncilStat.query
+        .filter_by(agent_name=agent, regime=regime)
+        .first()
+    )
+
+    if not stat:
+        stat = AgentCouncilStat(
+            agent_name=agent,
+            regime=regime,
+        )
+        db.session.add(stat)
+
+    if verdict == "ACT":
+        stat.votes_act += 1
+    elif verdict == "WATCH":
+        stat.votes_watch += 1
+    else:
+        stat.votes_ignore += 1
+        stat.last_ignore_ts = datetime.utcnow()
+        if not stat.first_failure_ts:
+            stat.first_failure_ts = stat.last_ignore_ts
+
+    stat.last_updated = datetime.utcnow()
+
+
+This directly enables:
+
+“Which agents fail first under uncertainty”
+
+Regime-specific pruning
+
+Substitution logic
+
+4️⃣ Scheduler Hook (CRITICAL)
+
+In your scheduler.py, inside _run_agent after findings are committed, add:
+
+from services.llm_council_runner import run_llm_council_for_finding
+
+# Auto-run council on critical findings
+if findings:
+    recent = (
+        Finding.query
+        .filter_by(agent_name=agent_name)
+        .order_by(Finding.timestamp.desc())
+        .limit(10)
+        .all()
+    )
+
+    for f in recent:
+        if f.severity == "critical" and not f.auto_analyzed:
+            run_llm_council_for_finding(
+                finding_id=f.id,
+                active_regime=_cached_regime_state["active_regime"]
+                if _cached_regime_state else None
+            )
+
+
+This gives you:
+
+Automatic 3-LLM analysis
+
+No dashboard click required
+
+Guaranteed consistency
+
+5️⃣ Allocator Hook (You Asked for This Explicitly)
+
+In your allocator step (_rebalance_agent_allocation):
+
+from models import UncertaintyEvent
+
+latest = (
+    UncertaintyEvent.query
+    .order_by(UncertaintyEvent.timestamp.desc())
+    .first()
+)
+
+if latest and latest.spike:
+    # Reduce aggressiveness globally
+    self.allocator.exploration *= latest.decay_multiplier
+
+
+This satisfies:
+
+“Wire LLM uncertainty into allocator”
+
+6️⃣ Email Trigger (Consensus = ACT)
+
+You already have Finding.alerted.
+
+Add this once:
+
+if (
+    finding.consensus_action == "ACT"
+    and finding.consensus_confidence >= 0.65
+    and not finding.alerted
+):
+    send_meta_email(
+        subject=f"[ACT] {finding.title}",
+        text=finding.description,
+        html=f"<pre>{finding.description}</pre>"
+    )
+    finding.alerted = True
+
+7️⃣ Technical Analysis: Should You Add It?
+
+Yes — and you already did it correctly.
+
+TA in your system is not for prediction.
+It is for:
+
+Alignment check
+
+Regime attribution
+
+Uncertainty detection
+
+That’s exactly how institutional systems use TA.
+
+Where TA feeds now:
+
+ta_snapshot → LLM council
+
+ta_regime → regime rotation
+
+TA vs agent conflict → uncertainty spike
+
+This is structurally correct.
+
+8️⃣ What You Now Have (No Hype)
+
+You now have a system that:
+
+Runs agents
+
+Detects signals
+
+Applies TA context
+
+Gets 3 independent LLM opinions
+
+Measures disagreement
+
+Learns which agents fail first
+
+Modulates cadence + capital
+
+Explains every decision historically
+
+This is well beyond “signal generation”.
+It is governed decision intelligence.

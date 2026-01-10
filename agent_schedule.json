@@ -1,16 +1,88 @@
 {
-  "MacroWatcherAgent": 5,
-  "WhaleWalletWatcherAgent": 5,
-  "ArbitrageFinderAgent": 2,
-  "SentimentDivergenceAgent": 5,
-  "AltDataSignalAgent": 5,
-  "EquityMomentumAgent": 5,
-  "CryptoFundingRateAgent": 5,
-  "BondStressAgent": 5,
-  "GeopoliticalRiskAgent": 5,
-  "MarketCorrectionAgent": 5,
-  "HeartbeatAgent": 1,
-  "GreatestTradeAgent": 5,
-  "DailyPredictionAgent": 60,
-  "CryptoPredictionAgent": 60
+  "MacroWatcherAgent": {
+    "interval": 60,
+    "enabled": true,
+    "weight": 1.0,
+    "reason": "legacy"
+  },
+  "WhaleWalletWatcherAgent": {
+    "interval": 15,
+    "enabled": true,
+    "weight": 1.0,
+    "reason": "legacy"
+  },
+  "ArbitrageFinderAgent": {
+    "interval": 5,
+    "enabled": true,
+    "weight": 1.0,
+    "reason": "legacy"
+  },
+  "SentimentDivergenceAgent": {
+    "interval": 30,
+    "enabled": true,
+    "weight": 1.0,
+    "reason": "legacy"
+  },
+  "AltDataSignalAgent": {
+    "interval": 45,
+    "enabled": true,
+    "weight": 1.0,
+    "reason": "legacy"
+  },
+  "EquityMomentumAgent": {
+    "interval": 30,
+    "enabled": false,
+    "weight": 0.0,
+    "reason": "hit_rate 44.79% < 45%",
+    "rank": null,
+    "score": 0.4831438027262492
+  },
+  "CryptoFundingRateAgent": {
+    "interval": 15,
+    "enabled": true,
+    "weight": 1.0,
+    "reason": "legacy"
+  },
+  "BondStressAgent": {
+    "interval": 60,
+    "enabled": true,
+    "weight": 0.1,
+    "reason": "approved",
+    "rank": 1,
+    "score": 0.401204
+  },
+  "MarketCorrectionAgent": {
+    "interval": 30,
+    "enabled": false,
+    "weight": 0.0,
+    "reason": "mean_return -7.00% < 0%",
+    "rank": null,
+    "score": -0.6996638193548803
+  },
+  "GeopoliticalRiskAgent": {
+    "interval": 30,
+    "enabled": false,
+    "weight": 0.0,
+    "reason": "insufficient data (0 < 25)",
+    "rank": null,
+    "score": 0.0
+  },
+  "TechnicalAnalysisAgent": {
+    "interval": 30,
+    "enabled": true,
+    "weight": 1.0,
+    "reason": "core_ta"
+  },
+  "DistressedPropertyAgent": {
+    "interval": 60,
+    "enabled": true,
+    "weight": 1.0,
+    "reason": "real_estate"
+  },
+  "DistressedDealEvaluatorAgent": {
+    "interval": 120,
+    "enabled": true,
+    "weight": 1.0,
+    "reason": "distressed_debt_analysis"
+  }
 }

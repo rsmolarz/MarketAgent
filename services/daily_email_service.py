@@ -8,8 +8,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 
-from app import db
-from models import Whitelist, Finding, AgentStatus
+from models import Whitelist, Finding, AgentStatus, db
 from notifiers.sendgrid_notifier import SendGridNotifier
 
 logger = logging.getLogger(__name__)

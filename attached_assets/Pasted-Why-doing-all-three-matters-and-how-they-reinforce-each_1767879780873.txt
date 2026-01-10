@@ -1,0 +1,151 @@
+Why doing all three matters (and how they reinforce each other)
+1️⃣ Evaluation engine (performance metrics)
+
+This turns your backtest from “signal generation” → “decision system.”
+
+Right now:
+
+You know when agents fired.
+
+You do not yet know if they were useful.
+
+The evaluation engine gives you:
+
+Forward returns (20/60/120 days)
+
+Max drawdown after signal
+
+Hit rate
+
+Lead time to correction
+
+False-positive rate
+
+This is what the Meta-Agent and capital allocation logic will later consume.
+
+👉 Without this, your backtesting agent can’t rank or prune agents.
+
+2️⃣ Align another agent (repeatable pattern)
+
+This proves the system is general, not bespoke.
+
+Once two agents share:
+
+analyze() (live)
+
+analyze_ctx(ctx) (backtest)
+
+identical semantics
+
+…you can safely:
+
+Auto-onboard agents
+
+Enforce contracts
+
+Let the ideation model generate agents that are backtest-ready by default
+
+👉 This is what upgrades your “agent builder” from experimental to industrial.
+
+3️⃣ Simple dashboard overlay (visual sanity check)
+
+This is not cosmetic — it is model validation.
+
+When you plot:
+
+SPY price
+
+Correction signals
+
+VIX signals
+
+You immediately see:
+
+Look-ahead bias (if any)
+
+Signal clustering
+
+Missed regimes
+
+Overfitting
+
+👉 This protects you from shipping elegant nonsense.
+
+Recommended execution order (important)
+
+Do not do these randomly.
+Follow this order:
+
+✅ Phase 1 — Evaluation engine (foundation)
+
+This comes first. Everything else depends on it.
+
+Output:
+
+backtests/results_2007.jsonl
+
+backtests/metrics/MarketCorrectionAgent.json
+
+This is what the backtesting agent will later optimize against.
+
+✅ Phase 2 — Align second agent
+
+Pick one more Category-A agent:
+
+EquityMomentumAgent or
+
+BondStressAgent
+
+Goal:
+
+Prove the contract works for >1 agent
+
+Lock the analyze_ctx(ctx) standard
+
+Once two work, all others follow mechanically.
+
+✅ Phase 3 — Dashboard overlay
+
+Use the already evaluated signals.
+
+This answers:
+
+“Would a human have trusted this system in 2008, 2020, 2022?”
+
+If the answer is “no,” the evaluation engine tells you why.
+
+How this helps the backtesting agent specifically
+
+After all three are in place, your backtesting agent can:
+
+Score agents by:
+
+Precision
+
+Recall
+
+Timeliness
+
+Drawdown avoided
+
+Automatically:
+
+Quarantine noisy agents
+
+Down-weight late signals
+
+Promote early-warning agents
+
+Feed clean metrics into:
+
+Meta-Supervisor
+
+Capital-weighted promotion thresholds
+
+Auto-agent builder feedback loop
+
+This is the difference between:
+
+“We ran backtests”
+and
+“The system learns which agents deserve trust.”

@@ -1,0 +1,246 @@
+Below is a complete, self-contained evaluation engine that:
+
+Runs backtests from 2007 → present
+
+Labels forward returns
+
+Produces per-agent performance metrics
+
+Requires zero changes to live agents
+
+Uses the analyze_ctx(ctx) contract you already added
+
+This becomes the backbone for:
+
+backtesting agent
+
+meta-supervisor
+
+capital weighting
+
+auto-agent pruning
+
+STEP A — Backtest Evaluation Engine
+1️⃣ BacktestContext (read-only historical access)
+
+Create file:
+
+backtest/context.py
+
+from typing import Dict, Any
+import pandas as pd
+from datetime import datetime
+
+class BacktestContext:
+    """
+    Immutable historical context passed to agents during backtests.
+    """
+    def __init__(self, asof: datetime, frames: Dict[str, pd.DataFrame], meta: Dict[str, Any] = None):
+        self.asof = asof
+        self._frames = frames
+        self.meta = meta or {}
+
+    def frame(self, symbol: str) -> pd.DataFrame | None:
+        """
+        Returns price data up to asof date (no lookahead).
+        """
+        df = self._frames.get(symbol)
+        if df is None:
+            return None
+        return df[df.index <= self.asof]
+
+2️⃣ Forward-return labeling (the key insight layer)
+
+Create:
+
+backtest/labeling.py
+
+import pandas as pd
+
+FORWARD_WINDOWS = [20, 60, 120]  # trading days
+
+def label_forward_returns(
+    df: pd.DataFrame,
+    signal_date,
+    price_col="Close"
+) -> dict:
+    """
+    Computes forward returns after signal date.
+    """
+    out = {}
+    if signal_date not in df.index:
+        return out
+
+    idx = df.index.get_loc(signal_date)
+
+    for w in FORWARD_WINDOWS:
+        if idx + w < len(df):
+            fwd_price = df.iloc[idx + w][price_col]
+            cur_price = df.iloc[idx][price_col]
+            out[f"fwd_{w}d_return"] = float((fwd_price / cur_price) - 1)
+        else:
+            out[f"fwd_{w}d_return"] = None
+
+    return out
+
+3️⃣ Backtest runner (agent-agnostic)
+
+Create:
+
+backtest/runner.py
+
+import json
+from datetime import datetime
+from typing import List
+import pandas as pd
+
+from backtest.context import BacktestContext
+from backtest.labeling import label_forward_returns
+
+class BacktestRunner:
+    def __init__(self, agent, frames: dict, start_date, end_date):
+        self.agent = agent
+        self.frames = frames
+        self.start_date = start_date
+        self.end_date = end_date
+
+    def run(self) -> List[dict]:
+        signals = []
+
+        # Use SPY as clock
+        calendar = self.frames["SPY"].loc[self.start_date:self.end_date].index
+
+        for dt in calendar:
+            ctx = BacktestContext(
+                asof=dt,
+                frames=self.frames,
+                meta={"symbols": list(self.frames.keys())}
+            )
+
+            try:
+                findings = self.agent.analyze_ctx(ctx)
+            except Exception:
+                continue
+
+            for f in findings:
+                symbol = f.get("symbol", "SPY")
+                df = self.frames.get(symbol)
+                if df is None:
+                    continue
+
+                fwd = label_forward_returns(df, dt)
+
+                signals.append({
+                    "agent": self.agent.name,
+                    "date": dt.isoformat(),
+                    "symbol": symbol,
+                    "severity": f.get("severity"),
+                    "confidence": f.get("confidence"),
+                    "title": f.get("title"),
+                    **fwd
+                })
+
+        return signals
+
+4️⃣ Metrics engine (turn signals into truth)
+
+Create:
+
+backtest/metrics.py
+
+import pandas as pd
+
+def compute_agent_metrics(rows: list) -> dict:
+    df = pd.DataFrame(rows)
+
+    metrics = {}
+
+    for window in [20, 60, 120]:
+        col = f"fwd_{window}d_return"
+        valid = df[col].dropna()
+
+        if len(valid) == 0:
+            continue
+
+        metrics[col] = {
+            "mean_return": float(valid.mean()),
+            "median_return": float(valid.median()),
+            "hit_rate": float((valid < 0).mean()),  # corrections expected
+            "worst": float(valid.min()),
+            "best": float(valid.max()),
+            "count": int(len(valid))
+        }
+
+    metrics["total_signals"] = int(len(df))
+    metrics["avg_confidence"] = float(df["confidence"].mean())
+
+    return metrics
+
+5️⃣ One-command execution script
+
+Create:
+
+backtest/run_2007.py
+
+import json
+from datetime import datetime
+import yfinance as yf
+
+from agents.market_correction_agent import MarketCorrectionAgent
+from backtest.runner import BacktestRunner
+from backtest.metrics import compute_agent_metrics
+
+SYMBOLS = ["SPY", "QQQ", "IWM", "DIA", "^VIX", "TLT", "^TNX"]
+
+def load_data():
+    frames = {}
+    for s in SYMBOLS:
+        df = yf.download(s, start="2006-01-01", progress=False)
+        df.index = df.index.tz_localize(None)
+        frames[s] = df
+    return frames
+
+if __name__ == "__main__":
+    frames = load_data()
+
+    agent = MarketCorrectionAgent()
+    runner = BacktestRunner(
+        agent=agent,
+        frames=frames,
+        start_date=datetime(2007, 1, 1),
+        end_date=datetime.now()
+    )
+
+    rows = runner.run()
+    metrics = compute_agent_metrics(rows)
+
+    with open("backtests/market_correction_signals.json", "w") as f:
+        json.dump(rows, f, indent=2)
+
+    with open("backtests/market_correction_metrics.json", "w") as f:
+        json.dump(metrics, f, indent=2)
+
+    print("Signals:", len(rows))
+    print("Metrics:", metrics)
+
+What you now have (important)
+
+You now have:
+
+✅ Historical replay from 2007
+
+✅ No lookahead bias
+
+✅ Agent-agnostic evaluation
+
+✅ Metrics usable by:
+
+Meta-Agent
+
+Capital allocation
+
+Auto-promotion
+
+Auto-quarantine
+
+This is institutional-grade backtesting infrastru

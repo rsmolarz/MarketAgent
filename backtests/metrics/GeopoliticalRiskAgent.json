@@ -1,0 +1,39 @@
+{
+  "total_signals": 22,
+  "forward_returns": {
+    "fwd_5d": {
+      "mean": 0.00792071558647416,
+      "median": 0.008563964601262408,
+      "count": 22
+    },
+    "fwd_10d": {
+      "mean": 0.012424772841014307,
+      "median": 0.011906456786157316,
+      "count": 22
+    },
+    "fwd_20d": {
+      "mean": 0.026295845734073942,
+      "median": 0.023914295519882,
+      "count": 22
+    },
+    "fwd_60d": {
+      "mean": 0.011809765842654751,
+      "median": 0.04513012008426531,
+      "count": 22
+    }
+  },
+  "by_severity": {
+    "critical": 13,
+    "high": 9
+  },
+  "by_region": {
+    "China-US": 4,
+    "Europe": 1,
+    "Middle East": 8,
+    "North Korea": 1,
+    "Russia-Georgia": 1,
+    "Taiwan": 1,
+    "US Domestic": 1,
+    "Ukraine": 5
+  }
+}

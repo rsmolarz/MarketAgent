@@ -85,7 +85,6 @@ class MarketCorrectionAgent(BaseAgent):
     def _check_decline_from_peak(self, symbol: str, data: Any, info: Dict) -> List[Dict[str, Any]]:
         """Check if price has declined significantly from recent peak"""
         findings = []
-        
         try:
             # Calculate 52-week high
             high_52w = data['Close'].tail(252).max()
@@ -392,3 +391,219 @@ class MarketCorrectionAgent(BaseAgent):
         except Exception as e:
             self.logger.error(f"Error calculating RSI: {e}")
             return prices * 0 + 50  # Return neutral RSI on error
+
+    def analyze_ctx(self, ctx) -> List[Dict[str, Any]]:
+        """
+        Backtest-compatible analysis using BacktestContext.
+        Called by backtest runner - does NOT call any network APIs.
+        Uses ctx.asof and ctx.frame(symbol) for historical data.
+        """
+        findings = []
+        symbols = ctx.meta.get("symbols", list(self.markets.keys()))
+        
+        for symbol in symbols:
+            df = ctx.frame(symbol)
+            if df is None or df.empty or len(df) < 60:
+                continue
+            
+            info = self.markets.get(symbol, {"name": symbol, "type": "equity_index"})
+            
+            findings.extend(self._check_decline_from_peak_ctx(symbol, df, info))
+            findings.extend(self._check_technical_indicators_ctx(symbol, df, info))
+            findings.extend(self._check_momentum_exhaustion_ctx(symbol, df, info))
+        
+        findings.extend(self._check_vix_spike_ctx(ctx, symbols))
+        findings.extend(self._check_breadth_deterioration_ctx(ctx, symbols))
+        findings.extend(self._check_yield_curve_ctx(ctx, symbols))
+        
+        return findings
+
+    def _check_decline_from_peak_ctx(self, symbol: str, df: Any, info: Dict) -> List[Dict[str, Any]]:
+        """Backtest version of decline from peak check"""
+        findings = []
+        try:
+            close = df['Close'].astype(float)
+            high_52w = close.tail(252).max()
+            current_price = close.iloc[-1]
+            decline_pct = (current_price - high_52w) / high_52w
+            
+            warning_threshold = -self.correction_threshold * 0.7
+            if decline_pct <= warning_threshold:
+                severity = 'critical' if decline_pct <= -self.correction_threshold else 'high'
+                findings.append(self.create_finding(
+                    title=f"{info['name']} Approaching Correction",
+                    description=f"{info['name']} has declined {abs(decline_pct)*100:.1f}% from its 52-week high.",
+                    severity=severity,
+                    confidence=0.85,
+                    symbol=symbol,
+                    market_type=info['type'],
+                    metadata={
+                        'decline_from_peak': float(decline_pct),
+                        'current_price': float(current_price),
+                        'peak_price': float(high_52w)
+                    }
+                ))
+        except Exception as e:
+            self.logger.debug(f"Error in decline check for {symbol}: {e}")
+        return findings
+
+    def _check_technical_indicators_ctx(self, symbol: str, df: Any, info: Dict) -> List[Dict[str, Any]]:
+        """Backtest version of technical indicators check"""
+        findings = []
+        try:
+            if info['type'] in ['volatility', 'rates']:
+                return findings
+            
+            close = df['Close'].astype(float)
+            rsi = self._calculate_rsi(close, period=14)
+            current_rsi = rsi.iloc[-1] if len(rsi) > 0 else 50
+            
+            if len(close) >= 200:
+                ma_50 = close.rolling(window=50).mean()
+                ma_200 = close.rolling(window=200).mean()
+                current_ma50 = ma_50.iloc[-1]
+                current_ma200 = ma_200.iloc[-1]
+                
+                if current_ma50 < current_ma200 and len(ma_50) > 5:
+                    prev_ma50 = ma_50.iloc[-5]
+                    prev_ma200 = ma_200.iloc[-5]
+                    if prev_ma50 >= prev_ma200:
+                        findings.append(self.create_finding(
+                            title=f"Death Cross Detected in {info['name']}",
+                            description=f"50-day MA crossed below 200-day MA",
+                            severity='high',
+                            confidence=0.75,
+                            symbol=symbol,
+                            market_type=info['type'],
+                            metadata={'ma_50': float(current_ma50), 'ma_200': float(current_ma200)}
+                        ))
+            
+            extreme_threshold = self.rsi_overbought + 5
+            if current_rsi > extreme_threshold:
+                findings.append(self.create_finding(
+                    title=f"{info['name']} Extremely Overbought",
+                    description=f"RSI is at {current_rsi:.1f}",
+                    severity='medium',
+                    confidence=0.65,
+                    symbol=symbol,
+                    market_type=info['type'],
+                    metadata={'rsi': float(current_rsi)}
+                ))
+        except Exception as e:
+            self.logger.debug(f"Error in technical check for {symbol}: {e}")
+        return findings
+
+    def _check_momentum_exhaustion_ctx(self, symbol: str, df: Any, info: Dict) -> List[Dict[str, Any]]:
+        """Backtest version of momentum exhaustion check"""
+        findings = []
+        try:
+            if info['type'] in ['volatility', 'rates']:
+                return findings
+            
+            close = df['Close'].astype(float)
+            returns = close.pct_change()
+            recent_20d = returns.tail(20)
+            positive_days = (recent_20d > 0).sum()
+            
+            if positive_days >= 16:
+                cumulative_gain = (close.iloc[-1] / close.iloc[-20] - 1)
+                findings.append(self.create_finding(
+                    title=f"{info['name']} Shows Momentum Exhaustion",
+                    description=f"{positive_days}/20 days positive with {cumulative_gain*100:.1f}% gain",
+                    severity='medium',
+                    confidence=0.60,
+                    symbol=symbol,
+                    market_type=info['type'],
+                    metadata={'positive_days_count': int(positive_days), 'cumulative_gain': float(cumulative_gain)}
+                ))
+        except Exception as e:
+            self.logger.debug(f"Error in momentum check for {symbol}: {e}")
+        return findings
+
+    def _check_vix_spike_ctx(self, ctx, symbols: List[str]) -> List[Dict[str, Any]]:
+        """Backtest version of VIX spike check"""
+        findings = []
+        try:
+            vix_df = ctx.frame('^VIX')
+            if vix_df is None or vix_df.empty:
+                return findings
+            
+            current_vix = float(vix_df['Close'].iloc[-1])
+            
+            if current_vix >= self.vix_critical:
+                findings.append(self.create_finding(
+                    title="VIX at Critical Levels",
+                    description=f"VIX at {current_vix:.2f}",
+                    severity='critical',
+                    confidence=0.85,
+                    symbol='^VIX',
+                    market_type='volatility',
+                    metadata={'current_vix': current_vix}
+                ))
+            elif current_vix >= self.vix_warning:
+                findings.append(self.create_finding(
+                    title="VIX Elevated",
+                    description=f"VIX at {current_vix:.2f}",
+                    severity='high',
+                    confidence=0.75,
+                    symbol='^VIX',
+                    market_type='volatility',
+                    metadata={'current_vix': current_vix}
+                ))
+        except Exception as e:
+            self.logger.debug(f"Error in VIX check: {e}")
+        return findings
+
+    def _check_breadth_deterioration_ctx(self, ctx, symbols: List[str]) -> List[Dict[str, Any]]:
+        """Backtest version of breadth check"""
+        findings = []
+        try:
+            spy_df = ctx.frame('SPY')
+            iwm_df = ctx.frame('IWM')
+            if spy_df is None or iwm_df is None or spy_df.empty or iwm_df.empty:
+                return findings
+            if len(spy_df) < 20 or len(iwm_df) < 20:
+                return findings
+            
+            spy_return = float(spy_df['Close'].iloc[-1] / spy_df['Close'].iloc[-20] - 1)
+            iwm_return = float(iwm_df['Close'].iloc[-1] / iwm_df['Close'].iloc[-20] - 1)
+            
+            if iwm_return < spy_return - 0.05:
+                findings.append(self.create_finding(
+                    title="Market Breadth Deteriorating",
+                    description=f"Small caps lagging by {abs(iwm_return - spy_return)*100:.1f}%",
+                    severity='medium',
+                    confidence=0.70,
+                    symbol='IWM',
+                    market_type='breadth',
+                    metadata={'spy_return_20d': spy_return, 'iwm_return_20d': iwm_return}
+                ))
+        except Exception as e:
+            self.logger.debug(f"Error in breadth check: {e}")
+        return findings
+
+    def _check_yield_curve_ctx(self, ctx, symbols: List[str]) -> List[Dict[str, Any]]:
+        """Backtest version of yield curve check"""
+        findings = []
+        try:
+            tnx_df = ctx.frame('^TNX')
+            if tnx_df is None or tnx_df.empty or len(tnx_df) < 20:
+                return findings
+            
+            current_10y = float(tnx_df['Close'].iloc[-1])
+            prev_10y = float(tnx_df['Close'].iloc[-20])
+            yield_change = current_10y - prev_10y
+            
+            if yield_change > 0.5:
+                findings.append(self.create_finding(
+                    title="Rapid Treasury Yield Rise",
+                    description=f"10Y yield rose {yield_change:.2f}% in 20 days to {current_10y:.2f}%",
+                    severity='high',
+                    confidence=0.70,
+                    symbol='^TNX',
+                    market_type='rates',
+                    metadata={'current_yield': current_10y, 'yield_change_20d': yield_change}
+                ))
+        except Exception as e:
+            self.logger.debug(f"Error in yield curve check: {e}")
+        return findings

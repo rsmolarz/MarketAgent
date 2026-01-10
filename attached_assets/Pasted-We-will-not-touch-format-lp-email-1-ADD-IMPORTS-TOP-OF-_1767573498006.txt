@@ -1,0 +1,149 @@
+We will not touch format_lp_email().
+
+1️⃣ ADD IMPORTS (TOP OF FILE)
+
+Add these imports:
+
+import base64
+
+from services.lp_weekly_pdf import build_weekly_pdf
+from services.tear_sheet_batch import build_all as build_tearsheets
+
+2️⃣ ADD HELPER: ATTACH FILES TO SENDGRID
+
+Add below format_lp_email():
+
+def _attach_files(message: Mail, paths: list[Path]):
+    for p in paths:
+        if not p.exists():
+            continue
+        encoded = base64.b64encode(p.read_bytes()).decode("utf-8")
+        message.add_attachment(
+            encoded,
+            filename=p.name,
+            type="application/pdf",
+            disposition="attachment"
+        )
+
+3️⃣ ADD WEEKLY SEND FUNCTION (NEW)
+
+Add below send_lp_email():
+
+def send_lp_weekly_email():
+    report = _load()
+    if not report:
+        logger.warning("No meta report found for LP weekly email")
+        return False
+
+    subject, text, html = format_lp_email(report)
+    subject = subject.replace("[LP Daily", "[LP Weekly")
+
+    api_key = os.environ.get("SENDGRID_API_KEY")
+    if not api_key:
+        logger.error("SENDGRID_API_KEY not set")
+        return False
+
+    recipients = os.environ.get("META_EMAIL_TO", "").split(",")
+    recipients = [r.strip() for r in recipients if r.strip()]
+    if not recipients:
+        logger.error("META_EMAIL_TO not set")
+        return False
+
+    from_email = os.environ.get("EMAIL_FROM", "rsmolarz@medmoneyshow.com")
+
+    # ---- BUILD ATTACHMENTS ----
+    attachments = []
+
+    try:
+        portfolio_pdf = build_weekly_pdf(report)
+        attachments.append(portfolio_pdf)
+    except Exception as e:
+        logger.warning(f"Weekly portfolio PDF failed: {e}")
+
+    try:
+        tear_sheets = build_tearsheets(top_n=10)
+        attachments.extend(Path(p) for p in tear_sheets)
+    except Exception as e:
+        logger.warning(f"Tear sheet build failed: {e}")
+
+    try:
+        sg = SendGridAPIClient(api_key)
+
+        for recipient in recipients:
+            message = Mail(
+                from_email=Email(from_email),
+                to_emails=To(recipient),
+                subject=subject,
+                plain_text_content=Content("text/plain", text),
+                html_content=Content("text/html", html)
+            )
+
+            _attach_files(message, attachments)
+
+            response = sg.send(message)
+            logger.info(
+                f"LP WEEKLY email sent to {recipient}: "
+                f"{response.status_code} | attachments={len(attachments)}"
+            )
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to send LP weekly email: {e}")
+        return False
+
+4️⃣ ENTRYPOINT CONTROL (DAILY vs WEEKLY)
+
+Replace the bottom of the file:
+
+if __name__ == "__main__":
+    send_lp_email()
+
+
+With:
+
+if __name__ == "__main__":
+    mode = os.environ.get("LP_EMAIL_MODE", "daily").lower()
+    if mode == "weekly":
+        send_lp_weekly_email()
+    else:
+        send_lp_email()
+
+5️⃣ HOW TO RUN (REPLIT / PROD)
+Daily (existing behavior)
+python services/lp_email_service.py
+
+Weekly (with PDFs + tear sheets)
+export LP_EMAIL_MODE=weekly
+python services/lp_email_service.py
+
+6️⃣ HOW TO SCHEDULE (RECOMMENDED)
+
+In your scheduler:
+
+Daily → existing job (7:00 UTC)
+
+Weekly → Sunday 7:00 UTC
+
+Example cron:
+
+CronTrigger(day_of_week="sun", hour=7, minute=0)
+
+🔒 WHAT YOU NOW HAVE (IMPORTANT)
+
+You now deliver:
+
+✔ Daily LP operational snapshot
+✔ Weekly institutional-grade PDF reporting
+✔ Per-agent tear sheets (risk + alpha + governance)
+✔ Attachments suitable for:
+
+LPs
+
+Family offices
+
+IC decks
+
+Data rooms
+
+This is fund-ready infrastructure.

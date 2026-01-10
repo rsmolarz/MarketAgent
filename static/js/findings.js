@@ -74,7 +74,7 @@ class FindingsManager {
         try {
             const params = new URLSearchParams(this.filters);
             console.log('Filters:', this.filters);
-            const response = await fetch(`/api/findings?${params.toString()}`);
+            const response = await fetch(`/dashboard/api/findings?${params.toString()}`);
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
@@ -104,7 +104,7 @@ class FindingsManager {
     async populateFilterOptions() {
         try {
             // Get unique agents
-            const agentsResponse = await fetch('/api/agents');
+            const agentsResponse = await fetch('/dashboard/api/agents');
             if (agentsResponse.ok) {
                 const agents = await agentsResponse.json();
                 const agentSelect = document.getElementById('agent-filter');
@@ -118,7 +118,7 @@ class FindingsManager {
             }
             
             // Get unique symbols and other filter options from findings
-            const findingsResponse = await fetch('/api/findings?limit=1000');
+            const findingsResponse = await fetch('/dashboard/api/findings?limit=1000');
             if (findingsResponse.ok) {
                 const findings = await findingsResponse.json();
                 

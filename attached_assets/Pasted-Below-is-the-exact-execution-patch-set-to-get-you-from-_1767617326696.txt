@@ -1,0 +1,158 @@
+Below is the exact execution + patch set to get you from “pipeline wired” → quant-grade live governance.
+
+STEP 1️⃣ Run reconciliation (do this now)
+
+In Replit shell:
+
+python alpha/reconcile.py
+
+
+You should see something like:
+
+Reconciled rows appended: N
+
+
+If N == 0, wait until at least one signal has aged past 24h, or temporarily change:
+
+HORIZONS_HOURS = [1]
+
+
+to bootstrap (then revert to [24]).
+
+STEP 2️⃣ Verify abs_error_bps exists
+
+Run:
+
+python - <<'PY'
+import json
+from pathlib import Path
+
+p = Path("alpha/reconciled.jsonl")
+rows = [json.loads(x) for x in p.read_text().splitlines()[-5:]]
+for r in rows:
+    print({
+        "agent": r.get("agent"),
+        "h": r.get("horizon_hours"),
+        "realized": r.get("realized_pnl_bps"),
+        "expected": r.get("expected_pnl_bps"),
+        "abs_error": r.get("abs_error_bps"),
+    })
+PY
+
+
+✅ You must see non-null abs_error_bps.
+
+If not → reconciliation is still using old rows → delete alpha/reconciled.jsonl and rerun.
+
+STEP 3️⃣ Re-run confidence multipliers
+python - <<'PY'
+from meta_supervisor.confidence_decay import update_confidence_multipliers
+import json
+print(json.dumps(update_confidence_multipliers(), indent=2))
+PY
+
+
+Expected output shape:
+
+{
+  "version": 1,
+  "generated_at": "...",
+  "multipliers": {
+    "MacroWatcherAgent": 0.93,
+    "ArbitrageFinderAgent": 1.02
+  }
+}
+
+
+Then confirm file exists:
+
+cat meta_supervisor/state/confidence_multipliers.json
+
+
+If populated → allocation will now react to real losses.
+
+STEP 4️⃣ PATCH promotion gate (sim-aware)
+
+Your current should_promote() is missing sim accuracy.
+Apply this exact patch.
+
+🔧 Modify should_promote():
+
+Add this near the top:
+
+avg_abs_error = agent_metrics.get("avg_abs_error_bps")
+sim_ok = (
+    avg_abs_error is not None and
+    float(avg_abs_error) <= 60
+)
+
+
+Then update the return block:
+
+return all([
+    behavioral_ok,
+    pnl_ok,
+    not_killed,
+    error_ok,
+    latency_ok,
+    hit_rate_ok,
+    sim_ok,
+])
+
+Why this matters
+
+An agent can be profitable by luck.
+You are now promoting only agents that:
+
+make money
+
+and are directionally correct vs expectation
+
+This is a real quant gate.
+
+STEP 5️⃣ Add CVaR to strategy attribution (tail-risk control)
+
+You are currently mean-only. We add CVaR on pnl_error_bps.
+
+🔧 PATCH: strategy_attribution.py
+1️⃣ Add helper (top of file)
+def cvar(values, alpha=0.95):
+    if not values:
+        return 0.0
+    vs = sorted(values)
+    cutoff = int(len(vs) * alpha)
+    tail = vs[cutoff:]
+    if not tail:
+        return vs[-1]
+    return sum(tail) / len(tail)
+
+2️⃣ Inside strategy_attribution() loop
+
+After collecting events per strategy, add:
+
+errors = [
+    float(e.get("pnl_error_bps", 0))
+    for e in events
+    if e.get("pnl_error_bps") is not None
+]
+
+by_strategy[strategy]["cvar_error_bps"] = round(cvar(errors), 2)
+
+3️⃣ Enforce CVaR in kill logic
+
+In evaluate_strategy_thresholds():
+
+max_cvar = config.get("max_cvar_error_bps", 120)
+if stats.get("cvar_error_bps", 0) > max_cvar:
+    reasons.append(
+        f"CVaR error {stats['cvar_error_bps']} > {max_cvar}"
+    )
+
+
+Now a strategy can be:
+
+profitable on average
+
+but still killed for tail-risk
+
+This is institutional-grade.

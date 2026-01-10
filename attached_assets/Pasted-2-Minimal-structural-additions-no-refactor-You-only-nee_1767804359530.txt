@@ -1,0 +1,219 @@
+2) Minimal structural additions (no refactor)
+
+You only need to add three things:
+
+agents/
+├─ prompts/               ← NEW (centralized prompts)
+│  ├─ reviewer.md         ← LLM reviewer instructions
+│  ├─ meta_system.md      ← Meta-Agent system prompt
+│  └─ agent_guidelines.md ← Global agent rules
+├─ eval/
+│  ├─ harness.py
+│  ├─ suites/
+│  │  ├─ arbitrage_finder.jsonl
+│  │  ├─ geopolitical_risk.jsonl
+│  │  └─ ...
+│  └─ results/
+meta/
+├─ meta_agent.py
+├─ policy.yaml
+└─ reports/
+
+
+Your existing agent files remain untouched.
+
+3) Updated agents/manifest.yaml (adapted to your files)
+
+This is the key glue layer.
+
+agents:
+  - name: arbitrage_finder
+    module: agents.arbitrage_finder_agent
+    entrypoint: run
+    eval_suite: eval/suites/arbitrage_finder.jsonl
+    telemetry_tag: arbitrage
+
+  - name: geopolitical_risk
+    module: agents.geopolitical_risk_agent
+    entrypoint: analyze
+    eval_suite: eval/suites/geopolitical_risk.jsonl
+    telemetry_tag: geopolitics
+
+  - name: crypto_prediction
+    module: agents.crypto_prediction_agent
+    entrypoint: predict
+    eval_suite: eval/suites/crypto_prediction.jsonl
+    telemetry_tag: crypto
+
+  - name: macro_watcher
+    module: agents.macro_watcher_agent
+    entrypoint: run
+    eval_suite: eval/suites/macro_watcher.jsonl
+    telemetry_tag: macro
+
+
+Rule
+
+module = Python import path
+
+entrypoint = callable function
+
+You do not standardize logic, only the call signature
+
+4) Eval harness (updated for your agent style)
+eval/harness.py
+import json, time, importlib
+from pathlib import Path
+
+def load_callable(module_path, fn_name):
+    mod = importlib.import_module(module_path)
+    return getattr(mod, fn_name)
+
+def run_suite(module, entrypoint, suite_path, out_path):
+    fn = load_callable(module, entrypoint)
+    suite = Path(suite_path).read_text().splitlines()
+    results = []
+
+    for line in suite:
+        case = json.loads(line)
+        t0 = time.time()
+        try:
+            output = fn(**case["input"])
+            ok = True
+            err = None
+        except Exception as e:
+            output = None
+            ok = False
+            err = str(e)
+
+        results.append({
+            "id": case.get("id"),
+            "ok": ok,
+            "latency_s": round(time.time() - t0, 4),
+            "output": output,
+            "error": err
+        })
+
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(out_path).write_text(json.dumps({
+        "module": module,
+        "entrypoint": entrypoint,
+        "suite": suite_path,
+        "results": results
+    }, indent=2))
+
+
+Eval inputs are named kwargs, not strings — this matches your analytical agents.
+
+5) Where prompts are sent (this is what you asked)
+A) Reviewer prompt (LLM that critiques code + behavior)
+agents/prompts/reviewer.md
+You are a senior AI systems reviewer.
+
+Your task:
+- Review agent behavior, reliability, efficiency, and code quality
+- Identify regressions, risks, and improvement opportunities
+- Recommend minimal, high-impact changes
+
+Constraints:
+- DO NOT suggest changes to protected paths
+- Prefer prompt or logic changes over architecture
+- Rank recommendations by impact
+
+Output STRICT JSON only.
+
+B) Meta-Agent system prompt
+agents/prompts/meta_system.md
+You are the Meta-Agent supervising a multi-agent market intelligence system.
+
+You:
+- Compare current performance to baseline
+- Detect degradation, inefficiencies, or drift
+- Produce ranked, actionable recommendations
+- Never hallucinate metrics
+- Never suggest unsafe self-modification
+
+You output structured recommendations only.
+
+6) Meta-Agent: where prompts are actually sent
+meta/meta_agent.py (core logic excerpt)
+from tools.llm_client import call_llm
+from pathlib import Path
+import json, yaml
+
+def build_prompt(policy, diffs, evals):
+    system = Path("agents/prompts/meta_system.md").read_text()
+    reviewer = Path("agents/prompts/reviewer.md").read_text()
+
+    user_payload = {
+        "policy": policy,
+        "git_diff": diffs,
+        "evaluation_results": evals,
+        "rubric": {
+            "behavior": 50,
+            "reliability": 20,
+            "efficiency": 15,
+            "code_health": 15
+        },
+        "instructions": [
+            "Flag regressions vs baseline",
+            "Prioritize agent correctness and reliability",
+            "Recommend fixes with file-level specificity",
+            "Return valid JSON only"
+        ]
+    }
+
+    return [
+        {"role": "system", "content": system},
+        {"role": "system", "content": reviewer},
+        {"role": "user", "content": json.dumps(user_payload)}
+    ]
+
+def run_reviewer(policy, diffs, evals):
+    messages = build_prompt(policy, diffs, evals)
+    return call_llm(messages)
+
+
+This is where prompts are sent.
+
+Every CI run
+
+Every PR
+
+Every scheduled execution
+
+7) GitHub Actions (adapted to your agents)
+
+Replace the eval step with:
+
+- name: Run eval suites
+  run: |
+    python - <<'EOF'
+    import yaml
+    from pathlib import Path
+    from eval.harness import run_suite
+
+    m = yaml.safe_load(Path("agents/manifest.yaml").read_text())
+    for a in m["agents"]:
+        out = f"eval/results/{a['name']}.json"
+        run_suite(a["module"], a["entrypoint"], a["eval_suite"], out)
+    EOF
+
+
+Everything else stays the same.
+
+8) What this gives you immediately
+
+You now have:
+
+✅ Continuous agent evaluation
+
+✅ LLM-based reviewer sending structured prompts
+
+✅ Ranked recommendations, not vague feedback
+
+✅ CI-safe, non-destructive oversight
+
+✅ A foundation for prompt-only self-optimization next
+
+No agent rewrites. No magic. No runaway self-editing.

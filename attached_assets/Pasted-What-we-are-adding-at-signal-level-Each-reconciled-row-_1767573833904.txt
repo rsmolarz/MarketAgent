@@ -1,0 +1,138 @@
+What we are adding (at signal level)
+
+Each reconciled row will now include:
+
+{
+  "expected_pnl_bps": 12.7,
+  "pnl_error_bps": -8.3,
+  "abs_error_bps": 8.3,
+  "sim_version": "v0.1-score-linear",
+  "confidence_adj": 0.84
+}
+
+
+This unlocks:
+
+Live vs Sim charts (already wired)
+
+Confidence decay tied to real losses
+
+Agent / strategy forensic analysis
+
+Promotion & kill gates on realized vs expected
+
+Minimal design choice (for now)
+
+Until you wire a full simulator, we’ll use a transparent, deterministic proxy:
+
+expected_pnl_bps = score_final × SCALE
+
+This is intentional:
+
+Auditable
+
+Replaceable later
+
+Stable across replays
+
+🔧 PATCH: alpha/reconcile.py
+1️⃣ Add constants at the top
+SIM_VERSION = "v0.1-score-linear"
+SCORE_TO_BPS = 25.0   # 1.0 score ≈ 25 bps expectation
+MAX_EXPECTED_BPS = 250.0
+
+2️⃣ Add helper functions (below parse_ts)
+def clamp(x, lo, hi):
+    return max(lo, min(hi, x))
+
+def expected_pnl_from_score(score_final: float | None) -> float:
+    if score_final is None:
+        return 0.0
+    try:
+        exp = float(score_final) * SCORE_TO_BPS
+        return clamp(exp, -MAX_EXPECTED_BPS, MAX_EXPECTED_BPS)
+    except Exception:
+        return 0.0
+
+3️⃣ Modify reconciliation block (core change)
+
+Replace this section:
+
+if direction == "LONG":
+    pnl_bps = (exit_px / entry_px - 1.0) * 10_000
+else:
+    pnl_bps = (entry_px / exit_px - 1.0) * 10_000
+
+
+With:
+
+if direction == "LONG":
+    realized_pnl = (exit_px / entry_px - 1.0) * 10_000
+else:
+    realized_pnl = (entry_px / exit_px - 1.0) * 10_000
+
+expected_pnl = expected_pnl_from_score(e.get("score_final"))
+pnl_error = realized_pnl - expected_pnl
+abs_error = abs(pnl_error)
+
+4️⃣ Extend the reconciled record
+
+Replace your reconciled.append({...}) block with:
+
+reconciled.append({
+    "ts": ts,
+    "agent": e.get("agent"),
+    "run_id": run_id,
+    "symbol": symbol,
+    "direction": direction,
+
+    "entry_price": entry_px,
+    "exit_price": exit_px,
+    "horizon_hours": h,
+
+    # live result
+    "realized_pnl_bps": round(realized_pnl, 2),
+
+    # simulation
+    "expected_pnl_bps": round(expected_pnl, 2),
+    "pnl_error_bps": round(pnl_error, 2),
+    "abs_error_bps": round(abs_error, 2),
+    "sim_version": SIM_VERSION,
+
+    # signal metadata
+    "regime": e.get("regime"),
+    "confidence": e.get("confidence"),
+    "score_final": e.get("score_final"),
+})
+
+🔥 What this immediately unlocks (already wired)
+
+Because your Meta-Supervisor already reads reconciled.jsonl, you now get:
+
+✅ Live vs Sim Attribution (real, not proxy)
+
+Cumulative divergence
+
+Regime-specific error clustering
+
+✅ Failure-forensics upgrade
+
+You can now answer:
+
+“Was the model wrong, or the market changed?”
+
+“Which regimes systematically underperformed expectations?”
+
+✅ Confidence decay (next line of code)
+
+You already have confidence_decay.update_confidence_multipliers() — now it can decay on:
+
+abs_error_bps > X
+
+✅ Promotion / Kill gates
+
+Instead of raw PnL:
+
+Promote if positive realized AND low error
+
+Kill if large negative error repeatedly

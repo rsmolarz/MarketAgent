@@ -1,0 +1,119 @@
+{
+  "agent": {
+    "class_name": "EarningsWhisperSurpriseAgent",
+    "module_slug": "earnings_whisper_surprise",
+    "description": "Detects stocks with significant divergence between consensus earnings estimates and 'whisper' earnings expectations from alternative data sources, indicating potential market inefficiency before official earnings announcements.",
+    "category": "equities",
+    "data_sources": [
+      {
+        "name": "Earnings Whisper Estimates",
+        "type": "public_api",
+        "details": "Fetches whisper earnings estimates from a public API aggregating analyst whispers and alternative sentiment data."
+      },
+      {
+        "name": "Consensus Earnings Estimates",
+        "type": "existing_client",
+        "details": "Uses internal client to retrieve consensus earnings estimates from standard analyst reports."
+      }
+    ],
+    "detection_logic": [
+      "For each stock symbol with upcoming earnings, retrieve consensus earnings estimate and whisper earnings estimate.",
+      "Calculate the percentage difference between whisper estimate and consensus estimate.",
+      "If the absolute difference exceeds a defined threshold (e.g., 5%), flag the stock as having an earnings whisper surprise potential.",
+      "Assign severity based on the magnitude of divergence and historical accuracy of whisper estimates for the symbol.",
+      "Output findings with relevant metadata including estimates, difference percentage, and earnings date."
+    ],
+    "parameters": {
+      "thresholds": {
+        "whisper_consensus_diff_pct": 5
+      },
+      "cadence_minutes_default": 720
+    },
+    "output_examples": [
+      {
+        "title": "Significant Earnings Whisper Divergence Detected for AAPL",
+        "description": "The whisper earnings estimate for AAPL is $1.25, diverging 7% above the consensus estimate of $1.17, indicating potential market inefficiency ahead of earnings announcement.",
+        "severity": "medium",
+        "confidence": 0.75,
+        "metadata": {
+          "consensus_estimate": 1.17,
+          "whisper_estimate": 1.25,
+          "difference_pct": 7,
+          "earnings_date": "2026-01-15"
+        },
+        "symbol": "AAPL",
+        "market_type": "equities"
+      }
+    ]
+  },
+  "eval": {
+    "suite_name": "EarningsWhisperSurpriseAgent_smoke",
+    "cases": [
+      {
+        "id": "case_1_basic_divergence",
+        "input_fixture": {
+          "consensus_estimates": {
+            "AAPL": 1.17,
+            "MSFT": 2.1
+          },
+          "whisper_estimates": {
+            "AAPL": 1.25,
+            "MSFT": 2.1
+          },
+          "earnings_dates": {
+            "AAPL": "2026-01-15",
+            "MSFT": "2026-01-20"
+          }
+        },
+        "expected_schema": {
+          "type": "list",
+          "item_required_keys": [
+            "title",
+            "severity",
+            "confidence",
+            "metadata",
+            "symbol",
+            "market_type"
+          ]
+        }
+      },
+      {
+        "id": "case_2_no_significant_divergence",
+        "input_fixture": {
+          "consensus_estimates": {
+            "GOOG": 3.5
+          },
+          "whisper_estimates": {
+            "GOOG": 3.52
+          },
+          "earnings_dates": {
+            "GOOG": "2026-01-18"
+          }
+        },
+        "expected_schema": {
+          "type": "list",
+          "item_required_keys": [
+            "title",
+            "severity",
+            "confidence",
+            "metadata",
+            "symbol",
+            "market_type"
+          ]
+        }
+      }
+    ],
+    "offline_adapter_plan": "Use file fixtures to mock consensus and whisper earnings estimates and earnings dates. Validate that findings are generated only when divergence exceeds threshold, and schema matches required keys."
+  },
+  "safety": {
+    "no_execution": true,
+    "protected_paths": [
+      ".github/",
+      "trading/",
+      "secrets/",
+      "infra/"
+    ],
+    "max_files_changed": 4,
+    "max_lines_changed": 250
+  }
+}
