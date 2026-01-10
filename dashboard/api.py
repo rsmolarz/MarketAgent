@@ -476,3 +476,14 @@ if __name__ == "__main__":
         server = create_simple_server()
         print("Server running on http://localhost:8000")
         server.serve_forever()
+
+# === Serve Dashboard HTML ===
+from fastapi.responses import HTMLResponse
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_dashboard():
+    html_path = os.path.join(os.path.dirname(__file__), "index.html")
+    if os.path.exists(html_path):
+        with open(html_path, "r") as f:
+            return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>Dashboard not found. Check dashboard/index.html</h1>")
