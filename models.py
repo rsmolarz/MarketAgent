@@ -115,6 +115,10 @@ class Finding(db.Model):
     ta_regime: Mapped[str | None] = mapped_column(String(32), nullable=True)
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    regime: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    drawdown: Mapped[float | None] = mapped_column(Float, nullable=True)
+    capital_gate: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -135,6 +139,9 @@ class Finding(db.Model):
             "alerted": self.alerted,
             "ta_regime": self.ta_regime,
             "analyzed_at": self.analyzed_at.isoformat() if self.analyzed_at else None,
+            "regime": self.regime,
+            "drawdown": self.drawdown,
+            "capital_gate": self.capital_gate,
         }
 
 

@@ -7,17 +7,47 @@ Kill conditions:
 - LOI unsigned > 21 days -> PASS
 - Missing critical docs -> PASS
 - Market regime flips risk-off -> Freeze
+- Macro gate RED -> Capital preservation mode
+- Insufficient IRR buffer in drawdown -> KILL
+
+Regime-aware rules:
++------------------+-------------------+-------------------+-------------------+
+| Regime/Drawdown  | Screen->Underwrite| Underwrite->LOI   | LOI->Close        |
++------------------+-------------------+-------------------+-------------------+
+| Trend / Calm     | Normal            | Normal            | Normal            |
+| Transition       | Extra IC review   | +10% MOS          | Slower close      |
+| Volatility       | Only severe       | +20% MOS          | Capital cap       |
+| DD >= 10%        | Freeze marginal   | Kill if IRR low   | Board approval    |
+| DD >= 20%        | Screen only       | No LOIs           | Emergency only    |
++------------------+-------------------+-------------------+-------------------+
 
 Logged for audit trail.
 """
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
 from flask import current_app
 
 logger = logging.getLogger(__name__)
+
+
+class DealStage(Enum):
+    SCREENED = "screened"
+    UNDERWRITTEN = "underwritten"
+    LOI = "loi"
+    CLOSED = "closed"
+    DEAD = "dead"
+
+
+@dataclass
+class KillDecision:
+    action: str  # "ALLOW", "KILL", "HOLD", "ESCALATE"
+    reason: str
+    required_approval: Optional[str] = None  # "IC", "BOARD", None
 
 
 STAGE_TIMEOUT_DAYS = {
@@ -270,6 +300,178 @@ def run_deal_kill_sweep():
         raise
     
     return summary
+
+
+def macro_gate_kill_rules(deal: Dict, macro_meta: Dict) -> KillDecision:
+    """
+    Kill rule engine using DistressedMacroGateAgent output.
+    
+    deal: dict with fields {stage, irr, target_irr, mos, docs_complete, days_in_stage}
+    macro_meta: from DistressedMacroGateAgent.metadata
+    """
+    gate = macro_meta.get("gate", "GREEN")
+    drawdown = macro_meta.get("portfolio_drawdown", 0.0)
+    regime = macro_meta.get("regime", "unknown")
+    mos_multiplier = macro_meta.get("mos_multiplier", 1.0)
+    
+    stage = deal.get("stage", "screened")
+    irr = deal.get("irr", 0.0)
+    target_irr = deal.get("target_irr", 0.15)
+    mos = deal.get("mos", 1.0)
+    docs_complete = deal.get("docs_complete", False)
+    days_in_stage = deal.get("days_in_stage", 0)
+    
+    if gate == "RED":
+        if stage == "loi":
+            return KillDecision("KILL", "Macro RED - no new commitments allowed")
+        if irr < target_irr + 0.03:
+            return KillDecision("KILL", "Insufficient IRR buffer in drawdown (need +300bps)")
+    
+    if days_in_stage > 45 and not docs_complete:
+        return KillDecision("KILL", "Stalled deal - 45+ days without complete docs")
+    
+    if drawdown <= -0.20:
+        if stage in ("underwritten", "loi"):
+            return KillDecision("HOLD", "Severe drawdown - no new LOIs", required_approval="BOARD")
+    
+    if drawdown <= -0.10:
+        if stage == "loi":
+            return KillDecision("ESCALATE", "Drawdown band - requires board approval", required_approval="BOARD")
+        if irr < target_irr + 0.03:
+            return KillDecision("HOLD", "Marginal IRR in drawdown - freeze until conditions improve")
+    
+    if regime == "volatility":
+        if stage == "screened" and mos < 1.20:
+            return KillDecision("HOLD", "Volatility regime - only severe distress advances")
+        if stage == "underwritten":
+            required_mos = 1.20
+            if mos < required_mos:
+                return KillDecision("HOLD", f"Volatility regime - need MOS >= {required_mos}")
+    
+    if regime == "transition":
+        if stage == "screened":
+            return KillDecision("ESCALATE", "Transition regime - extra IC review required", required_approval="IC")
+    
+    return KillDecision("ALLOW", "Deal passes kill rules")
+
+
+def stage_progression_allowed(
+    current_stage: str,
+    target_stage: str,
+    deal: Dict,
+    macro_meta: Dict
+) -> KillDecision:
+    """
+    Check if a deal can progress from current_stage to target_stage.
+    """
+    gate = macro_meta.get("gate", "GREEN")
+    drawdown = macro_meta.get("portfolio_drawdown", 0.0)
+    regime = macro_meta.get("regime", "unknown")
+    mos_multiplier = macro_meta.get("mos_multiplier", 1.0)
+    
+    if current_stage == "screened" and target_stage == "underwritten":
+        if drawdown <= -0.20:
+            return KillDecision("KILL", "Severe drawdown - screen only, no underwriting")
+        if gate == "RED":
+            if deal.get("mos", 1.0) < 1.30:
+                return KillDecision("HOLD", "RED gate - only exceptional distress advances")
+        return KillDecision("ALLOW", "Progression allowed")
+    
+    if current_stage == "underwritten" and target_stage == "loi":
+        if drawdown <= -0.20:
+            return KillDecision("KILL", "Severe drawdown - no LOIs allowed")
+        if drawdown <= -0.10:
+            irr_buffer = deal.get("irr", 0.0) - deal.get("target_irr", 0.15)
+            if irr_buffer < 0.03:
+                return KillDecision("KILL", "Insufficient IRR buffer for LOI in drawdown")
+        
+        required_mos = deal.get("base_mos", 1.0) * mos_multiplier
+        if deal.get("mos", 1.0) < required_mos:
+            return KillDecision("HOLD", f"Insufficient MOS - need {required_mos:.0%}")
+        
+        return KillDecision("ALLOW", "Progression allowed")
+    
+    if current_stage == "loi" and target_stage == "closed":
+        if drawdown <= -0.20:
+            return KillDecision("ESCALATE", "Emergency only - board approval required", required_approval="BOARD")
+        if drawdown <= -0.10:
+            return KillDecision("ESCALATE", "Drawdown band - board approval required", required_approval="BOARD")
+        if regime == "transition":
+            return KillDecision("ESCALATE", "Transition regime - slower close, IC approval", required_approval="IC")
+        return KillDecision("ALLOW", "Progression allowed")
+    
+    return KillDecision("ALLOW", "Progression allowed")
+
+
+def get_stage_timeout_days_macro(stage: str, regime: str, gate: str) -> int:
+    """
+    Get maximum days allowed in a stage before kill rule triggers.
+    Adjusted for regime and gate conditions.
+    """
+    base_timeouts = {
+        "screened": 14,
+        "underwritten": 30,
+        "loi": 21,
+    }
+    
+    base = base_timeouts.get(stage, 30)
+    
+    if gate == "RED":
+        return int(base * 0.7)
+    if regime == "volatility":
+        return int(base * 0.8)
+    if regime == "transition":
+        return int(base * 0.9)
+    
+    return base
+
+
+def evaluate_deal_health_with_macro(deal: Dict, macro_meta: Dict) -> Dict:
+    """
+    Comprehensive deal health check with macro gate integration.
+    """
+    kill_decision = macro_gate_kill_rules(deal, macro_meta)
+    
+    stage = deal.get("stage", "screened")
+    regime = macro_meta.get("regime", "unknown")
+    gate = macro_meta.get("gate", "GREEN")
+    timeout = get_stage_timeout_days_macro(stage, regime, gate)
+    days_remaining = timeout - deal.get("days_in_stage", 0)
+    
+    health_score = 1.0
+    warnings = []
+    
+    if kill_decision.action == "KILL":
+        health_score = 0.0
+    elif kill_decision.action == "HOLD":
+        health_score = 0.3
+    elif kill_decision.action == "ESCALATE":
+        health_score = 0.6
+    
+    if days_remaining < 7:
+        health_score *= 0.7
+        warnings.append(f"Stage timeout in {days_remaining} days")
+    
+    if not deal.get("docs_complete", False):
+        health_score *= 0.8
+        warnings.append("Docs incomplete")
+    
+    irr_buffer = deal.get("irr", 0.0) - deal.get("target_irr", 0.15)
+    if irr_buffer < 0.02:
+        health_score *= 0.8
+        warnings.append("Thin IRR buffer")
+    
+    return {
+        "health_score": round(health_score, 2),
+        "kill_decision": kill_decision.action,
+        "kill_reason": kill_decision.reason,
+        "required_approval": kill_decision.required_approval,
+        "days_remaining_in_stage": days_remaining,
+        "stage_timeout_days": timeout,
+        "gate": gate,
+        "regime": regime,
+        "warnings": warnings,
+    }
 
 
 def get_deal_exposure_by_stage() -> Dict:

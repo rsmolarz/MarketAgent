@@ -1,0 +1,237 @@
+I’ll give you four concrete deliverables:
+
+DistressedAssetMacroGate (agent logic, no new data vendors required)
+
+Deal-stage + kill-rule matrix driven by regime + drawdown
+
+Finding schema extension (SQLAlchemy-friendly)
+
+Capital deployment rules (how exposure actually scales down)
+
+1️⃣ DistressedAssetMacroGate (new agent)
+
+This is not a deal-finder.
+It is a deployment gate that controls when distressed deals are allowed to advance.
+
+Purpose
+
+Convert macro regime + drawdown into real-estate underwriting friction
+
+Emit system-level findings consumed by:
+
+IC memo
+
+Deal room
+
+Capital allocator
+
+Kill rules
+
+Agent behavior
+
+Reads:
+
+Regime classifier output
+
+Portfolio drawdown governor
+
+Emits:
+
+“GREEN / YELLOW / RED” gate findings
+
+Required margin-of-safety adjustments
+
+Deal velocity constraints
+
+agents/distressed_macro_gate_agent.py
+from typing import List, Dict, Any
+from .base_agent import BaseAgent
+
+
+class DistressedMacroGateAgent(BaseAgent):
+    """
+    Macro risk overlay for distressed real-estate deployment.
+    Gates underwriting velocity, margin-of-safety, and capital release.
+    """
+
+    def analyze_ctx(self, ctx) -> List[Dict[str, Any]]:
+        findings = []
+
+        regime = ctx.meta.get("regime", "unknown")
+        vol = ctx.meta.get("vol_label", "elevated")
+        drawdown = float(ctx.meta.get("portfolio_drawdown", 0.0))
+
+        # Default (risk-on)
+        gate = "GREEN"
+        severity = "low"
+        mos_multiplier = 1.0
+        max_capital_pct = 1.0
+        notes = []
+
+        # Volatility / transition → slow deals
+        if regime in ("volatility", "transition"):
+            gate = "YELLOW"
+            severity = "medium"
+            mos_multiplier = 1.15
+            max_capital_pct = 0.6
+            notes.append("Macro regime unstable → slower underwriting, higher MOS")
+
+        # Deep drawdown → defensive posture
+        if drawdown <= -0.10:
+            gate = "RED"
+            severity = "high"
+            mos_multiplier = 1.30
+            max_capital_pct = 0.3
+            notes.append("Portfolio drawdown ≥10% → capital preservation mode")
+
+        if drawdown <= -0.20:
+            gate = "RED"
+            severity = "critical"
+            mos_multiplier = 1.50
+            max_capital_pct = 0.15
+            notes.append("Severe drawdown ≥20% → deploy only exceptional distress")
+
+        findings.append(self.create_finding(
+            title=f"Distressed Deal Macro Gate: {gate}",
+            description=" | ".join(notes) if notes else "Macro conditions supportive of deployment.",
+            severity=severity,
+            confidence=0.85,
+            market_type="real_estate",
+            metadata={
+                "gate": gate,
+                "regime": regime,
+                "volatility": vol,
+                "portfolio_drawdown": drawdown,
+                "mos_multiplier": mos_multiplier,
+                "max_capital_pct": max_capital_pct,
+            }
+        ))
+
+        return findings
+
+
+This agent:
+
+Never touches Zillow or deal data
+
+Runs fast
+
+Is deterministic
+
+Is safe to backtest
+
+2️⃣ Deal-stage progression + automated kill rules
+
+This is where institutional discipline appears.
+
+Deal stages
+SCREENED → UNDERWRITTEN → LOI → CLOSED
+
+Regime-aware rules
+Regime / Drawdown	Screen → Underwrite	Underwrite → LOI	LOI → Close
+Trend / Calm	Normal	Normal	Normal
+Transition	Extra IC review	+10% MOS	Slower close
+Volatility	Only severe distress	+20% MOS	Capital cap
+DD ≥ 10%	Freeze marginal deals	Kill if IRR < target+300bps	Board approval
+DD ≥ 20%	Screen only	No LOIs	Emergency only
+Kill rule engine (deterministic)
+def deal_kill_rules(deal, macro_meta):
+    """
+    deal: dict with fields {stage, irr, mos, docs_complete, days_in_stage}
+    macro_meta: from DistressedMacroGateAgent.metadata
+    """
+    if macro_meta["gate"] == "RED":
+        if deal["stage"] == "LOI":
+            return "KILL: Macro RED – no new commitments"
+        if deal["irr"] < deal["target_irr"] + 0.03:
+            return "KILL: Insufficient IRR buffer in drawdown"
+
+    if deal["days_in_stage"] > 45 and not deal["docs_complete"]:
+        return "KILL: Stalled deal"
+
+    return "ALLOW"
+
+
+This plugs directly into:
+
+Deal room automation
+
+CRM workflow rules
+
+IC memo auto-generation
+
+3️⃣ Finding schema extension (SQLAlchemy-friendly)
+
+You do not need a new table.
+
+Add one JSON column and two scalars.
+
+# models/finding.py (extension)
+class Finding(Base):
+    __tablename__ = "findings"
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String)
+    description = Column(Text)
+    severity = Column(String)
+    confidence = Column(Float)
+
+    # Existing
+    metadata = Column(JSON)
+
+    # New (minimal, future-proof)
+    regime = Column(String, nullable=True)
+    drawdown = Column(Float, nullable=True)
+    capital_gate = Column(String, nullable=True)  # GREEN / YELLOW / RED
+
+
+When persisting:
+
+finding.regime = meta.get("regime")
+finding.drawdown = meta.get("portfolio_drawdown")
+finding.capital_gate = meta.get("gate")
+
+
+Now:
+
+Dashboard can filter by capital_gate
+
+IC memos can quote why deals were blocked
+
+Backtests can explain false negatives
+
+4️⃣ Capital deployment logic (real money behavior)
+
+This is the critical part: agents don’t trade — capital does.
+
+Exposure scaling (example)
+def real_estate_capital_target(base_commitment, macro_meta):
+    """
+    base_commitment: normal deal size (e.g. $2M)
+    """
+    return base_commitment * macro_meta["max_capital_pct"]
+
+Margin-of-safety enforcement
+def required_mos(base_mos, macro_meta):
+    return base_mos * macro_meta["mos_multiplier"]
+
+Result
+
+Same deal in calm regime → proceeds
+
+Same deal in volatility → stalled
+
+Same deal in drawdown → killed automatically
+
+No emotion. No IC drama. No hindsight bias.
+
+What this gives you strategically
+
+Distressed ≠ reckless
+
+You deploy more safely when chaos rises
+
+You stop deals before bad vintages form
+
+LPs get a clean explanation:
+“Deals were slowed because regime transitioned to volatility + drawdown band triggered.”
