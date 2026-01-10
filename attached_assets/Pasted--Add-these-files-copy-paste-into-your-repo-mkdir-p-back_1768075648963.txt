@@ -1,0 +1,674 @@
+# Add these files (copy/paste) into your repo
+mkdir -p backtests analytics portfolio
+
+1) Backtest runner + results (2007–present)
+backtests/context.py
+
+from __future__ import annotations
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Dict, Any, Optional
+import pandas as pd
+
+@dataclass
+class BacktestContext:
+    asof: datetime
+    frames: Dict[str, pd.DataFrame] = field(default_factory=dict)
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+    def frame(self, symbol: str) -> Optional[pd.DataFrame]:
+        return self.frames.get(symbol)
+
+    def window(self, symbol: str, lookback: int) -> Optional[pd.DataFrame]:
+        df = self.frame(symbol)
+        if df is None or df.empty:
+            return None
+        return df.tail(int(lookback))
+
+backtests/data_yahoo.py
+
+from __future__ import annotations
+from datetime import datetime
+from typing import Dict, List
+import pandas as pd
+
+try:
+    import yfinance as yf
+except Exception as e:
+    raise RuntimeError("Install yfinance (pip install yfinance).") from e
+
+def fetch_daily(symbols: List[str], start: str, end: str) -> Dict[str, pd.DataFrame]:
+    out: Dict[str, pd.DataFrame] = {}
+    for sym in symbols:
+        df = yf.download(sym, start=start, end=end, interval="1d", auto_adjust=False, progress=False)
+        if df is None or df.empty:
+            out[sym] = pd.DataFrame()
+            continue
+        df = df.copy()
+        df.index = pd.to_datetime(df.index).tz_localize(None)
+        out[sym] = df
+    return out
+
+def slice_asof(df: pd.DataFrame, asof: datetime) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+    asof_ts = pd.to_datetime(asof)
+    return df.loc[df.index <= asof_ts]
+
+backtests/runner.py
+
+from __future__ import annotations
+import importlib
+import json
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
+
+import pandas as pd
+
+from backtests.context import BacktestContext
+from backtests.data_yahoo import slice_asof
+
+@dataclass
+class FindingRow:
+    asof: str
+    agent: str
+    symbol: Optional[str]
+    market_type: Optional[str]
+    severity: str
+    confidence: float
+    title: str
+    description: str
+    metadata: Dict[str, Any]
+
+def iter_trading_days(start: str, end: str) -> List[pd.Timestamp]:
+    s = pd.to_datetime(start)
+    e = pd.to_datetime(end)
+    return list(pd.bdate_range(s, e))
+
+def load_agent(module_path: str, class_name: str):
+    mod = importlib.import_module(module_path)
+    cls = getattr(mod, class_name)
+    return cls()
+
+def supports_ctx(agent) -> bool:
+    return callable(getattr(agent, "analyze_ctx", None))
+
+def run_backtest(
+    agents: List[Tuple[str, str]],
+    data: Dict[str, pd.DataFrame],
+    symbols: List[str],
+    start: str,
+    end: str,
+    lookback: int = 252,
+    out_jsonl: str = "backtests/findings.jsonl",
+) -> Dict[str, Any]:
+    rows: List[FindingRow] = []
+    days = iter_trading_days(start, end)
+
+    agent_instances = []
+    skipped = []
+    for mp, cn in agents:
+        a = load_agent(mp, cn)
+        if not supports_ctx(a):
+            skipped.append(f"{cn} (no analyze_ctx)")
+        agent_instances.append(a)
+
+    for day in days:
+        asof = day.to_pydatetime()
+
+        frames: Dict[str, pd.DataFrame] = {}
+        for sym in symbols:
+            df_full = data.get(sym, pd.DataFrame())
+            df = slice_asof(df_full, asof)
+            if df is not None and not df.empty and lookback:
+                df = df.tail(int(lookback))
+            frames[sym] = df
+
+        ctx = BacktestContext(
+            asof=asof,
+            frames=frames,
+            meta={"symbols": symbols, "lookback": lookback}
+        )
+
+        for agent in agent_instances:
+            if not supports_ctx(agent):
+                continue
+            try:
+                findings = agent.analyze_ctx(ctx) or []
+            except Exception as e:
+                rows.append(FindingRow(
+                    asof=asof.isoformat(),
+                    agent=agent.__class__.__name__,
+                    symbol=None,
+                    market_type="system",
+                    severity="high",
+                    confidence=0.1,
+                    title="BacktestError",
+                    description=str(e),
+                    metadata={"error": repr(e)},
+                ))
+                continue
+
+            for f in findings:
+                rows.append(FindingRow(
+                    asof=asof.isoformat(),
+                    agent=f.get("agent") or agent.__class__.__name__,
+                    symbol=f.get("symbol"),
+                    market_type=f.get("market_type"),
+                    severity=f.get("severity", "medium"),
+                    confidence=float(f.get("confidence", 0.5)),
+                    title=f.get("title", ""),
+                    description=f.get("description", ""),
+                    metadata=f.get("metadata") or {},
+                ))
+
+    import os
+    os.makedirs(os.path.dirname(out_jsonl), exist_ok=True)
+    with open(out_jsonl, "w", encoding="utf-8") as fp:
+        for r in rows:
+            fp.write(json.dumps(r.__dict__, ensure_ascii=False) + "\n")
+
+    return {
+        "start": start,
+        "end": end,
+        "days": len(days),
+        "rows": len(rows),
+        "skipped_agents": skipped,
+        "output": out_jsonl
+    }
+
+backtests/run_market_correction_2007.py
+
+from __future__ import annotations
+from backtests.data_yahoo import fetch_daily
+from backtests.runner import run_backtest
+
+def main():
+    start = "2007-01-01"
+    end = "2026-01-10"
+
+    symbols = ["SPY", "QQQ", "IWM", "DIA", "^VIX", "TLT", "^TNX"]
+    data = fetch_daily(symbols, start=start, end=end)
+
+    agents = [
+        ("agents.market_correction_agent", "MarketCorrectionAgent"),
+    ]
+
+    summary = run_backtest(
+        agents=agents,
+        data=data,
+        symbols=symbols,
+        start=start,
+        end=end,
+        lookback=252,
+        out_jsonl="backtests/market_correction_findings_2007.jsonl",
+    )
+    print(summary)
+
+if __name__ == "__main__":
+    main()
+
+Run:
+
+python backtests/run_market_correction_2007.py
+wc -l backtests/market_correction_findings_2007.jsonl
+head -n 5 backtests/market_correction_findings_2007.jsonl
+
+2) Regime classifier + tagging (volatility / trend / mean reversion / transition)
+analytics/regime.py
+
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import Dict, Optional
+import numpy as np
+import pandas as pd
+
+@dataclass(frozen=True)
+class RegimeResult:
+    regime: str                 # "trend" | "mean_reversion" | "volatility" | "transition" | "unknown"
+    risk: str                   # "risk_on" | "risk_off" | "mixed"
+    vol_label: str              # "calm" | "elevated" | "high"
+    score: float                # 0..1 confidence-ish
+    details: Dict[str, float]
+
+def _rolling_vol(close: pd.Series, window: int = 20) -> float:
+    r = close.pct_change().dropna()
+    if len(r) < window + 5:
+        return float("nan")
+    return float(r.tail(window).std() * np.sqrt(252))
+
+def _slope(close: pd.Series, window: int = 63) -> float:
+    if len(close) < window:
+        return float("nan")
+    y = close.tail(window).values.astype(float)
+    x = np.arange(len(y), dtype=float)
+    # normalized slope (per day / price)
+    beta = np.polyfit(x, y, 1)[0]
+    return float(beta / (np.mean(y) + 1e-12))
+
+def classify_regime(spy_df: pd.DataFrame, vix_df: Optional[pd.DataFrame] = None) -> RegimeResult:
+    if spy_df is None or spy_df.empty or "Close" not in spy_df.columns:
+        return RegimeResult("unknown", "mixed", "elevated", 0.0, {})
+
+    close = spy_df["Close"].astype(float)
+    vol20 = _rolling_vol(close, 20)
+    sl63 = _slope(close, 63)
+    sl252 = _slope(close, 252)
+
+    vix = None
+    if vix_df is not None and not vix_df.empty and "Close" in vix_df.columns:
+        vix = float(vix_df["Close"].astype(float).iloc[-1])
+
+    # volatility label
+    vol_label = "elevated"
+    if np.isfinite(vol20):
+        if vol20 < 0.16: vol_label = "calm"
+        elif vol20 < 0.25: vol_label = "elevated"
+        else: vol_label = "high"
+    if vix is not None:
+        if vix < 18: vol_label = "calm"
+        elif vix < 28: vol_label = "elevated"
+        else: vol_label = "high"
+
+    # transition heuristic: short-term slope flips against long-term
+    transition = False
+    if np.isfinite(sl63) and np.isfinite(sl252):
+        transition = (sl63 > 0 and sl252 < 0) or (sl63 < 0 and sl252 > 0)
+
+    # regime decision
+    if vol_label == "high":
+        regime = "volatility"
+        risk = "risk_off"
+        score = 0.8
+    elif transition:
+        regime = "transition"
+        risk = "mixed"
+        score = 0.65
+    else:
+        if np.isfinite(sl252) and abs(sl252) > 0.00035:
+            regime = "trend"
+            risk = "risk_on" if sl252 > 0 else "risk_off"
+            score = 0.7
+        else:
+            regime = "mean_reversion"
+            risk = "mixed"
+            score = 0.6
+
+    return RegimeResult(
+        regime=regime,
+        risk=risk,
+        vol_label=vol_label,
+        score=float(score),
+        details={
+            "vol20_ann": float(vol20) if np.isfinite(vol20) else -1.0,
+            "slope63_norm": float(sl63) if np.isfinite(sl63) else 0.0,
+            "slope252_norm": float(sl252) if np.isfinite(sl252) else 0.0,
+            "vix": float(vix) if vix is not None else -1.0,
+        },
+    )
+
+Tag regimes onto findings (post-process JSONL)
+analytics/tag_findings_with_regime.py
+
+from __future__ import annotations
+import json
+from typing import Dict, Any
+import pandas as pd
+
+from analytics.regime import classify_regime
+from backtests.data_yahoo import fetch_daily, slice_asof
+
+def main():
+    findings_path = "backtests/market_correction_findings_2007.jsonl"
+    out_path = "backtests/market_correction_findings_2007_regime.jsonl"
+
+    start, end = "2007-01-01", "2026-01-10"
+    symbols = ["SPY", "^VIX"]
+    data = fetch_daily(symbols, start=start, end=end)
+
+    with open(findings_path, "r", encoding="utf-8") as fin, open(out_path, "w", encoding="utf-8") as fout:
+        for line in fin:
+            row: Dict[str, Any] = json.loads(line)
+            asof = pd.to_datetime(row["asof"]).to_pydatetime()
+
+            spy = slice_asof(data["SPY"], asof).tail(252)
+            vix = slice_asof(data["^VIX"], asof).tail(252)
+
+            rr = classify_regime(spy, vix)
+            row["regime"] = rr.regime
+            row["risk_state"] = rr.risk
+            row["vol_label"] = rr.vol_label
+            row["regime_score"] = rr.score
+            row["regime_details"] = rr.details
+
+            fout.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    print({"ok": True, "output": out_path})
+
+if __name__ == "__main__":
+    main()
+
+Run:
+
+python analytics/tag_findings_with_regime.py
+
+3) Agent scorecard vs SPY (precision/recall/false positives by regime)
+
+Definitions (explicit, so metrics mean something):
+
+    Signal day = any day agent emits severity in {"high","critical"} for SPY (or overall system, configurable).
+
+    Event = SPY reaches ≥10% drawdown from its trailing 252-day high within the next 63 trading days.
+
+    True Positive (TP) = signal day that is followed by an event within horizon.
+
+    False Positive (FP) = signal day not followed by an event.
+
+    False Negative (FN) = event with no prior signal in the previous 63 days.
+
+    Metrics computed per regime at signal time (trend/vol/transition/mean_reversion).
+
+analytics/scorecard.py
+
+from __future__ import annotations
+import json
+from dataclasses import dataclass
+from typing import Dict, Any, List, Tuple, Optional
+import numpy as np
+import pandas as pd
+
+@dataclass
+class Score:
+    tp: int = 0
+    fp: int = 0
+    fn: int = 0
+
+    @property
+    def precision(self) -> float:
+        return self.tp / (self.tp + self.fp) if (self.tp + self.fp) else 0.0
+
+    @property
+    def recall(self) -> float:
+        return self.tp / (self.tp + self.fn) if (self.tp + self.fn) else 0.0
+
+def compute_drawdown_event_flags(spy: pd.DataFrame, lookback_high: int = 252, dd_thresh: float = -0.10) -> pd.Series:
+    close = spy["Close"].astype(float)
+    rolling_high = close.rolling(lookback_high, min_periods=60).max()
+    dd = (close / rolling_high) - 1.0
+    return (dd <= dd_thresh)
+
+def load_findings(path: str) -> pd.DataFrame:
+    rows = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            rows.append(json.loads(line))
+    df = pd.DataFrame(rows)
+    df["asof"] = pd.to_datetime(df["asof"])
+    return df.sort_values("asof")
+
+def main():
+    findings_path = "backtests/market_correction_findings_2007_regime.jsonl"
+
+    # Load SPY for event labeling
+    import yfinance as yf
+    spy = yf.download("SPY", start="2007-01-01", end="2026-01-10", interval="1d", auto_adjust=False, progress=False)
+    spy.index = pd.to_datetime(spy.index).tz_localize(None)
+    spy = spy[["Open","High","Low","Close","Volume"]].dropna()
+
+    # Events: DD >= 10%
+    event_flag = compute_drawdown_event_flags(spy, lookback_high=252, dd_thresh=-0.10)
+
+    # Findings
+    f = load_findings(findings_path)
+
+    # Signal days: high/critical (you can tighten to only certain titles)
+    sig = f[(f["severity"].isin(["high","critical"]))].copy()
+    # Use signal regime at time
+    sig["date"] = sig["asof"].dt.normalize()
+
+    horizon = 63  # trading days look-ahead
+    spy_dates = spy.index.normalize()
+    event_dates = set(spy_dates[event_flag.values])
+
+    # Build a map of next-event-within-horizon for each signal date
+    spy_idx = pd.Index(spy_dates.unique())
+    date_to_pos = {d: i for i, d in enumerate(spy_idx)}
+
+    def has_event_within(d: pd.Timestamp) -> bool:
+        if d not in date_to_pos:
+            return False
+        i = date_to_pos[d]
+        j = min(i + horizon, len(spy_idx) - 1)
+        window = spy_idx[i:j+1]
+        return any(w in event_dates for w in window)
+
+    sig["tp"] = sig["date"].apply(has_event_within)
+    # FP are signals not followed by event
+    sig["fp"] = ~sig["tp"]
+
+    # FN: event dates with no signal in prior horizon
+    signal_dates = set(sig["date"].unique())
+
+    def had_signal_before_event(ev: pd.Timestamp) -> bool:
+        if ev not in date_to_pos:
+            return False
+        i = date_to_pos[ev]
+        k = max(i - horizon, 0)
+        window = spy_idx[k:i+1]
+        return any(w in signal_dates for w in window)
+
+    fn_events = [ev for ev in event_dates if not had_signal_before_event(ev)]
+
+    # Aggregate by regime at signal time
+    by_regime: Dict[str, Score] = {}
+    for _, row in sig.iterrows():
+        r = row.get("regime", "unknown") or "unknown"
+        by_regime.setdefault(r, Score())
+        if bool(row["tp"]):
+            by_regime[r].tp += 1
+        else:
+            by_regime[r].fp += 1
+
+    # Distribute FNs to the regime at event time? (Optional; here: global FN only)
+    global_score = Score(
+        tp=int(sig["tp"].sum()),
+        fp=int(sig["fp"].sum()),
+        fn=len(fn_events),
+    )
+
+    print("GLOBAL", {"tp": global_score.tp, "fp": global_score.fp, "fn": global_score.fn,
+                    "precision": global_score.precision, "recall": global_score.recall})
+
+    print("\nBY REGIME (signal-time)")
+    for r, s in by_regime.items():
+        print(r, {"tp": s.tp, "fp": s.fp, "fn": 0, "precision": s.precision, "recall": 0.0})
+
+    # Save a compact report
+    report = {
+        "global": {"tp": global_score.tp, "fp": global_score.fp, "fn": global_score.fn,
+                   "precision": global_score.precision, "recall": global_score.recall},
+        "by_regime": {r: {"tp": s.tp, "fp": s.fp, "precision": s.precision} for r, s in by_regime.items()},
+        "fn_event_dates": [str(d.date()) for d in sorted(fn_events)],
+    }
+    with open("backtests/market_correction_scorecard.json", "w", encoding="utf-8") as f_out:
+        json.dump(report, f_out, indent=2)
+    print("\nWROTE backtests/market_correction_scorecard.json")
+
+if __name__ == "__main__":
+    main()
+
+Run:
+
+python analytics/scorecard.py
+cat backtests/market_correction_scorecard.json | head
+
+4) Capital allocation hook (agent scales exposure during corrections)
+
+This is the minimal “institutional” hook:
+
+    Convert agent findings → risk signal strength
+
+    Combine with regime
+
+    Apply a drawdown governor to cap exposure while in drawdown bands
+
+portfolio/governor.py
+
+from __future__ import annotations
+from dataclasses import dataclass
+from typing import Dict, Any, List
+import numpy as np
+
+@dataclass
+class DrawdownBands:
+    # bands are drawdown thresholds (negative numbers)
+    warn: float = -0.05
+    risk_off: float = -0.10
+    max_risk_off: float = -0.20
+
+@dataclass
+class GovernorState:
+    dd: float
+    band: str
+    multiplier: float
+    reason: str
+
+class PortfolioDrawdownGovernor:
+    """
+    Caps portfolio gross exposure based on current drawdown.
+    Exposure multiplier is applied AFTER signal sizing (i.e., last gate).
+    """
+    def __init__(self, bands: DrawdownBands = DrawdownBands()):
+        self.bands = bands
+
+    def compute(self, current_drawdown: float) -> GovernorState:
+        dd = float(current_drawdown)
+        if dd <= self.bands.max_risk_off:
+            return GovernorState(dd, "max_risk_off", 0.15, "Deep drawdown band")
+        if dd <= self.bands.risk_off:
+            return GovernorState(dd, "risk_off", 0.35, "Correction drawdown band")
+        if dd <= self.bands.warn:
+            return GovernorState(dd, "warn", 0.70, "Warning drawdown band")
+        return GovernorState(dd, "normal", 1.00, "No drawdown constraint")
+
+def findings_to_risk_signal(findings: List[Dict[str, Any]]) -> float:
+    """
+    Collapse findings into a single risk score (0..1).
+    High/critical increase risk-off pressure.
+    """
+    if not findings:
+        return 0.0
+    w = {"low": 0.10, "medium": 0.25, "high": 0.55, "critical": 0.85}
+    scores = []
+    for f in findings:
+        sev = str(f.get("severity", "medium")).lower()
+        conf = float(f.get("confidence", 0.5))
+        scores.append(w.get(sev, 0.25) * conf)
+    # compress with soft cap
+    raw = float(np.clip(sum(scores), 0.0, 2.0))
+    return float(1.0 - np.exp(-raw))  # saturating 0..~0.86
+
+def regime_multiplier(regime: str, vol_label: str) -> float:
+    """
+    Optional: dampen risk-on sizing in volatility/transition regimes.
+    """
+    r = (regime or "unknown").lower()
+    v = (vol_label or "elevated").lower()
+
+    if r == "volatility":
+        return 0.50
+    if r == "transition":
+        return 0.70
+    if r == "mean_reversion" and v == "high":
+        return 0.65
+    return 1.00
+
+def allocate_exposure(
+    base_target: float,
+    risk_signal: float,
+    regime: str,
+    vol_label: str,
+    governor: GovernorState,
+) -> Dict[str, Any]:
+    """
+    Example policy:
+      - base_target: your normal gross exposure (e.g., 1.0)
+      - risk_signal: 0..1 where 1 = strong risk-off
+      - final exposure = base_target * (1 - 0.8*risk_signal) * regime_mult * dd_mult
+    """
+    base = float(base_target)
+    rs = float(risk_signal)
+    rs_mult = float(max(0.10, 1.0 - 0.80 * rs))  # aggressive cut as risk rises
+    reg_mult = float(regime_multiplier(regime, vol_label))
+    dd_mult = float(governor.multiplier)
+
+    final = base * rs_mult * reg_mult * dd_mult
+    return {
+        "base_target": base,
+        "risk_signal": rs,
+        "risk_multiplier": rs_mult,
+        "regime": regime,
+        "vol_label": vol_label,
+        "regime_multiplier": reg_mult,
+        "drawdown": governor.dd,
+        "drawdown_band": governor.band,
+        "drawdown_multiplier": dd_mult,
+        "final_target_exposure": final,
+        "reason": governor.reason,
+    }
+
+How to use it in live or backtest:
+
+    Collect findings (from agent + council)
+
+    Compute current SPY drawdown (live: from price series; backtest: from ctx)
+
+    Allocate exposure
+
+Example glue (backtest-style, but same idea live):
+portfolio/example_hook.py
+
+from __future__ import annotations
+import numpy as np
+import pandas as pd
+from portfolio.governor import PortfolioDrawdownGovernor, findings_to_risk_signal, allocate_exposure
+from analytics.regime import classify_regime
+
+def spy_drawdown(spy_df: pd.DataFrame, lookback_high: int = 252) -> float:
+    c = spy_df["Close"].astype(float)
+    hi = c.tail(lookback_high).max()
+    if hi <= 0:
+        return 0.0
+    return float(c.iloc[-1] / hi - 1.0)
+
+def compute_targets(spy_df: pd.DataFrame, vix_df: pd.DataFrame, findings: list[dict]):
+    rr = classify_regime(spy_df.tail(252), vix_df.tail(252))
+    dd = spy_drawdown(spy_df.tail(252), 252)
+
+    gov = PortfolioDrawdownGovernor().compute(dd)
+    risk = findings_to_risk_signal(findings)
+
+    return allocate_exposure(
+        base_target=1.0,
+        risk_signal=risk,
+        regime=rr.regime,
+        vol_label=rr.vol_label,
+        governor=gov,
+    )
+
+What you run end-to-end
+
+pip install yfinance pandas numpy
+
+python backtests/run_market_correction_2007.py
+python analytics/tag_findings_with_regime.py
+python analytics/scorecard.py
+
+Outputs you’ll have:
+
+    backtests/market_correction_findings_2007.jsonl
+
+    backtests/market_correction_findings_2007_regime.jsonl
+
+    backtests/market_correction_scorecard.json

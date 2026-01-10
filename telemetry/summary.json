@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-01-10T19:10:02.223556Z",
+  "generated_at": "2026-01-10T20:20:12.176673Z",
   "agents": {
     "HeartbeatAgent": {
       "count": 22504,
@@ -9,36 +9,36 @@
       "error_rate": 0.0
     },
     "ArbitrageFinderAgent": {
-      "count": 14511,
-      "avg_latency_ms": 345.65,
+      "count": 14593,
+      "avg_latency_ms": 343.72,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0,
       "error_rate": 0.0
     },
     "WhaleWalletWatcherAgent": {
-      "count": 6092,
-      "avg_latency_ms": 152.92,
+      "count": 6116,
+      "avg_latency_ms": 152.32,
       "total_cost_usd": 0.0,
-      "avg_reward": 0.0011,
+      "avg_reward": 0.001,
       "error_rate": 0.0
     },
     "MacroWatcherAgent": {
-      "count": 5495,
-      "avg_latency_ms": 694.73,
+      "count": 5499,
+      "avg_latency_ms": 694.24,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0005,
       "error_rate": 0.0
     },
     "AltDataSignalAgent": {
-      "count": 5554,
-      "avg_latency_ms": 623.07,
+      "count": 5560,
+      "avg_latency_ms": 623.75,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0014,
+      "avg_reward": -0.0015,
       "error_rate": 0.0
     },
     "SentimentDivergenceAgent": {
-      "count": 5321,
-      "avg_latency_ms": 1566.52,
+      "count": 5333,
+      "avg_latency_ms": 1563.01,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0007,
       "error_rate": 0.0
@@ -65,8 +65,8 @@
       "error_rate": 0.0
     },
     "BondStressAgent": {
-      "count": 5379,
-      "avg_latency_ms": 960.2,
+      "count": 5383,
+      "avg_latency_ms": 959.54,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0006,
       "error_rate": 0.0
@@ -79,8 +79,8 @@
       "error_rate": 0.0
     },
     "CryptoFundingRateAgent": {
-      "count": 5731,
-      "avg_latency_ms": 368.47,
+      "count": 5755,
+      "avg_latency_ms": 366.97,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0,
       "error_rate": 0.0
@@ -114,17 +114,17 @@
       "error_rate": 0.0
     },
     "TechnicalAnalysisAgent": {
-      "count": 164,
-      "avg_latency_ms": 0.12,
+      "count": 176,
+      "avg_latency_ms": 1.75,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0,
+      "avg_reward": -0.0001,
       "error_rate": 0.0
     },
     "DistressedPropertyAgent": {
-      "count": 13,
-      "avg_latency_ms": 0.08,
+      "count": 17,
+      "avg_latency_ms": 1.06,
       "total_cost_usd": 0.0,
-      "avg_reward": 0.0077,
+      "avg_reward": 0.0059,
       "error_rate": 0.0
     }
   }

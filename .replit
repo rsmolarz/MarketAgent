@@ -2,7 +2,7 @@ modules = ["python-3.11", "nodejs-20", "postgresql-16"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["arrow-cpp", "cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "libyaml", "mupdf", "openjpeg", "pkg-config", "qhull", "swig", "tcl", "tk", "unzip", "vim-full", "xcbuild"]
+packages = ["arrow-cpp", "cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "libyaml", "mupdf", "openjpeg", "pkg-config", "qhull", "swig", "tcl", "tk", "unzip", "vim-full", "xcbuild", "psmisc"]
 
 [workflows]
 runButton = "Project"
@@ -32,6 +32,10 @@ externalPort = 80
 [[ports]]
 localPort = 5001
 externalPort = 3000
+
+[[ports]]
+localPort = 8000
+externalPort = 8000
 
 [agent]
 integrations = ["styling_replit:1.0.0", "github:1.0.0", "python_openai_ai_integrations:1.0.0"]
