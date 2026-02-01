@@ -160,7 +160,9 @@ def agents_oversight():
     if tel_path.exists():
         try:
             telemetry = json.loads(tel_path.read_text())
-        except:
+        except (json.JSONDecodeError, IOError) as e:
+            import logging
+            logging.debug(f"Failed to load telemetry: {e}")
             pass
     
     # Load quarantine data
@@ -169,7 +171,9 @@ def agents_oversight():
     if q_path.exists():
         try:
             quarantine = json.loads(q_path.read_text())
-        except:
+        except (json.JSONDecodeError, IOError) as e:
+            import logging
+            logging.debug(f"Failed to load quarantine state: {e}")
             pass
     
     return render_template('admin/agents_oversight.html', 

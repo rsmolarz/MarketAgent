@@ -151,7 +151,7 @@ class YahooFinanceClient:
             
         except Exception as e:
             logger.error(f"Error getting historical data for {symbol}: {e}")
-            return self._fallback_series(symbol, period)
+            return None
     
     def _fallback_series(self, symbol, period="1mo"):
         """Generate realistic fallback data when Yahoo Finance fails"""

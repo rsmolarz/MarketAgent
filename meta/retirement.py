@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from collections import defaultdict, deque
 import yaml
@@ -12,7 +13,8 @@ def load_events(path="telemetry/events.jsonl", last_n=5000):
     for ln in lines:
         try:
             out.append(json.loads(ln))
-        except:
+        except json.JSONDecodeError:
+            logging.debug(f"Skipping malformed JSON line in events file")
             pass
     return out
 

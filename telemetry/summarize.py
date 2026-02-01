@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from collections import defaultdict
 
@@ -13,7 +14,8 @@ def summarize(path="telemetry/events.jsonl", last_n=2000):
     for line in lines:
         try:
             e = json.loads(line)
-        except:
+        except json.JSONDecodeError as err:
+            logging.debug(f"Skipping malformed JSON line: {err}")
             continue
         a = e.get("agent", "unknown")
         by[a]["count"] += 1

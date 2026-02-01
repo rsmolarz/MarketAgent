@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from collections import defaultdict
 from datetime import datetime
@@ -23,7 +24,8 @@ def rollup(events_path="telemetry/events.jsonl", out_path="telemetry/summary.jso
             continue
         try:
             e = json.loads(line)
-        except:
+        except json.JSONDecodeError as err:
+            logging.debug(f"Skipping malformed JSON line: {err}")
             continue
         
         agent = e.get("agent", "unknown")

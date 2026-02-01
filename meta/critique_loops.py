@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -29,7 +30,8 @@ def load_latest_output(agent_name: str) -> dict:
     try:
         data = json.loads(path.read_text())
         return data
-    except:
+    except (json.JSONDecodeError, IOError) as e:
+        logging.debug(f"Failed to load output for {agent_name}: {e}")
         return {}
 
 def run_critique(critic_agent: str, target_agent: str) -> dict:

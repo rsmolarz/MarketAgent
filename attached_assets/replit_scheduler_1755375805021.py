@@ -11,7 +11,8 @@ def load_schedule():
     try:
         with open(SCHEDULE_FILE, "r") as f:
             return json.load(f)
-    except:
+    except (FileNotFoundError, json.JSONDecodeError, IOError) as e:
+        print(f"[Scheduler] Could not load schedule file: {e}")
         return {}
 
 def run_agent(agent_name):

@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from datetime import datetime
 
@@ -22,7 +23,8 @@ def load_events(path="telemetry/events.jsonl", last_n=5000):
             continue
         try:
             events.append(json.loads(line))
-        except:
+        except json.JSONDecodeError:
+            logging.debug(f"Skipping malformed JSON line in events file")
             pass
     return events
 

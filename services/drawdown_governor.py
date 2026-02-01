@@ -20,7 +20,8 @@ def load_portfolio_equity(window_n: int = 5000) -> list:
         for ln in lines:
             try:
                 e = json.loads(ln)
-            except:
+            except json.JSONDecodeError:
+                logger.debug(f"Skipping malformed JSON line in events file")
                 continue
             r = e.get("reward")
             ts = e.get("ts") or e.get("timestamp")

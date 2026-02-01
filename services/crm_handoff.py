@@ -205,7 +205,8 @@ def _send_to_crm(config: CRMConfig, payload: Dict[str, Any]) -> Dict[str, Any]:
         
         try:
             data = response.json()
-        except:
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.debug(f"Could not parse CRM response JSON: {e}")
             data = {}
         
         return {
