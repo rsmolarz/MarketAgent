@@ -648,7 +648,11 @@ setInterval(loadSubstitutionMap, 60000);
 async function loadActionRequired() {
     const container = document.getElementById('action-required-container');
     const countBadge = document.getElementById('action-required-count');
-    if (!container) return;
+    console.log('loadActionRequired called, container:', container);
+    if (!container) {
+        console.error('action-required-container not found!');
+        return;
+    }
     
     try {
         const resp = await fetch('/api/findings/action-required?limit=20');
@@ -704,7 +708,9 @@ async function loadActionRequired() {
         }
         
         html += '</tbody></table></div>';
+        console.log('Setting action-required-container innerHTML, findings:', data.findings.length);
         container.innerHTML = html;
+        console.log('Container innerHTML set, checking result:', container.innerHTML.substring(0, 200));
         
         // Initialize feather icons
         if (typeof feather !== 'undefined') feather.replace();
