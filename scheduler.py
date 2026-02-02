@@ -224,10 +224,15 @@ class AgentScheduler:
             logger.warning(f"Agent {agent_name} is disabled by Meta-Agent ranking")
             return
         
+        SYSTEM_AGENTS = ['CodeGuardianAgent', 'HealthCheckAgent', 'MetaSupervisorAgent']
+        
         regime_weight = _regime_weights.get(agent_name, 0)
-        if regime_weight < 0.01:
+        if regime_weight < 0.01 and agent_name not in SYSTEM_AGENTS:
             logger.info(f"Agent {agent_name} muted by regime rotation (weight={regime_weight:.3f})")
             return
+        
+        if agent_name in SYSTEM_AGENTS:
+            logger.info(f"System agent {agent_name} bypassing regime rotation")
         
         global _uncertainty_state
         if (_uncertainty_state or {}).get("spike"):

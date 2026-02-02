@@ -162,8 +162,10 @@ def main():
     if weights:
         adjusted = {}
         for agent, w in weights.items():
-            rm = float(report["agents"].get(agent, {}).get("regime_multiplier", 1.0))
-            adjusted[agent] = float(w) * rm
+            w_val = float(w) if w is not None else 0.0
+            rm_raw = report["agents"].get(agent, {}).get("regime_multiplier", 1.0)
+            rm = float(rm_raw) if rm_raw is not None else 1.0
+            adjusted[agent] = w_val * rm
         s = sum(adjusted.values())
         if s > 0:
             weights = {k: round(v / s, 4) for k, v in adjusted.items()}
