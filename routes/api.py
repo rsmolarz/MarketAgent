@@ -1182,3 +1182,44 @@ def triage_summary():
     except Exception as e:
         logger.error(f"Error getting triage summary: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/findings/action-required')
+@api_login_required
+def action_required_findings():
+    """
+    Get findings that require action based on LLM council consensus.
+    
+    For equities/crypto: BOTH ta_council AND fund_council must be 'act'
+    For real estate: real_estate_council must be 'act'
+    """
+    try:
+        from sqlalchemy import or_, and_
+        
+        limit = request.args.get("limit", 50, type=int)
+        hours = request.args.get("hours", 168, type=int)
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        
+        findings = Finding.query.filter(
+            Finding.timestamp >= cutoff,
+            or_(
+                and_(
+                    Finding.market_type.in_(['equity', 'crypto']),
+                    Finding.ta_council == 'act',
+                    Finding.fund_council == 'act'
+                ),
+                and_(
+                    Finding.market_type == 'real_estate',
+                    Finding.real_estate_council == 'act'
+                )
+            )
+        ).order_by(Finding.timestamp.desc()).limit(limit).all()
+        
+        return jsonify({
+            "count": len(findings),
+            "findings": [f.to_dict() for f in findings]
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting action-required findings: {e}")
+        return jsonify({"error": str(e)}), 500

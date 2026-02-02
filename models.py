@@ -119,6 +119,10 @@ class Finding(db.Model):
     drawdown: Mapped[float | None] = mapped_column(Float, nullable=True)
     capital_gate: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
 
+    ta_council: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    fund_council: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    real_estate_council: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -142,6 +146,9 @@ class Finding(db.Model):
             "regime": self.regime,
             "drawdown": self.drawdown,
             "capital_gate": self.capital_gate,
+            "ta_council": self.ta_council,
+            "fund_council": self.fund_council,
+            "real_estate_council": self.real_estate_council,
         }
 
 

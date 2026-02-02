@@ -338,6 +338,32 @@
     </div>
 </div>
 
+<!-- Action Required - LLM Consensus ACT findings -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i data-feather="alert-circle" class="me-2"></i>
+                    Action Required
+                    <span id="action-required-count" class="badge bg-white text-danger ms-2">0</span>
+                </h5>
+                <small>LLM Consensus: Both TA + Fundamentals = ACT</small>
+            </div>
+            <div class="card-body">
+                <div id="action-required-container">
+                    <div class="text-center">
+                        <div class="spinner-border text-danger" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="text-muted mt-2">Checking for action required items...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Recent Findings -->
 <div class="row">
     <div class="col-12">
@@ -611,6 +637,63 @@ async function loadSubstitutionMap() {
 }
 loadSubstitutionMap();
 setInterval(loadSubstitutionMap, 60000);
+
+// Load Action Required findings (LLM consensus ACT for both TA + Fundamentals)
+async function loadActionRequired() {
+    const container = document.getElementById('action-required-container');
+    const countBadge = document.getElementById('action-required-count');
+    if (!container) return;
+    
+    try {
+        const resp = await fetch('/api/findings/action-required?limit=20');
+        const data = await resp.json();
+        
+        if (countBadge) countBadge.textContent = data.count || 0;
+        
+        if (!data.findings || data.findings.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-4">
+                    <i data-feather="check-circle" class="text-success mb-2" style="width: 48px; height: 48px;"></i>
+                    <p class="text-muted mb-1">No immediate action required</p>
+                    <small class="text-muted">No findings with dual LLM consensus (TA + Fundamentals = ACT)</small>
+                </div>
+            `;
+            if (typeof feather !== 'undefined') feather.replace();
+            return;
+        }
+        
+        let html = '<div class="table-responsive"><table class="table table-sm table-hover"><thead><tr><th>Time</th><th>Symbol</th><th>Market</th><th>Title</th><th>TA</th><th>Fund</th><th>Confidence</th></tr></thead><tbody>';
+        
+        for (const f of data.findings) {
+            const time = new Date(f.timestamp).toLocaleString();
+            const sevClass = {critical: 'danger', high: 'warning', medium: 'info', low: 'secondary'}[f.severity] || 'secondary';
+            const taCouncil = f.ta_council || '-';
+            const fundCouncil = f.fund_council || f.real_estate_council || '-';
+            const conf = f.consensus_confidence ? (f.consensus_confidence * 100).toFixed(0) + '%' : '-';
+            
+            html += `<tr class="table-${sevClass}">
+                <td><small>${time}</small></td>
+                <td><strong>${f.symbol || '-'}</strong></td>
+                <td><span class="badge bg-secondary">${f.market_type || '-'}</span></td>
+                <td>${f.title}</td>
+                <td><span class="badge bg-success">${taCouncil.toUpperCase()}</span></td>
+                <td><span class="badge bg-success">${fundCouncil.toUpperCase()}</span></td>
+                <td>${conf}</td>
+            </tr>`;
+        }
+        
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
+        
+    } catch (e) {
+        console.error('Error loading action-required findings:', e);
+        container.innerHTML = '<p class="text-muted text-center">Could not load action required items</p>';
+    }
+    
+    if (typeof feather !== 'undefined') feather.replace();
+}
+loadActionRequired();
+setInterval(loadActionRequired, 60000);
 
 // SPY + Signals Chart with Meta-Agent weight overlay and regime detection
 (async function() {
