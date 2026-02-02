@@ -1223,3 +1223,102 @@ def action_required_findings():
     except Exception as e:
         logger.error(f"Error getting action-required findings: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/findings/backfill-council', methods=['POST'])
+@api_login_required
+def backfill_trade_council():
+    """
+    Run existing findings through LLM Trade Council to populate
+    ta_council, fund_council, and real_estate_council fields.
+    """
+    import os
+    from openai import OpenAI
+    
+    try:
+        limit = request.args.get("limit", 100, type=int)
+        
+        api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY")
+        base_url = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
+        
+        if not api_key:
+            return jsonify({"error": "OpenAI API key not configured"}), 500
+        
+        client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
+        
+        findings = Finding.query.filter(
+            Finding.ta_council.is_(None),
+            Finding.fund_council.is_(None)
+        ).order_by(Finding.timestamp.desc()).limit(limit).all()
+        
+        processed = 0
+        act_count = 0
+        results = []
+        
+        for finding in findings:
+            try:
+                asset_type = 'crypto' if any(c in (finding.symbol or '').upper() for c in ['BTC', 'ETH', 'SOL', 'USDT', 'USDC']) else \
+                             'real_estate' if 'property' in (finding.agent_name or '').lower() or 'distress' in (finding.agent_name or '').lower() else \
+                             'equity'
+                
+                prompt = f"""Analyze this market finding and provide trade verdicts:
+Agent: {finding.agent_name}, Symbol: {finding.symbol}, Severity: {finding.severity}, Confidence: {finding.confidence}
+Title: {finding.title}
+Description: {(finding.description or '')[:400]}
+
+For each council, respond ACT (trade now), WATCH (monitor), or HOLD (no action):
+ta_council=ACT|WATCH|HOLD
+fund_council=ACT|WATCH|HOLD
+real_estate_council=ACT|WATCH|HOLD|N/A"""
+
+                response = client.chat.completions.create(
+                    model='gpt-4o-mini',
+                    messages=[{'role': 'user', 'content': prompt}],
+                    max_tokens=80,
+                    temperature=0.2
+                )
+                
+                text = response.choices[0].message.content or ''
+                
+                for line in text.strip().split('\n'):
+                    if '=' in line:
+                        key, val = line.split('=', 1)
+                        key = key.strip().lower()
+                        val = val.strip().lower()
+                        if val in ['act', 'watch', 'hold']:
+                            if 'ta' in key:
+                                finding.ta_council = val
+                            elif 'fund' in key:
+                                finding.fund_council = val
+                            elif 'real' in key:
+                                finding.real_estate_council = val
+                
+                if finding.ta_council == 'act' and finding.fund_council == 'act':
+                    act_count += 1
+                    results.append({
+                        "id": finding.id,
+                        "title": finding.title[:50],
+                        "agent": finding.agent_name,
+                        "action_required": True
+                    })
+                
+                processed += 1
+                
+                if processed % 10 == 0:
+                    db.session.commit()
+                    
+            except Exception as e:
+                logger.warning(f"Error processing finding {finding.id}: {e}")
+                continue
+        
+        db.session.commit()
+        
+        return jsonify({
+            "processed": processed,
+            "action_required_count": act_count,
+            "action_items": results
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in backfill: {e}")
+        return jsonify({"error": str(e)}), 500
