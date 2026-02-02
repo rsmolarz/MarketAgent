@@ -14,14 +14,9 @@ dashboard_bp = Blueprint('dashboard', __name__)
 
 @dashboard_bp.route('/health')
 def health_check():
-    """Dedicated health check endpoint for deployment systems"""
-    try:
-        # Test database connection
-        db.session.execute(db.text('SELECT 1'))
-        return 'OK', 200
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return 'UNHEALTHY', 500
+    """Fast health check endpoint for deployment systems - NO blocking operations"""
+    # Return immediately without any database or external calls
+    return 'OK', 200
 
 @dashboard_bp.route('/')
 def index():

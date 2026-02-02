@@ -94,15 +94,39 @@ def create_app():
             logger.error(f"Database initialization failed: {e}")
 
     # ------------------------------------------------------------------------------
-    # Scheduler
+    # Scheduler - DEFERRED initialization for fast startup
     # ------------------------------------------------------------------------------
-    try:
-        from scheduler import AgentScheduler
-        scheduler = AgentScheduler(app)
-        app.extensions["scheduler"] = scheduler
-        logger.info("AgentScheduler initialized successfully")
-    except Exception as e:
-        logger.error(f"Scheduler failed to initialize: {e}")
+    def init_scheduler_deferred():
+        """Initialize scheduler in background after app is ready"""
+        import threading
+        import time
+        
+        def delayed_init():
+            time.sleep(5)  # Wait 5 seconds for app to be fully ready
+            try:
+                with app.app_context():
+                    from scheduler import AgentScheduler
+                    scheduler = AgentScheduler(app)
+                    app.extensions["scheduler"] = scheduler
+                    logger.info("AgentScheduler initialized successfully (deferred)")
+            except Exception as e:
+                logger.error(f"Scheduler failed to initialize: {e}")
+        
+        thread = threading.Thread(target=delayed_init, daemon=True)
+        thread.start()
+    
+    # Only start scheduler in non-production or after health checks pass
+    if os.environ.get('DEPLOYMENT_ENV') == 'production':
+        init_scheduler_deferred()
+        logger.info("Scheduler initialization deferred for production startup")
+    else:
+        try:
+            from scheduler import AgentScheduler
+            scheduler = AgentScheduler(app)
+            app.extensions["scheduler"] = scheduler
+            logger.info("AgentScheduler initialized successfully")
+        except Exception as e:
+            logger.error(f"Scheduler failed to initialize: {e}")
 
     # ------------------------------------------------------------------------------
     # ROUTES - Register Blueprints
@@ -151,6 +175,12 @@ def create_app():
             "status": "running",
             "timestamp": datetime.utcnow().isoformat()
         })
+
+    # FAST health check - responds immediately for deployment systems
+    @app.route("/healthz")
+    def healthz():
+        """Ultra-fast health check for Cloud Run - NO database or external calls"""
+        return "OK", 200
 
     return app
 

@@ -19,7 +19,7 @@ echo "✅ Dependencies installed"
 # Explicitly set ALL variables to prevent undefined errors
 export PORT="${PORT:-5000}"
 export WORKERS="${WORKERS:-1}"
-export TIMEOUT="${TIMEOUT:-30}"
+export TIMEOUT="${TIMEOUT:-120}"
 export KEEP_ALIVE="${KEEP_ALIVE:-2}"
 export MAX_REQUESTS="${MAX_REQUESTS:-1000}"
 export MAX_REQUESTS_JITTER="${MAX_REQUESTS_JITTER:-100}"
