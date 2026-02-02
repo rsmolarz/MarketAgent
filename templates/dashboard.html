@@ -338,52 +338,59 @@
     </div>
 </div>
 
-<!-- Action Required and Recent Findings - Side by Side -->
+<!-- Action Required and Recent Findings - Tabbed Interface -->
 <div class="row mb-4">
-    <!-- Action Required - LLM Consensus ACT findings -->
-    <div class="col-lg-6 mb-3 mb-lg-0">
-        <div class="card border-danger h-100">
-            <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">
-                    <i data-feather="alert-circle" class="me-2"></i>
-                    Action Required
-                    <span id="action-required-count" class="badge bg-white text-danger ms-2">0</span>
-                </h5>
-                <small>LLM Consensus: TA + Fundamentals = ACT</small>
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header p-0">
+                <ul class="nav nav-tabs card-header-tabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active px-4 py-3" id="action-required-tab" data-bs-toggle="tab" data-bs-target="#action-required-pane" type="button" role="tab" aria-controls="action-required-pane" aria-selected="true">
+                            <i data-feather="alert-circle" class="me-2 text-danger"></i>
+                            <span class="text-danger fw-bold">Action Required</span>
+                            <span id="action-required-count" class="badge bg-danger ms-2">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link px-4 py-3" id="recent-findings-tab" data-bs-toggle="tab" data-bs-target="#recent-findings-pane" type="button" role="tab" aria-controls="recent-findings-pane" aria-selected="false">
+                            <i data-feather="clock" class="me-2"></i>
+                            Recent Findings
+                        </button>
+                    </li>
+                    <li class="nav-item ms-auto">
+                        <a href="{{ url_for('dashboard.findings') }}" class="nav-link px-4 py-3 text-secondary">
+                            <i data-feather="arrow-right" class="me-1"></i>
+                            View All Findings
+                        </a>
+                    </li>
+                </ul>
             </div>
             <div class="card-body">
-                <div id="action-required-container">
-                    <div class="text-center">
-                        <div class="spinner-border text-danger" role="status">
-                            <span class="visually-hidden">Loading...</span>
+                <div class="tab-content">
+                    <!-- Action Required Tab Pane -->
+                    <div class="tab-pane fade show active" id="action-required-pane" role="tabpanel" aria-labelledby="action-required-tab">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <small class="text-muted">LLM Consensus: TA + Fundamentals = ACT</small>
                         </div>
-                        <p class="text-muted mt-2">Checking for action required items...</p>
+                        <div id="action-required-container">
+                            <div class="text-center py-4">
+                                <div class="spinner-border text-danger" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="text-muted mt-2">Checking for action required items...</p>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Recent Findings -->
-    <div class="col-lg-6">
-        <div class="card h-100">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">
-                    <i data-feather="clock" class="me-2"></i>
-                    Recent Findings
-                </h5>
-                <a href="{{ url_for('dashboard.findings') }}" class="btn btn-outline-secondary btn-sm">
-                    <i data-feather="arrow-right" class="me-1"></i>
-                    View All
-                </a>
-            </div>
-            <div class="card-body">
-                <div id="recent-findings-container">
-                    <div class="text-center">
-                        <div class="spinner-border text-secondary" role="status">
-                            <span class="visually-hidden">Loading...</span>
+                    <!-- Recent Findings Tab Pane -->
+                    <div class="tab-pane fade" id="recent-findings-pane" role="tabpanel" aria-labelledby="recent-findings-tab">
+                        <div id="recent-findings-container">
+                            <div class="text-center py-4">
+                                <div class="spinner-border text-secondary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="text-muted mt-2">Loading recent findings...</p>
+                            </div>
                         </div>
-                        <p class="text-muted mt-2">Loading recent findings...</p>
                     </div>
                 </div>
             </div>
@@ -662,7 +669,7 @@ async function loadActionRequired() {
             return;
         }
         
-        let html = '<div class="table-responsive"><table class="table table-sm table-hover"><thead><tr><th>Time</th><th>Symbol</th><th>Market</th><th>Title</th><th>TA</th><th>Fund</th><th>Conf</th><th>Actions</th></tr></thead><tbody>';
+        let html = '<div class="table-responsive"><table class="table table-sm table-hover"><thead><tr><th>Time</th><th>Symbol</th><th>Market</th><th>Title</th><th>TA</th><th>Fund</th><th>Conf</th><th style="min-width: 180px;">Actions</th></tr></thead><tbody>';
         
         for (const f of data.findings) {
             const time = new Date(f.timestamp).toLocaleString();
@@ -676,17 +683,17 @@ async function loadActionRequired() {
             const tradeBtnClass = isRealEstate ? 'btn-outline-info' : 'btn-danger';
             
             html += `<tr class="table-${sevClass}">
-                <td><small>${time}</small></td>
+                <td style="white-space: nowrap;"><small>${time}</small></td>
                 <td><strong>${f.symbol || '-'}</strong></td>
                 <td><span class="badge bg-secondary">${f.market_type || '-'}</span></td>
                 <td>${f.title}</td>
                 <td><span class="badge bg-success">${taCouncil.toUpperCase()}</span></td>
                 <td><span class="badge bg-success">${fundCouncil.toUpperCase()}</span></td>
                 <td>${conf}</td>
-                <td>
-                    <div class="btn-group btn-group-sm">
+                <td style="white-space: nowrap;">
+                    <div class="btn-group btn-group-sm" role="group">
                         <button class="btn btn-outline-primary btn-sm btn-ai-analyze" data-finding-id="${f.id}" title="Get AI analysis">
-                            <i data-feather="cpu" style="width:12px;height:12px;"></i> ${analyzeLabel}
+                            <i data-feather="cpu" style="width:12px;height:12px;"></i> Analyze
                         </button>
                         <button class="btn ${tradeBtnClass} btn-sm btn-trade-setup" data-finding-id="${f.id}" data-symbol="${f.symbol || ''}" data-market="${f.market_type || ''}" title="${tradeLabel}">
                             <i data-feather="trending-up" style="width:12px;height:12px;"></i> ${tradeLabel}
