@@ -6,10 +6,15 @@
 set -e
 
 echo "📦 Installing Python dependencies..."
-# Install critical dependencies for PostgreSQL
-pip install psycopg2-binary flask flask-sqlalchemy gunicorn sqlalchemy werkzeug 2>/dev/null || \
-pip3 install psycopg2-binary flask flask-sqlalchemy gunicorn sqlalchemy werkzeug 2>/dev/null || \
-echo "Warning: pip install failed, dependencies may already be installed"
+# Install from requirements.txt if it exists
+if [ -f "requirements.txt" ]; then
+    pip install -r requirements.txt 2>&1 || pip3 install -r requirements.txt 2>&1 || echo "Warning: Some packages may have failed"
+else
+    pip install psycopg2-binary flask flask-sqlalchemy gunicorn sqlalchemy werkzeug 2>&1 || \
+    pip3 install psycopg2-binary flask flask-sqlalchemy gunicorn sqlalchemy werkzeug 2>&1 || \
+    echo "Warning: pip install failed"
+fi
+echo "✅ Dependencies installed"
 
 # Explicitly set ALL variables to prevent undefined errors
 export PORT="${PORT:-5000}"
