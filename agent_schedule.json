@@ -84,5 +84,17 @@
     "enabled": true,
     "weight": 1.0,
     "reason": "distressed_debt_analysis"
+  },
+  "CodeGuardianAgent": {
+    "interval": 30,
+    "enabled": true,
+    "weight": 1.0,
+    "reason": "code_quality_monitoring"
+  },
+  "DatedBasisAgent": {
+    "interval": 60,
+    "enabled": true,
+    "weight": 1.0,
+    "reason": "futures_basis_analysis"
   }
 }

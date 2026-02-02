@@ -7,7 +7,7 @@ from agents.intraday_volume_spike_agent import IntradayVolumeSpikeAgent
 from agents.unusual_options_volume_agent import UnusualOptionsVolumeAgent
 from agents.crypto_stablecoin_premium_agent import CryptoStablecoinPremiumAgent
 from agents.distressed_property_agent import DistressedPropertyAgent
-# from agents.code_guardian_agent import CodeGuardianAgent  # Not yet implemented
+from agents.code_guardian_agent import CodeGuardianAgent
 """
 Market Inefficiency Detection Agents
 
@@ -49,6 +49,7 @@ AVAILABLE_AGENTS = [
     'TechnicalAnalysisAgent',
     'DistressedPropertyAgent',
     'DatedBasisAgent',
+    'CodeGuardianAgent',
 ]
 
 

@@ -7,7 +7,7 @@ tracking roll dates and calendar spread opportunities.
 
 import logging
 from datetime import datetime, timedelta
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from .base_agent import BaseAgent
 
@@ -22,8 +22,8 @@ class DatedBasisAgent(BaseAgent):
     roll scheduling opportunities.
     """
 
-    def __init__(self, name: str = None):
-        super().__init__(name or self.__class__.__name__)
+    def __init__(self, name: Optional[str] = None):
+        super().__init__(name if name else self.__class__.__name__)
         self.basis_data = {}
         self.roll_dates = {}
 
