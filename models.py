@@ -328,6 +328,35 @@ class ApprovalEvent(db.Model):
 Index("ix_approval_event_status", ApprovalEvent.status)
 
 
+class AgentMemory(db.Model):
+    """
+    Stores agent learning and memory data from proposal reviews,
+    including rejection reasons and patterns to learn from.
+    """
+    __tablename__ = "agent_memory"
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    scope: Mapped[str] = mapped_column(String(50), nullable=False, default="BUILDER")
+    key: Mapped[str] = mapped_column(String(200), nullable=False)
+    value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+    
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "scope": self.scope,
+            "key": self.key,
+            "value": self.value,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+Index("ix_agent_memory_scope_key", AgentMemory.scope, AgentMemory.key)
+
+
 class AgentCouncilStat(db.Model):
     """
     Tracks council voting outcomes per agent per regime.
