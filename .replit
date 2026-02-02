@@ -2,7 +2,7 @@ modules = ["python-3.11", "nodejs-20", "postgresql-16"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["arrow-cpp", "cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "libyaml", "mupdf", "openjpeg", "pkg-config", "psmisc", "qhull", "swig", "tcl", "tk", "unzip", "vim-full", "xcbuild", "postgresql", "libpq"]
+packages = ["arrow-cpp", "cairo", "ffmpeg-full", "freetype", "ghostscript", "glibcLocales", "gobject-introspection", "gtk3", "gumbo", "harfbuzz", "jbig2dec", "libjpeg_turbo", "libpq", "libyaml", "mupdf", "openjpeg", "pkg-config", "postgresql", "psmisc", "qhull", "swig", "tcl", "tk", "unzip", "vim-full", "xcbuild"]
 
 [workflows]
 runButton = "Project"

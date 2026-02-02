@@ -23,8 +23,8 @@
     "AltDataSignalAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.030 <= limit -3.0",
-      "since": "2026-02-02T03:24:26.843682+00:00"
+      "since": "2026-02-02T03:38:26.490122+00:00"
     }
   },
-  "updated_at": "2026-02-02T03:24:26.848854+00:00"
+  "updated_at": "2026-02-02T03:38:26.490181+00:00"
 }
