@@ -21,10 +21,10 @@
       "since": "2026-01-09T03:35:01.715083+00:00"
     },
     "AltDataSignalAgent": {
-      "active": false,
-      "reason": "Auto-quarantine: drawdown -3.143 <= limit -3.0",
-      "since": "2026-01-10T07:22:33.027959+00:00"
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -3.030 <= limit -3.0",
+      "since": "2026-02-02T01:03:31.952486+00:00"
     }
   },
-  "updated_at": "2026-01-10T07:27:13.725576+00:00"
+  "updated_at": "2026-02-02T01:03:31.952555+00:00"
 }

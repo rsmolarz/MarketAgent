@@ -291,13 +291,15 @@ def dashboard_stats():
 
 @dashboard_bp.route('/api/findings/recent')
 def recent_findings():
-    """Get recent findings for dashboard (excluding heartbeats)"""
+    """Get recent findings for dashboard (excluding internal agents)"""
     try:
         limit = request.args.get('limit', 10, type=int)
         
-        # Exclude HeartbeatAgent findings from main dashboard
+        # Exclude internal agents from main dashboard (show only market findings)
+        # HeartbeatAgent, CodeQualityGuardianAgent, SystemUpgradeAdvisorAgent are admin-only
+        internal_agents = ['HeartbeatAgent', 'CodeQualityGuardianAgent', 'SystemUpgradeAdvisorAgent']
         findings = Finding.query.filter(
-            Finding.agent_name != 'HeartbeatAgent'
+            ~Finding.agent_name.in_(internal_agents)
         ).order_by(
             Finding.timestamp.desc()
         ).limit(limit).all()
@@ -337,10 +339,11 @@ def findings_chart_data():
         days = request.args.get('days', 7, type=int)
         start_date = datetime.utcnow() - timedelta(days=days)
         
-        # Get findings by hour for the chart (excluding heartbeats)
+        # Get findings by hour for the chart (excluding internal agents)
+        internal_agents = ['HeartbeatAgent', 'CodeQualityGuardianAgent', 'SystemUpgradeAdvisorAgent']
         findings = Finding.query.filter(
             Finding.timestamp >= start_date,
-            Finding.agent_name != 'HeartbeatAgent'
+            ~Finding.agent_name.in_(internal_agents)
         ).order_by(Finding.timestamp.asc()).all()
         
         # Group by hour
@@ -348,15 +351,16 @@ def findings_chart_data():
         for finding in findings:
             hour_key = finding.timestamp.strftime('%Y-%m-%d %H:00')
             if hour_key not in hourly_data:
-                hourly_data[hour_key] = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0}
-            hourly_data[hour_key][finding.severity] += 1
+                hourly_data[hour_key] = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
+            severity = finding.severity if finding.severity in ['critical', 'high', 'medium', 'low', 'info'] else 'low'
+            hourly_data[hour_key][severity] += 1
         
         # Convert to chart format
         labels = list(hourly_data.keys())
         critical_data = [hourly_data[label]['critical'] for label in labels]
         high_data = [hourly_data[label]['high'] for label in labels]
         medium_data = [hourly_data[label]['medium'] for label in labels]
-        low_data = [hourly_data[label]['low'] for label in labels]
+        low_data = [hourly_data[label]['low'] + hourly_data[label]['info'] for label in labels]
         
         return jsonify({
             'labels': labels,
@@ -706,23 +710,26 @@ def api_chart_data():
         days = request.args.get('days', 7, type=int)
         start_date = datetime.utcnow() - timedelta(days=days)
         
+        # Exclude internal agents from chart data
+        internal_agents = ['HeartbeatAgent', 'CodeQualityGuardianAgent', 'SystemUpgradeAdvisorAgent']
         findings = Finding.query.filter(
             Finding.timestamp >= start_date,
-            Finding.agent_name != 'HeartbeatAgent'
+            ~Finding.agent_name.in_(internal_agents)
         ).order_by(Finding.timestamp.asc()).all()
         
         hourly_data = {}
         for finding in findings:
             hour_key = finding.timestamp.strftime('%Y-%m-%d %H:00')
             if hour_key not in hourly_data:
-                hourly_data[hour_key] = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0}
-            hourly_data[hour_key][finding.severity] += 1
+                hourly_data[hour_key] = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0, 'info': 0}
+            severity = finding.severity if finding.severity in ['critical', 'high', 'medium', 'low', 'info'] else 'low'
+            hourly_data[hour_key][severity] += 1
         
         labels = list(hourly_data.keys())
         critical_data = [hourly_data[label]['critical'] for label in labels]
         high_data = [hourly_data[label]['high'] for label in labels]
         medium_data = [hourly_data[label]['medium'] for label in labels]
-        low_data = [hourly_data[label]['low'] for label in labels]
+        low_data = [hourly_data[label]['low'] + hourly_data[label]['info'] for label in labels]
         
         return jsonify({
             'labels': labels,
