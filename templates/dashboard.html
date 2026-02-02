@@ -646,6 +646,7 @@ async function loadActionRequired() {
     try {
         const resp = await fetch('/api/findings/action-required?limit=20');
         const data = await resp.json();
+        console.log('Action Required API response:', data);
         
         if (countBadge) countBadge.textContent = data.count || 0;
         

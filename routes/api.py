@@ -1204,7 +1204,7 @@ def action_required_findings():
             Finding.timestamp >= cutoff,
             or_(
                 and_(
-                    Finding.market_type.in_(['equity', 'crypto']),
+                    Finding.market_type.in_(['equity', 'crypto', 'technical']),
                     Finding.ta_council == 'act',
                     Finding.fund_council == 'act'
                 ),
