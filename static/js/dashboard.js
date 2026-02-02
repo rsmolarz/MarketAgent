@@ -131,7 +131,7 @@ class Dashboard {
     
     async loadFindingsChart() {
         try {
-            const response = await fetch('/dashboard/api/chart_data?days=7');
+            const response = await fetch('/dashboard/api/chart_data?days=2');
             if (!response.ok) throw new Error('Failed to fetch chart data');
             
             const chartData = await response.json();
@@ -538,9 +538,17 @@ class Dashboard {
     
     showChartError(message) {
         const ctx = document.getElementById('findings-chart');
+        if (!ctx) {
+            console.warn('Chart canvas not found, skipping error display');
+            return;
+        }
         ctx.style.display = 'none';
         
         const container = ctx.parentElement;
+        if (!container) {
+            console.warn('Chart container not found');
+            return;
+        }
         
         // Clear container safely
         while (container.firstChild) {
