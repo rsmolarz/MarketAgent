@@ -338,17 +338,18 @@
     </div>
 </div>
 
-<!-- Action Required - LLM Consensus ACT findings -->
+<!-- Action Required and Recent Findings - Side by Side -->
 <div class="row mb-4">
-    <div class="col-12">
-        <div class="card border-danger">
+    <!-- Action Required - LLM Consensus ACT findings -->
+    <div class="col-lg-6 mb-3 mb-lg-0">
+        <div class="card border-danger h-100">
             <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
                 <h5 class="card-title mb-0">
                     <i data-feather="alert-circle" class="me-2"></i>
                     Action Required
                     <span id="action-required-count" class="badge bg-white text-danger ms-2">0</span>
                 </h5>
-                <small>LLM Consensus: Both TA + Fundamentals = ACT</small>
+                <small>LLM Consensus: TA + Fundamentals = ACT</small>
             </div>
             <div class="card-body">
                 <div id="action-required-container">
@@ -362,12 +363,10 @@
             </div>
         </div>
     </div>
-</div>
 
-<!-- Recent Findings -->
-<div class="row">
-    <div class="col-12">
-        <div class="card">
+    <!-- Recent Findings -->
+    <div class="col-lg-6">
+        <div class="card h-100">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="card-title mb-0">
                     <i data-feather="clock" class="me-2"></i>
@@ -662,7 +661,7 @@ async function loadActionRequired() {
             return;
         }
         
-        let html = '<div class="table-responsive"><table class="table table-sm table-hover"><thead><tr><th>Time</th><th>Symbol</th><th>Market</th><th>Title</th><th>TA</th><th>Fund</th><th>Confidence</th></tr></thead><tbody>';
+        let html = '<div class="table-responsive"><table class="table table-sm table-hover"><thead><tr><th>Time</th><th>Symbol</th><th>Market</th><th>Title</th><th>TA</th><th>Fund</th><th>Conf</th><th>Actions</th></tr></thead><tbody>';
         
         for (const f of data.findings) {
             const time = new Date(f.timestamp).toLocaleString();
@@ -670,6 +669,10 @@ async function loadActionRequired() {
             const taCouncil = f.ta_council || '-';
             const fundCouncil = f.fund_council || f.real_estate_council || '-';
             const conf = f.consensus_confidence ? (f.consensus_confidence * 100).toFixed(0) + '%' : '-';
+            const isRealEstate = f.market_type === 'real_estate' || f.real_estate_council;
+            const analyzeLabel = isRealEstate ? 'Analyze' : 'Analyze';
+            const tradeLabel = isRealEstate ? 'View Deal' : 'Trade Setup';
+            const tradeBtnClass = isRealEstate ? 'btn-outline-info' : 'btn-danger';
             
             html += `<tr class="table-${sevClass}">
                 <td><small>${time}</small></td>
@@ -679,11 +682,61 @@ async function loadActionRequired() {
                 <td><span class="badge bg-success">${taCouncil.toUpperCase()}</span></td>
                 <td><span class="badge bg-success">${fundCouncil.toUpperCase()}</span></td>
                 <td>${conf}</td>
+                <td>
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-primary btn-sm btn-ai-analyze" data-finding-id="${f.id}" title="Get AI analysis">
+                            <i data-feather="cpu" style="width:12px;height:12px;"></i> ${analyzeLabel}
+                        </button>
+                        <button class="btn ${tradeBtnClass} btn-sm btn-trade-setup" data-finding-id="${f.id}" data-symbol="${f.symbol || ''}" data-market="${f.market_type || ''}" title="${tradeLabel}">
+                            <i data-feather="trending-up" style="width:12px;height:12px;"></i> ${tradeLabel}
+                        </button>
+                    </div>
+                </td>
             </tr>`;
         }
         
         html += '</tbody></table></div>';
         container.innerHTML = html;
+        
+        // Initialize feather icons
+        if (typeof feather !== 'undefined') feather.replace();
+        
+        // Add click handlers for Analyze buttons
+        container.querySelectorAll('.btn-ai-analyze').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const findingId = this.getAttribute('data-finding-id');
+                if (window.dashboard && typeof window.dashboard.analyzeWithAI === 'function') {
+                    const finding = data.findings.find(f => f.id == findingId);
+                    if (finding) window.dashboard.analyzeWithAI(finding);
+                } else {
+                    alert('AI Analysis for finding #' + findingId);
+                }
+            });
+        });
+        
+        // Add click handlers for Trade Setup buttons
+        container.querySelectorAll('.btn-trade-setup').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const findingId = this.getAttribute('data-finding-id');
+                const symbol = this.getAttribute('data-symbol');
+                const market = this.getAttribute('data-market');
+                
+                if (market === 'real_estate') {
+                    // Navigate to deals pipeline for real estate
+                    window.location.href = '/deals/';
+                } else {
+                    // Show trade setup modal or navigate to trade page
+                    if (window.dashboard && typeof window.dashboard.showTradeSetup === 'function') {
+                        window.dashboard.showTradeSetup(findingId, symbol);
+                    } else {
+                        // Fallback: open trading view or show alert
+                        window.open(`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`, '_blank');
+                    }
+                }
+            });
+        });
         
     } catch (e) {
         console.error('Error loading action-required findings:', e);

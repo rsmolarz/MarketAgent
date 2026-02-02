@@ -625,6 +625,17 @@ class Dashboard {
         }
     }
     
+    showTradeSetup(findingId, symbol) {
+        // Open trade setup modal or redirect to TradingView with the symbol
+        if (symbol) {
+            // For now, open TradingView chart for the symbol
+            const tradingViewUrl = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`;
+            window.open(tradingViewUrl, '_blank');
+        } else {
+            console.warn('No symbol provided for trade setup');
+        }
+    }
+    
     formatTripleConfirmation(result, finding) {
         const esc = (t) => this.escapeHtml(t);
         const ta = result.ta || {};

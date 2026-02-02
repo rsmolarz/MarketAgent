@@ -1,90 +1,87 @@
 {
-  "generated_at": "2026-01-10T08:25:18.803542Z",
+  "generated_at": "2026-02-02T08:25:36.393638Z",
   "items_count": 16,
   "insights": {
     "high_signal_items": [
       {
-        "title": "Trading Electrons: Predicting DART Spread Spikes in ISO Electricity Markets",
-        "url": "https://arxiv.org/abs/2601.05085v1",
-        "why_it_matters": "This study introduces a structural and market-consistent price impact model for electricity markets, which can significantly improve the risk-return profile by capturing asymmetric buy/sell impacts and cross-zone congestion effects. It highlights substantial heterogeneity across markets and seasons, offering a potential edge in trading strategies."
+        "title": "A unified theory of order flow, market impact, and volatility",
+        "url": "https://arxiv.org/abs/2601.23172v1",
+        "why_it_matters": "This paper introduces a microstructural model that reconciles empirical properties of order flow, trading volume, and volatility, providing a unified framework that could enhance understanding and prediction of market dynamics."
       },
       {
-        "title": "Intraday Limit Order Price Change Transition Dynamics Across Market Capitalizations Through Markov Analysis",
-        "url": "https://arxiv.org/abs/2601.04959v1",
-        "why_it_matters": "The research provides insights into the intraday transition dynamics of limit order prices across different market capitalizations, revealing systematic patterns and capitalization gradients. This can inform the design of capitalization-aware and time-adaptive execution algorithms, potentially improving trading efficiency."
+        "title": "Diverse Approaches to Optimal Execution Schedule Generation",
+        "url": "https://arxiv.org/abs/2601.22113v2",
+        "why_it_matters": "The application of MAP-Elites for trade execution offers a novel approach to generating diverse strategies that adapt to different market conditions, potentially improving execution performance."
       },
       {
-        "title": "Forecasting Equity Correlations with Hybrid Transformer Graph Neural Network",
-        "url": "https://arxiv.org/abs/2601.04602v1",
-        "why_it_matters": "The paper presents a novel approach to forecasting stock correlations using a hybrid model that combines temporal and graph-based methods. This can enhance basket trading strategies, especially during market stress, by providing more accurate and adaptable correlation forecasts."
+        "title": "Trade uncertainty impact on stock-bond correlations: Insights from conditional correlation models",
+        "url": "https://arxiv.org/abs/2601.21447v1",
+        "why_it_matters": "Understanding the impact of trade policy uncertainty on stock-bond correlations can inform investment strategies, particularly in volatile political environments."
       }
     ],
     "new_agent_ideas": [
       {
-        "agent_name": "DART Spread Spike Trader",
-        "strategy_class": "Electricity Market Trading",
-        "edge_hypothesis": "Utilizes a structural price impact model to optimize trading of day-ahead versus real-time price spreads, capturing asymmetric impacts and congestion effects.",
+        "agent_name": "Volatility Impact Predictor",
+        "strategy_class": "Market Microstructure Analysis",
+        "edge_hypothesis": "Utilizing the unified theory of order flow to predict volatility and market impact based on core order flow persistence.",
         "markets": [
-          "NYISO",
-          "ISO Electricity Markets"
-        ],
-        "horizon": "Short-term (Day-ahead to Real-time)",
-        "data_required": [
-          "Day-ahead bid stacks",
-          "Real-time market data",
-          "Zonal price spreads"
-        ],
-        "test_plan": "Backtest the strategy using historical NYISO data to evaluate risk-return improvements and validate model predictions.",
-        "confidence": 0.8
-      },
-      {
-        "agent_name": "Intraday Transition Dynamics Executor",
-        "strategy_class": "Execution Algorithm",
-        "edge_hypothesis": "Leverages Markov chain analysis of limit order price changes to optimize execution strategies based on market capitalization and intraday intervals.",
-        "markets": [
-          "NASDAQ100",
-          "High, Medium, Low Cap Stocks"
+          "Equities",
+          "Futures"
         ],
         "horizon": "Intraday",
         "data_required": [
-          "High-frequency tick data",
-          "Market capitalization data"
+          "Order flow data",
+          "Trading volume",
+          "Volatility indices"
         ],
-        "test_plan": "Simulate execution strategies across different market caps and intraday intervals to assess performance improvements.",
-        "confidence": 0.75
+        "test_plan": "Backtest using historical order flow data to validate predictions against actual market volatility and impact.",
+        "confidence": 0.7
       },
       {
-        "agent_name": "Hybrid Correlation Forecaster",
-        "strategy_class": "Portfolio Management",
-        "edge_hypothesis": "Improves basket trading strategies by forecasting forward-looking stock correlations using a hybrid transformer graph neural network.",
+        "agent_name": "Regime-Adaptive Execution Optimizer",
+        "strategy_class": "Algorithmic Trading",
+        "edge_hypothesis": "Employing MAP-Elites to develop execution strategies that adapt to liquidity and volatility regimes, improving execution efficiency.",
         "markets": [
-          "S&P 500"
+          "Equities",
+          "Forex"
         ],
-        "horizon": "Medium-term (10-day ahead)",
+        "horizon": "Intraday",
         "data_required": [
-          "Daily returns",
-          "Sector structure",
-          "Macro signals"
+          "Historical trade data",
+          "Liquidity metrics",
+          "Volatility indices"
         ],
-        "test_plan": "Integrate the model into a portfolio management system and evaluate its impact on basket trading performance during market stress.",
-        "confidence": 0.85
+        "test_plan": "Simulate execution strategies in a controlled environment and compare performance against traditional execution methods.",
+        "confidence": 0.8
+      },
+      {
+        "agent_name": "Trade Policy Uncertainty Arbitrageur",
+        "strategy_class": "Macro Strategy",
+        "edge_hypothesis": "Exploiting shifts in stock-bond correlations driven by trade policy uncertainty to identify arbitrage opportunities.",
+        "markets": [
+          "Equities",
+          "Bonds"
+        ],
+        "horizon": "Medium-term",
+        "data_required": [
+          "Trade policy uncertainty indices",
+          "Stock and bond prices",
+          "Economic indicators"
+        ],
+        "test_plan": "Analyze historical periods of trade policy uncertainty to identify correlation shifts and backtest arbitrage strategies.",
+        "confidence": 0.6
       }
     ],
     "new_data_sources": [
       {
-        "name": "NYISO Market Data",
-        "url": "https://www.nyiso.com/market-data",
-        "use_case": "Provides real-time and historical data for optimizing DART spread trading strategies."
+        "name": "Trade Policy Uncertainty Index",
+        "url": "https://www.policyuncertainty.com/",
+        "use_case": "Used to assess the impact of trade policy uncertainty on market correlations and inform macroeconomic strategies."
       },
       {
-        "name": "NASDAQ100 High-Frequency Data",
-        "url": "https://www.nasdaq.com/market-activity",
-        "use_case": "Essential for analyzing intraday limit order price transition dynamics across market capitalizations."
-      },
-      {
-        "name": "S&P 500 Sector Structure Data",
-        "url": "https://www.spglobal.com/spdji/en/indices/equity/sp-500/",
-        "use_case": "Used for forecasting equity correlations and improving basket trading strategies."
+        "name": "High-Frequency Order Flow Data",
+        "url": "https://www.nasdaq.com/solutions/nasdaq-totalview",
+        "use_case": "Essential for analyzing market microstructure and developing predictive models for volatility and market impact."
       }
     ]
   }
