@@ -24,7 +24,12 @@
       "active": false,
       "reason": "Auto-quarantine: drawdown -3.003 <= limit -3.0",
       "since": "2026-02-02T18:03:24.636287+00:00"
+    },
+    "CodeGuardianAgent": {
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -4.754 <= limit -3.0",
+      "since": "2026-02-03T00:34:20.515883+00:00"
     }
   },
-  "updated_at": "2026-02-02T18:03:32.128207+00:00"
+  "updated_at": "2026-02-03T00:34:20.515954+00:00"
 }

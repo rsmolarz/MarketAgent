@@ -6,6 +6,13 @@ from flask import Flask, jsonify, request, render_template
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.middleware.proxy_fix import ProxyFix
 
+# Phase 4 Extensions: Initialize system services
+try:
+        from services.system_manager import initialize_system_manager
+        from routes.api_extended import api_extended
+except ImportError as e:
+        logger.warning(f"Phase 4 services not available: {e}")    return app
+
 # ------------------------------------------------------------------------------
 # Logging
 # ------------------------------------------------------------------------------
