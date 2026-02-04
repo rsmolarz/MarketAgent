@@ -1,18 +1,11 @@
 {
-  "generated_at": "2026-02-04T18:41:37.659256Z",
+  "generated_at": "2026-02-04T19:30:49.500760Z",
   "agents": {
-    "MacroWatcherAgent": {
-      "count": 2,
-      "avg_latency_ms": 971.5,
-      "total_cost_usd": 0.0,
-      "avg_reward": -0.0073,
-      "error_rate": 0.0
-    },
     "ArbitrageFinderAgent": {
-      "count": 18,
-      "avg_latency_ms": 7424.33,
+      "count": 6,
+      "avg_latency_ms": 7436.83,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.1505,
+      "avg_reward": -0.1506,
       "error_rate": 0.0
     }
   }
