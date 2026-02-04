@@ -49,6 +49,7 @@ run = ["sh", "-c", "gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app"
 [userenv.shared]
 ADMIN_EMAILS = "rsmolarz@rsmolarz.com"
 SENDGRID_FROM_EMAIL = "rsmolarz@medmoneyshow.com"
+GOOGLE_OAUTH_CLIENT_ID = "969555602977-lfrkhbpu2rhq5h1u78po0ijqbnrfaihu.apps.googleusercontent.com"
 
 [userenv.production]
 DEPLOYMENT_ENV = "production"
