@@ -1272,12 +1272,12 @@ def action_required_findings():
         
         findings = Finding.query.filter(
             Finding.timestamp >= cutoff,
-            Finding.ta_regime.in_(favorable_regimes),
             or_(
                 and_(
                     Finding.market_type.in_(['equity', 'crypto', 'technical']),
                     Finding.ta_council == 'act',
-                    Finding.fund_council == 'act'
+                    Finding.fund_council == 'act',
+                    Finding.ta_regime.in_(favorable_regimes)
                 ),
                 and_(
                     Finding.market_type == 'real_estate',
