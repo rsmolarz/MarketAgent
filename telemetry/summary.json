@@ -1,25 +1,25 @@
 {
-  "generated_at": "2026-02-04T23:22:53.774772Z",
+  "generated_at": "2026-02-04T23:27:27.198384Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 575,
-      "avg_latency_ms": 447.2,
+      "count": 583,
+      "avg_latency_ms": 441.07,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0088,
+      "avg_reward": -0.0087,
       "error_rate": 0.0
     },
     "WhaleWalletWatcherAgent": {
-      "count": 251,
-      "avg_latency_ms": 482.35,
+      "count": 255,
+      "avg_latency_ms": 474.79,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0119,
+      "avg_reward": -0.0117,
       "error_rate": 0.0
     },
     "CryptoFundingRateAgent": {
-      "count": 185,
-      "avg_latency_ms": 1460.22,
+      "count": 189,
+      "avg_latency_ms": 1429.33,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0249,
+      "avg_reward": -0.0244,
       "error_rate": 0.0
     },
     "SentimentDivergenceAgent": {
@@ -37,10 +37,10 @@
       "error_rate": 0.0
     },
     "CodeGuardianAgent": {
-      "count": 104,
-      "avg_latency_ms": 362371.69,
+      "count": 110,
+      "avg_latency_ms": 356873.17,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.4025,
+      "avg_reward": -0.4092,
       "error_rate": 0.0
     },
     "AltDataSignalAgent": {
@@ -72,10 +72,10 @@
       "error_rate": 0.0
     },
     "DatedBasisAgent": {
-      "count": 40,
-      "avg_latency_ms": 145.05,
+      "count": 42,
+      "avg_latency_ms": 149.12,
       "total_cost_usd": 0.0,
-      "avg_reward": 0.0231,
+      "avg_reward": 0.0211,
       "error_rate": 0.0
     },
     "DistressedDealEvaluatorAgent": {
