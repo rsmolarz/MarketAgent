@@ -159,6 +159,70 @@ def stop_agent(agent_name):
         logger.error(f"Error stopping agent {agent_name}: {e}")
         return jsonify({'error': str(e)}), 500
 
+@api_bp.route('/agents/<agent_name>/force-start', methods=['POST'])
+@api_login_required
+def force_start_agent(agent_name):
+    """Force-start an agent, bypassing regime/drawdown restrictions"""
+    try:
+        scheduler = current_app.extensions.get('scheduler')
+        if not scheduler:
+            return jsonify({'error': 'Scheduler not available'}), 503
+        success = scheduler.start_agent(agent_name, force=True)
+        if success:
+            return jsonify({'message': f'Agent {agent_name} force-started (bypassing restrictions)'})
+        else:
+            return jsonify({'error': f'Failed to force-start agent {agent_name}'}), 400
+            
+    except Exception as e:
+        logger.error(f"Error force-starting agent {agent_name}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/agents/force-start-all', methods=['POST'])
+@api_login_required
+def force_start_all_agents():
+    """Force-start all inactive agents, bypassing regime/drawdown restrictions"""
+    try:
+        scheduler = current_app.extensions.get('scheduler')
+        if not scheduler:
+            return jsonify({'error': 'Scheduler not available'}), 503
+        
+        statuses = AgentStatus.query.filter_by(is_active=False).all()
+        started = []
+        failed = []
+        
+        for status in statuses:
+            try:
+                success = scheduler.start_agent(status.agent_name, force=True)
+                if success:
+                    started.append(status.agent_name)
+                else:
+                    failed.append(status.agent_name)
+            except Exception as e:
+                logger.error(f"Error force-starting {status.agent_name}: {e}")
+                failed.append(status.agent_name)
+        
+        return jsonify({
+            'message': f'Force-started {len(started)} agents',
+            'started': started,
+            'failed': failed
+        })
+            
+    except Exception as e:
+        logger.error(f"Error force-starting all agents: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@api_bp.route('/governance/reset-drawdown', methods=['POST'])
+@api_login_required
+def reset_drawdown():
+    """Reset drawdown state by archiving telemetry events"""
+    try:
+        from services.drawdown_governor import reset_drawdown_state
+        result = reset_drawdown_state()
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error resetting drawdown: {e}")
+        return jsonify({'error': str(e)}), 500
+
 @api_bp.route('/agents/<agent_name>/interval', methods=['PUT'])
 @api_login_required
 def update_agent_interval(agent_name):

@@ -97,6 +97,31 @@ def log_governance_event(event_type: str, details: dict) -> None:
         f.write(json.dumps(event) + "\n")
 
 
+def reset_drawdown_state() -> dict:
+    """
+    Reset drawdown state by clearing or archiving telemetry events.
+    Use when portfolio halt needs to be manually overridden.
+    """
+    try:
+        if EVENTS.exists():
+            archive_path = Path(f"telemetry/events_archive_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.jsonl")
+            EVENTS.rename(archive_path)
+            logger.info(f"Archived telemetry events to {archive_path}")
+            
+            log_governance_event("drawdown_reset", {
+                "action": "archive_events",
+                "archive_path": str(archive_path),
+                "reason": "manual_reset"
+            })
+            
+            return {"ok": True, "message": "Drawdown state reset, events archived"}
+        else:
+            return {"ok": True, "message": "No events to archive"}
+    except Exception as e:
+        logger.error(f"Failed to reset drawdown state: {e}")
+        return {"ok": False, "error": str(e)}
+
+
 def compute_drawdown_state(dd_limit: float = -0.06, min_risk_mult: float = 0.35) -> dict:
     """
     Compute drawdown state for dashboard display.

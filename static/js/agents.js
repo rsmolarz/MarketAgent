@@ -31,6 +31,21 @@ class AgentManager {
             this.confirmBulkAction('stop', 'Stop All Agents', 'Are you sure you want to stop all agents?');
         });
         
+        const forceStartBtn = document.getElementById('force-start-all-agents');
+        if (forceStartBtn) {
+            forceStartBtn.addEventListener('click', () => {
+                this.confirmBulkAction('force-start', 'Force Start All Agents', 
+                    'This will start all agents, bypassing regime and drawdown restrictions. Are you sure?');
+            });
+        }
+        
+        const resetDrawdownBtn = document.getElementById('reset-drawdown');
+        if (resetDrawdownBtn) {
+            resetDrawdownBtn.addEventListener('click', () => {
+                this.resetDrawdown();
+            });
+        }
+        
         document.getElementById('refresh-agents').addEventListener('click', () => {
             this.loadAgents();
         });
@@ -580,6 +595,8 @@ class AgentManager {
             await this.startAllAgents();
         } else if (action === 'stop') {
             await this.stopAllAgents();
+        } else if (action === 'force-start') {
+            await this.forceStartAllAgents();
         }
         
         this.confirmationModal.hide();
@@ -611,6 +628,45 @@ class AgentManager {
         }
         
         this.showSuccess(`Stopped ${activeAgents.length} agents`);
+    }
+    
+    async forceStartAllAgents() {
+        try {
+            const response = await fetch('/api/agents/force-start-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            
+            if (response.ok) {
+                this.showSuccess(`Force-started ${data.started?.length || 0} agents (bypassing restrictions)`);
+                this.loadAgents();
+            } else {
+                this.showError(data.error || 'Failed to force-start agents');
+            }
+        } catch (error) {
+            console.error('Failed to force-start all agents:', error);
+            this.showError('Failed to force-start agents');
+        }
+    }
+    
+    async resetDrawdown() {
+        try {
+            const response = await fetch('/api/governance/reset-drawdown', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            
+            if (data.ok) {
+                this.showSuccess(data.message || 'Drawdown state reset');
+            } else {
+                this.showError(data.error || 'Failed to reset drawdown');
+            }
+        } catch (error) {
+            console.error('Failed to reset drawdown:', error);
+            this.showError('Failed to reset drawdown');
+        }
     }
     
     updateSummary() {

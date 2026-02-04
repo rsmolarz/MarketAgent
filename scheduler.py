@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 _cached_regime_state = None
 _regime_weights = {}
 _uncertainty_state = None
+_force_started_agents = set()
 
 class AgentScheduler:
     def __init__(self, app=None):
@@ -145,10 +146,14 @@ class AgentScheduler:
         
         logger.info(f"Created default schedule and auto-started {len(default_agents)} agents")
     
-    def start_agent(self, agent_name: str) -> bool:
-        """Start scheduling an agent"""
+    def start_agent(self, agent_name: str, force: bool = False) -> bool:
+        """Start scheduling an agent
+        
+        Args:
+            agent_name: Name of the agent to start
+            force: If True, bypass regime/drawdown restrictions
+        """
         try:
-            # Import db here to avoid circular import
             from models import db
             with self.app.app_context():
                 status = AgentStatus.query.filter_by(agent_name=agent_name).first()
@@ -160,7 +165,10 @@ class AgentScheduler:
                     logger.warning(f"Agent {agent_name} is already scheduled")
                     return True
                 
-                # Create scheduler job with telemetry wrapper
+                if force:
+                    _force_started_agents.add(agent_name)
+                    logger.info(f"Force-starting agent {agent_name} (bypassing restrictions)")
+                
                 job = self.scheduler.add_job(
                     func=lambda name=agent_name: run_with_telemetry(name, self._run_agent, name),
                     trigger=IntervalTrigger(minutes=status.schedule_interval),
@@ -208,30 +216,34 @@ class AgentScheduler:
         from models import db
         from alpha.emit import emit_alpha_signal
         
-        if is_killed(agent_name):
-            logger.warning(f"Agent {agent_name} is disabled by kill-switch")
-            return
-        
-        if meta_is_killed(agent_name):
-            logger.warning(f"Agent {agent_name} is on meta-supervisor kill-list")
-            return
-        
-        if policy_agent_disabled(agent_name):
-            logger.warning(f"Agent {agent_name} is disabled by policy kill-switch")
-            return
-        
-        if not meta_agent_enabled(agent_name):
-            logger.warning(f"Agent {agent_name} is disabled by Meta-Agent ranking")
-            return
-        
+        is_force_started = agent_name in _force_started_agents
         SYSTEM_AGENTS = ['CodeGuardianAgent', 'HealthCheckAgent', 'MetaSupervisorAgent']
         
-        regime_weight = _regime_weights.get(agent_name, 0)
-        if regime_weight < 0.01 and agent_name not in SYSTEM_AGENTS:
-            logger.info(f"Agent {agent_name} muted by regime rotation (weight={regime_weight:.3f})")
-            return
+        if not is_force_started and agent_name not in SYSTEM_AGENTS:
+            if is_killed(agent_name):
+                logger.warning(f"Agent {agent_name} is disabled by kill-switch")
+                return
+            
+            if meta_is_killed(agent_name):
+                logger.warning(f"Agent {agent_name} is on meta-supervisor kill-list")
+                return
+            
+            if policy_agent_disabled(agent_name):
+                logger.warning(f"Agent {agent_name} is disabled by policy kill-switch")
+                return
+            
+            if not meta_agent_enabled(agent_name):
+                logger.warning(f"Agent {agent_name} is disabled by Meta-Agent ranking")
+                return
+            
+            regime_weight = _regime_weights.get(agent_name, 0)
+            if regime_weight < 0.01:
+                logger.info(f"Agent {agent_name} muted by regime rotation (weight={regime_weight:.3f})")
+                return
         
-        if agent_name in SYSTEM_AGENTS:
+        if is_force_started:
+            logger.info(f"Agent {agent_name} running (force-started, bypassing restrictions)")
+        elif agent_name in SYSTEM_AGENTS:
             logger.info(f"System agent {agent_name} bypassing regime rotation")
         
         global _uncertainty_state
