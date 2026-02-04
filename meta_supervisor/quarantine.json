@@ -3,28 +3,28 @@
     "ArbitrageFinderAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -4.519 <= limit -3.0",
-      "since": "2026-02-04T21:42:53.668737+00:00"
+      "since": "2026-02-04T21:47:53.670006+00:00"
     },
     "CryptoFundingRateAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -4.044 <= limit -3.0",
-      "since": "2026-02-04T21:42:53.669062+00:00"
+      "since": "2026-02-04T21:47:53.670731+00:00"
     },
     "CodeGuardianAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -17.659 <= limit -3.0",
-      "since": "2026-02-04T21:42:53.669614+00:00"
+      "since": "2026-02-04T21:47:53.671436+00:00"
     },
     "SentimentDivergenceAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.651 <= limit -3.0",
-      "since": "2026-02-04T21:42:53.669253+00:00"
+      "since": "2026-02-04T21:47:53.671035+00:00"
     },
     "TechnicalAnalysisAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.324 <= limit -3.0",
-      "since": "2026-02-04T21:42:53.669438+00:00"
+      "since": "2026-02-04T21:47:53.671232+00:00"
     }
   },
-  "updated_at": "2026-02-04T21:42:53.669632+00:00"
+  "updated_at": "2026-02-04T21:47:53.671454+00:00"
 }
