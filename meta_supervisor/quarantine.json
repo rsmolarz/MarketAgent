@@ -28,8 +28,8 @@
     "CodeGuardianAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -4.958 <= limit -3.0",
-      "since": "2026-02-04T17:00:18.286249+00:00"
+      "since": "2026-02-04T17:30:18.238608+00:00"
     }
   },
-  "updated_at": "2026-02-04T17:00:18.286318+00:00"
+  "updated_at": "2026-02-04T17:30:18.238685+00:00"
 }
