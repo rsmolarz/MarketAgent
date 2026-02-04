@@ -7,12 +7,6 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Phase 4 Extensions: Initialize system services
-try:
-        from services.system_manager import initialize_system_manager
-        from routes.api_extended import api_extended
-except ImportError as e:
-        logger.warning(f"Phase 4 services not available: {e}")    return app
-
 # ------------------------------------------------------------------------------
 # Logging
 # ------------------------------------------------------------------------------
@@ -23,11 +17,14 @@ logger = logging.getLogger(__name__)
 def _apply_finding_council_migration(db):
     """Add LLM council columns to findings table if they don't exist."""
     from sqlalchemy import inspect, text
-    
+
     try:
         inspector = inspect(db.engine)
-        existing_columns = {col['name'] for col in inspector.get_columns('findings')}
-        
+        existing_columns = {
+            col['name']
+            for col in inspector.get_columns('findings')
+        }
+
         new_columns = [
             ("consensus_action", "VARCHAR(16)"),
             ("consensus_confidence", "FLOAT"),
@@ -38,11 +35,14 @@ def _apply_finding_council_migration(db):
             ("ta_regime", "VARCHAR(32)"),
             ("analyzed_at", "TIMESTAMP"),
         ]
-        
+
         for col_name, col_type in new_columns:
             if col_name not in existing_columns:
                 try:
-                    db.session.execute(text(f"ALTER TABLE findings ADD COLUMN {col_name} {col_type}"))
+                    db.session.execute(
+                        text(
+                            f"ALTER TABLE findings ADD COLUMN {col_name} {col_type}"
+                        ))
                     db.session.commit()
                     logger.info(f"Added column {col_name} to findings table")
                 except Exception as e:
@@ -65,15 +65,11 @@ def create_app():
     # ------------------------------------------------------------------------------
     # Database config
     # ------------------------------------------------------------------------------
-    database_url = os.environ.get(
-        "DATABASE_URL",
-        "sqlite:///market_inefficiency.db"
-    )
+    database_url = os.environ.get("DATABASE_URL",
+                                  "sqlite:///market_inefficiency.db")
 
     if database_url.startswith("postgres://"):
-        database_url = database_url.replace(
-            "postgres://", "postgresql://", 1
-        )
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
 
     app.config.update(
         SQLALCHEMY_DATABASE_URI=database_url,
@@ -95,7 +91,7 @@ def create_app():
             import models
             db.create_all()
             logger.info("Database tables created successfully")
-            
+
             _apply_finding_council_migration(db)
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")
@@ -107,7 +103,7 @@ def create_app():
         """Initialize scheduler in background after app is ready"""
         import threading
         import time
-        
+
         def delayed_init():
             time.sleep(5)  # Wait 5 seconds for app to be fully ready
             try:
@@ -115,13 +111,14 @@ def create_app():
                     from scheduler import AgentScheduler
                     scheduler = AgentScheduler(app)
                     app.extensions["scheduler"] = scheduler
-                    logger.info("AgentScheduler initialized successfully (deferred)")
+                    logger.info(
+                        "AgentScheduler initialized successfully (deferred)")
             except Exception as e:
                 logger.error(f"Scheduler failed to initialize: {e}")
-        
+
         thread = threading.Thread(target=delayed_init, daemon=True)
         thread.start()
-    
+
     # Only start scheduler in non-production or after health checks pass
     if os.environ.get('DEPLOYMENT_ENV') == 'production':
         init_scheduler_deferred()
@@ -152,10 +149,10 @@ def create_app():
     from routes.deals import deals_bp
     from routes.distressed_platform import distressed_platform_bp
     from replit_auth import make_replit_blueprint, init_auth
-    
+
     init_auth(app)
     replit_bp = make_replit_blueprint()
-    
+
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(admin_bp, url_prefix='/admin')
     app.register_blueprint(admin_proposals_bp)
@@ -170,7 +167,7 @@ def create_app():
     app.register_blueprint(deals_bp)
     app.register_blueprint(distressed_platform_bp)
     app.register_blueprint(replit_bp, url_prefix='/auth')
-    
+
     @app.route("/landing")
     def landing():
         return render_template("landing.html")

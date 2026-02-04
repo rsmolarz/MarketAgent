@@ -1,87 +1,88 @@
 {
-  "generated_at": "2026-02-02T08:25:36.393638Z",
+  "generated_at": "2026-02-04T08:25:21.881070Z",
   "items_count": 16,
   "insights": {
     "high_signal_items": [
       {
-        "title": "A unified theory of order flow, market impact, and volatility",
-        "url": "https://arxiv.org/abs/2601.23172v1",
-        "why_it_matters": "This paper introduces a microstructural model that reconciles empirical properties of order flow, trading volume, and volatility, providing a unified framework that could enhance understanding and prediction of market dynamics."
+        "title": "Explainable Patterns in Cryptocurrency Microstructure",
+        "url": "https://arxiv.org/abs/2602.00776v1",
+        "why_it_matters": "The study identifies stable cross-asset patterns in cryptocurrency microstructure, suggesting a portable representation of short-horizon returns. This could lead to the development of universal feature libraries for crypto markets, enhancing trading strategies across different assets."
       },
       {
-        "title": "Diverse Approaches to Optimal Execution Schedule Generation",
-        "url": "https://arxiv.org/abs/2601.22113v2",
-        "why_it_matters": "The application of MAP-Elites for trade execution offers a novel approach to generating diverse strategies that adapt to different market conditions, potentially improving execution performance."
+        "title": "Generative AI for Stock Selection",
+        "url": "https://arxiv.org/abs/2602.00196v1",
+        "why_it_matters": "The use of generative AI to automate feature discovery in stock selection shows significant improvements in Sharpe ratios, indicating potential for AI-driven strategies to outperform traditional methods in equity markets."
       },
       {
-        "title": "Trade uncertainty impact on stock-bond correlations: Insights from conditional correlation models",
-        "url": "https://arxiv.org/abs/2601.21447v1",
-        "why_it_matters": "Understanding the impact of trade policy uncertainty on stock-bond correlations can inform investment strategies, particularly in volatile political environments."
+        "title": "Adaptive Benign Overfitting (ABO): Overparameterized RLS for Online Learning in Non-stationary Time-series",
+        "url": "https://arxiv.org/abs/2601.22200v1",
+        "why_it_matters": "ABO provides a stable online learning framework that adapts to non-stationary time-series, showing high accuracy in forecasting foreign exchange and electricity demand. This could enhance algorithmic trading strategies in volatile markets."
       }
     ],
     "new_agent_ideas": [
       {
-        "agent_name": "Volatility Impact Predictor",
+        "agent_name": "Crypto Microstructure Arbitrage Agent",
         "strategy_class": "Market Microstructure Analysis",
-        "edge_hypothesis": "Utilizing the unified theory of order flow to predict volatility and market impact based on core order flow persistence.",
+        "edge_hypothesis": "Stable cross-asset microstructure patterns can be exploited for arbitrage opportunities across different cryptocurrencies.",
         "markets": [
-          "Equities",
-          "Futures"
+          "Cryptocurrency"
         ],
-        "horizon": "Intraday",
+        "horizon": "Short-term",
         "data_required": [
-          "Order flow data",
-          "Trading volume",
-          "Volatility indices"
+          "Order book data",
+          "Trade data"
         ],
-        "test_plan": "Backtest using historical order flow data to validate predictions against actual market volatility and impact.",
+        "test_plan": "Develop a trading algorithm based on identified microstructure patterns and backtest on historical data from multiple cryptocurrencies.",
         "confidence": 0.7
       },
       {
-        "agent_name": "Regime-Adaptive Execution Optimizer",
-        "strategy_class": "Algorithmic Trading",
-        "edge_hypothesis": "Employing MAP-Elites to develop execution strategies that adapt to liquidity and volatility regimes, improving execution efficiency.",
+        "agent_name": "AI-Enhanced Stock Selection Agent",
+        "strategy_class": "Feature Discovery and Selection",
+        "edge_hypothesis": "Generative AI can discover novel features that improve stock selection and enhance portfolio performance.",
         "markets": [
-          "Equities",
-          "Forex"
-        ],
-        "horizon": "Intraday",
-        "data_required": [
-          "Historical trade data",
-          "Liquidity metrics",
-          "Volatility indices"
-        ],
-        "test_plan": "Simulate execution strategies in a controlled environment and compare performance against traditional execution methods.",
-        "confidence": 0.8
-      },
-      {
-        "agent_name": "Trade Policy Uncertainty Arbitrageur",
-        "strategy_class": "Macro Strategy",
-        "edge_hypothesis": "Exploiting shifts in stock-bond correlations driven by trade policy uncertainty to identify arbitrage opportunities.",
-        "markets": [
-          "Equities",
-          "Bonds"
+          "Equities"
         ],
         "horizon": "Medium-term",
         "data_required": [
-          "Trade policy uncertainty indices",
-          "Stock and bond prices",
-          "Economic indicators"
+          "Analyst reports",
+          "Options data",
+          "Price-volume data"
         ],
-        "test_plan": "Analyze historical periods of trade policy uncertainty to identify correlation shifts and backtest arbitrage strategies.",
-        "confidence": 0.6
+        "test_plan": "Integrate AI-generated features into a stock selection model and evaluate performance against traditional models using historical data.",
+        "confidence": 0.8
+      },
+      {
+        "agent_name": "Adaptive Forecasting Agent",
+        "strategy_class": "Online Learning and Adaptation",
+        "edge_hypothesis": "Adaptive benign overfitting allows for accurate and stable forecasting in non-stationary environments, providing an edge in volatile markets.",
+        "markets": [
+          "Foreign Exchange",
+          "Energy"
+        ],
+        "horizon": "Short to Medium-term",
+        "data_required": [
+          "Time-series data",
+          "Market indicators"
+        ],
+        "test_plan": "Implement ABO in a live trading environment and monitor performance against benchmarks in FX and energy markets.",
+        "confidence": 0.75
       }
     ],
     "new_data_sources": [
       {
-        "name": "Trade Policy Uncertainty Index",
-        "url": "https://www.policyuncertainty.com/",
-        "use_case": "Used to assess the impact of trade policy uncertainty on market correlations and inform macroeconomic strategies."
+        "name": "Binance Futures Order Book Data",
+        "url": "https://www.binance.com/en/futures",
+        "use_case": "To analyze cross-asset microstructure patterns in cryptocurrency markets."
       },
       {
-        "name": "High-Frequency Order Flow Data",
-        "url": "https://www.nasdaq.com/solutions/nasdaq-totalview",
-        "use_case": "Essential for analyzing market microstructure and developing predictive models for volatility and market impact."
+        "name": "Analyst Reports and Options Data",
+        "url": "https://www.bloomberg.com/professional/",
+        "use_case": "For feature discovery in stock selection using generative AI."
+      },
+      {
+        "name": "Foreign Exchange and Electricity Demand Data",
+        "url": "https://www.oanda.com/",
+        "use_case": "To test adaptive forecasting models in non-stationary time-series environments."
       }
     ]
   }

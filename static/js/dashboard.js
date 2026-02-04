@@ -394,7 +394,12 @@ class Dashboard {
     }
     
     renderFindingsChart(chartData) {
-        const ctx = document.getElementById('findings-chart').getContext('2d');
+        const canvas = document.getElementById('findings-chart');
+        if (!canvas) {
+            console.log('Chart canvas not visible, skipping render');
+            return;
+        }
+        const ctx = canvas.getContext('2d');
         
         // Destroy existing chart if it exists
         if (this.chart) {
