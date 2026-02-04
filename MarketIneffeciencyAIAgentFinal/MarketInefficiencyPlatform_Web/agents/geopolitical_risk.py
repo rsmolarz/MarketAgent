@@ -12,7 +12,7 @@ class GeopoliticalRiskAgent(BaseAgent):
         return "Detect global instability via news or simulated conflict data."
 
     def act(self, context=None):
-risk_level = get_geopolitical_risk_index()
+        risk_level = get_geopolitical_risk_index()
         alerts = []
 
         if risk_level > 8:

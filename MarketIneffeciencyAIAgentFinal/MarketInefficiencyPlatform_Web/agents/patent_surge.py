@@ -12,7 +12,7 @@ class PatentSurgeAgent(BaseAgent):
         return "Track new tech patent filings to detect sudden innovation surges."
 
     def act(self, context=None):
-ai_patents = get_recent_ai_patent_count()
+        ai_patents = get_recent_ai_patent_count()
         alerts = []
 
         if ai_patents > 40:

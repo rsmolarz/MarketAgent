@@ -12,7 +12,7 @@ class EnergyDisruptionAgent(BaseAgent):
         return "Watch energy grid loads or outages for systemic disruption signs."
 
     def act(self, context=None):
-grid_load = get_grid_utilization()
+        grid_load = get_grid_utilization()
         alerts = []
 
         if grid_load > 90:

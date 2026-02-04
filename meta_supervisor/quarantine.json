@@ -1,1 +1,10 @@
-{"agents": {}, "updated_at": null}
+{
+  "agents": {
+    "ArbitrageFinderAgent": {
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -4.515 <= limit -3.0",
+      "since": "2026-02-04T19:53:50.264980+00:00"
+    }
+  },
+  "updated_at": "2026-02-04T19:53:50.265023+00:00"
+}
