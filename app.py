@@ -186,6 +186,22 @@ def create_app():
         """Ultra-fast health check for Cloud Run - NO database or external calls"""
         return "OK", 200
 
+    # Additional health check endpoints for compatibility
+    @app.route("/health")
+    def health():
+        """Fast health check endpoint"""
+        return "OK", 200
+
+    @app.route("/ready")
+    def ready():
+        """Readiness probe endpoint"""
+        return "OK", 200
+
+    @app.route("/live")
+    def live():
+        """Liveness probe endpoint"""
+        return "OK", 200
+
     return app
 
 

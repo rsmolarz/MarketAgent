@@ -49,3 +49,6 @@ run = ["sh", "-c", "gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app"
 [userenv.shared]
 ADMIN_EMAILS = "rsmolarz@rsmolarz.com"
 SENDGRID_FROM_EMAIL = "rsmolarz@medmoneyshow.com"
+
+[userenv.production]
+DEPLOYMENT_ENV = "production"

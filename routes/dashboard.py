@@ -21,29 +21,41 @@ def health_check():
 @dashboard_bp.route('/')
 def index():
     """Main dashboard page - ULTRA FAST health checks for deployment systems"""
-    # Get headers once for performance
-    user_agent = request.headers.get('User-Agent', '').lower()
+    import os
     
-    # IMMEDIATE health check detection - deployment systems first
-    # Using simple string checks for maximum speed
-    if (user_agent == '' or  # Empty user agent (most common for load balancers)
-        'curl' in user_agent or  # curl commands
-        'wget' in user_agent or  # wget commands
-        'googlehc' in user_agent or  # Google Cloud health checks
-        'health' in user_agent or  # Any health-related user agent
-        'probe' in user_agent or  # Any probe user agent
-        'check' in user_agent or  # Any check user agent
-        'monitor' in user_agent or  # Any monitoring user agent
-        request.args.get('health') is not None):  # Direct health parameter
-        # INSTANT 200 response - no processing
+    # PRIORITY 1: Check if this is a health check probe FIRST before ANY other processing
+    # Replit/Cloud deployment health checks - respond IMMEDIATELY
+    user_agent = request.headers.get('User-Agent', '') or ''
+    user_agent_lower = user_agent.lower()
+    
+    # Fast path for health checks - NO authentication, NO database, NO templates
+    is_health_check = (
+        not user_agent or  # Empty user agent (load balancers)
+        len(user_agent) < 20 or  # Very short user agents (probes)
+        'replit' in user_agent_lower or  # Replit health checks
+        'curl' in user_agent_lower or
+        'wget' in user_agent_lower or
+        'python' in user_agent_lower or  # Python requests (health probes)
+        'go-http' in user_agent_lower or  # Go HTTP client
+        'googlehc' in user_agent_lower or
+        'health' in user_agent_lower or
+        'probe' in user_agent_lower or
+        'check' in user_agent_lower or
+        'monitor' in user_agent_lower or
+        'kube' in user_agent_lower or  # Kubernetes probes
+        'docker' in user_agent_lower or  # Docker health checks
+        request.args.get('health') is not None or
+        request.args.get('healthz') is not None
+    )
+    
+    if is_health_check:
         return 'OK', 200
     
-    # Additional deployment system patterns (second priority)
+    # Check Accept header for non-browser requests
     accept_header = request.headers.get('Accept', '').lower()
-    if (accept_header == '*/*' and 
-        'mozilla' not in user_agent and 
-        'chrome' not in user_agent and 
-        'safari' not in user_agent):
+    is_browser = any(b in user_agent_lower for b in ['mozilla', 'chrome', 'safari', 'firefox', 'edge', 'opera'])
+    
+    if not is_browser and accept_header in ['*/*', '', 'text/plain']:
         return 'OK', 200
     
     # Normal web browser request - check authentication

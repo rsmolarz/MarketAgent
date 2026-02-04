@@ -5,20 +5,22 @@ This file is imported by gunicorn to run the Flask application.
 
 import os
 import logging
+
+# Set production mode if running via gunicorn (deployed) - BEFORE app creation
+if 'gunicorn' in os.environ.get('SERVER_SOFTWARE', ''):
+    os.environ['DEPLOYMENT_ENV'] = 'production'
+
+# Configure logging early
+logging.basicConfig(
+    level=logging.INFO if os.environ.get('DEPLOYMENT_ENV') == 'production' else logging.DEBUG,
+    format='%(asctime)s %(levelname)s: %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+
 from app import create_app
 
 # Create Flask application instance
 app = create_app()
-
-# Configure logging for production
-if os.environ.get('DEPLOYMENT_ENV') == 'production':
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s %(levelname)s: %(message)s',
-        handlers=[
-            logging.StreamHandler()
-        ]
-    )
 
 # Ensure app is available for gunicorn
 if not app:
