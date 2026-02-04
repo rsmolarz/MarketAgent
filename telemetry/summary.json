@@ -1,53 +1,53 @@
 {
-  "generated_at": "2026-02-04T23:42:53.671171Z",
+  "generated_at": "2026-02-04T23:54:24.470649Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 635,
-      "avg_latency_ms": 404.95,
+      "count": 683,
+      "avg_latency_ms": 376.52,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.008,
+      "avg_reward": -0.0074,
       "error_rate": 0.0
     },
     "WhaleWalletWatcherAgent": {
-      "count": 271,
-      "avg_latency_ms": 446.76,
+      "count": 283,
+      "avg_latency_ms": 427.92,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.011,
+      "avg_reward": -0.0105,
       "error_rate": 0.0
     },
     "CryptoFundingRateAgent": {
-      "count": 205,
-      "avg_latency_ms": 1317.86,
+      "count": 217,
+      "avg_latency_ms": 1245.06,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0225,
+      "avg_reward": -0.0213,
       "error_rate": 0.0
     },
     "SentimentDivergenceAgent": {
-      "count": 104,
-      "avg_latency_ms": 1208.87,
+      "count": 108,
+      "avg_latency_ms": 1164.46,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0386,
+      "avg_reward": -0.0372,
       "error_rate": 0.0
     },
     "TechnicalAnalysisAgent": {
-      "count": 103,
-      "avg_latency_ms": 1041.06,
+      "count": 107,
+      "avg_latency_ms": 1002.14,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0324,
+      "avg_reward": -0.0312,
       "error_rate": 0.0
     },
     "CodeGuardianAgent": {
-      "count": 122,
-      "avg_latency_ms": 359544.26,
+      "count": 128,
+      "avg_latency_ms": 356196.74,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.4017,
+      "avg_reward": -0.4009,
       "error_rate": 0.0
     },
     "AltDataSignalAgent": {
-      "count": 66,
-      "avg_latency_ms": 799.83,
+      "count": 72,
+      "avg_latency_ms": 800.32,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0261,
+      "avg_reward": -0.0264,
       "error_rate": 0.0
     },
     "MacroWatcherAgent": {
