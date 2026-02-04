@@ -1252,10 +1252,14 @@ def triage_summary():
 @api_login_required
 def action_required_findings():
     """
-    Get findings that require action based on LLM council consensus.
+    Get findings that require action based on BOTH LLM council consensus AND TA regime approval.
     
-    For equities/crypto: BOTH ta_council AND fund_council must be 'act'
-    For real estate: real_estate_council must be 'act'
+    For equities/crypto: 
+        - BOTH ta_council AND fund_council must be 'act'
+        - AND ta_regime must be favorable ('bullish', 'risk_on', 'uptrend', 'expansion')
+    For real estate: 
+        - real_estate_council must be 'act'
+        - AND ta_regime must be favorable
     """
     try:
         from sqlalchemy import or_, and_
@@ -1264,8 +1268,11 @@ def action_required_findings():
         hours = request.args.get("hours", 168, type=int)
         cutoff = datetime.utcnow() - timedelta(hours=hours)
         
+        favorable_regimes = ['bullish', 'risk_on', 'uptrend', 'expansion', 'recovery', 'accumulation']
+        
         findings = Finding.query.filter(
             Finding.timestamp >= cutoff,
+            Finding.ta_regime.in_(favorable_regimes),
             or_(
                 and_(
                     Finding.market_type.in_(['equity', 'crypto', 'technical']),

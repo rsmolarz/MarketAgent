@@ -1,46 +1,81 @@
 {
-  "generated_at": "2026-02-04T19:53:50.261726Z",
+  "generated_at": "2026-02-04T20:38:56.962458Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 54,
-      "avg_latency_ms": 4123.35,
+      "count": 158,
+      "avg_latency_ms": 1410.49,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0836,
+      "avg_reward": -0.0286,
       "error_rate": 0.0
     },
     "WhaleWalletWatcherAgent": {
-      "count": 18,
-      "avg_latency_ms": 492.94,
+      "count": 66,
+      "avg_latency_ms": 496.14,
       "total_cost_usd": 0.0,
       "avg_reward": -0.011,
       "error_rate": 0.0
     },
     "CryptoFundingRateAgent": {
-      "count": 18,
-      "avg_latency_ms": 9588.83,
+      "count": 52,
+      "avg_latency_ms": 4529.85,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.1666,
+      "avg_reward": -0.0777,
       "error_rate": 0.0
     },
     "SentimentDivergenceAgent": {
-      "count": 6,
-      "avg_latency_ms": 3042.5,
+      "count": 30,
+      "avg_latency_ms": 2533.13,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0918,
+      "avg_reward": -0.0823,
       "error_rate": 0.0
     },
     "TechnicalAnalysisAgent": {
-      "count": 6,
-      "avg_latency_ms": 3024.0,
+      "count": 30,
+      "avg_latency_ms": 2423.77,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0902,
+      "avg_reward": -0.0759,
       "error_rate": 0.0
     },
     "CodeGuardianAgent": {
-      "count": 2,
-      "avg_latency_ms": 218600.5,
+      "count": 26,
+      "avg_latency_ms": 322199.27,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.5083,
+      "avg_reward": -0.4028,
+      "error_rate": 0.0
+    },
+    "AltDataSignalAgent": {
+      "count": 10,
+      "avg_latency_ms": 662.9,
+      "total_cost_usd": 0.0,
+      "avg_reward": -0.0166,
+      "error_rate": 0.0
+    },
+    "MacroWatcherAgent": {
+      "count": 6,
+      "avg_latency_ms": 804.83,
+      "total_cost_usd": 0.0,
+      "avg_reward": -0.0284,
+      "error_rate": 0.0
+    },
+    "DistressedPropertyAgent": {
+      "count": 4,
+      "avg_latency_ms": 4.25,
+      "total_cost_usd": 0.0,
+      "avg_reward": -0.0002,
+      "error_rate": 0.0
+    },
+    "BondStressAgent": {
+      "count": 6,
+      "avg_latency_ms": 1456.0,
+      "total_cost_usd": 0.0,
+      "avg_reward": -0.0542,
+      "error_rate": 0.0
+    },
+    "DatedBasisAgent": {
+      "count": 6,
+      "avg_latency_ms": 200.0,
+      "total_cost_usd": 0.0,
+      "avg_reward": 0.0172,
       "error_rate": 0.0
     }
   }

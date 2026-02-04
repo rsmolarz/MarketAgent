@@ -80,6 +80,10 @@ class CodeGuardianAgent(BaseAgent):
             if import_findings:
                 findings.extend(import_findings)
 
+            business_logic_findings = self._check_business_logic()
+            if business_logic_findings:
+                findings.extend(business_logic_findings)
+
             logger.info(f"Code Guardian: {len(findings)} issues found")
             return findings
 
@@ -360,4 +364,65 @@ class CodeGuardianAgent(BaseAgent):
             except Exception as e:
                 logger.debug(f"Could not check imports in {critical_file}: {str(e)}")
 
+        return findings
+
+    def _check_business_logic(self) -> List[Dict[str, Any]]:
+        """Check for business logic violations in critical endpoints."""
+        findings = []
+        
+        business_rules = [
+            {
+                'file': 'routes/api.py',
+                'pattern': 'action-required',
+                'required_patterns': ['ta_regime', 'ta_council', 'fund_council'],
+                'description': 'Action-required endpoint must check BOTH council approval AND ta_regime',
+                'severity': 'high'
+            },
+            {
+                'file': 'routes/api.py',
+                'pattern': 'action-required',
+                'required_patterns': ['favorable_regimes', 'in_'],
+                'description': 'Action-required must filter by favorable TA regimes',
+                'severity': 'high'
+            },
+            {
+                'file': 'meta/regime_rotation.py',
+                'pattern': 'rotate_weights',
+                'required_patterns': ['baseline', 'weight', 'stats'],
+                'description': 'Regime rotation must have baseline weights for agents without stats',
+                'severity': 'medium'
+            }
+        ]
+        
+        for rule in business_rules:
+            filepath = os.path.join(self.project_root, rule['file'])
+            if not os.path.exists(filepath):
+                continue
+            
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                if rule['pattern'] not in content:
+                    continue
+                    
+                pattern_start = content.find(rule['pattern'])
+                pattern_end = min(pattern_start + 2000, len(content))
+                relevant_section = content[pattern_start:pattern_end]
+                
+                missing = [p for p in rule['required_patterns'] if p not in relevant_section]
+                
+                if missing:
+                    findings.append({
+                        "title": f"BUSINESS_LOGIC_VIOLATION: {rule['file']}",
+                        "description": f"{rule['description']}. Missing: {', '.join(missing)}",
+                        "severity": rule['severity'],
+                        "confidence": 0.85,
+                        "symbol": rule['file'],
+                        "market_type": "system"
+                    })
+                    
+            except Exception as e:
+                logger.debug(f"Could not check business logic in {rule['file']}: {str(e)}")
+        
         return findings
