@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-04T16:44:10.585082Z",
+  "generated_at": "2026-02-04T17:00:18.860132Z",
   "agents": {
     "HeartbeatAgent": {
       "count": 22504,
@@ -9,8 +9,8 @@
       "error_rate": 0.0
     },
     "ArbitrageFinderAgent": {
-      "count": 17831,
-      "avg_latency_ms": 281.37,
+      "count": 17847,
+      "avg_latency_ms": 281.11,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0,
       "error_rate": 0.0
