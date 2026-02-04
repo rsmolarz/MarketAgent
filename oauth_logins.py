@@ -1,6 +1,7 @@
 """
 OAuth Authentication for Apple, Google, and GitHub
 Integrated with Replit's built-in authentication system
+Supports multiple apps via APP_PREFIX environment variable
 """
 
 import os
@@ -10,27 +11,40 @@ import requests
 
 oauth_bp = Blueprint('oauth', __name__, url_prefix='/api/oauth')
 
-# OAuth Configuration
+# App prefix for multi-app support (e.g., MARKETAGENT, MEDINVEST)
+# Set via environment variable, defaults to MARKETAGENT
+APP_PREFIX = os.getenv('OAUTH_APP_PREFIX', 'MARKETAGENT')
+
+def get_prefixed_env(key, default=''):
+    """Get environment variable with app prefix, falling back to non-prefixed version"""
+    # Try prefixed first (e.g., MARKETAGENT_GOOGLE_CLIENT_ID)
+    prefixed_value = os.getenv(f'{APP_PREFIX}_{key}', '')
+    if prefixed_value:
+        return prefixed_value
+    # Fall back to non-prefixed (e.g., GOOGLE_OAUTH_CLIENT_ID)
+    return os.getenv(key, default)
+
+# OAuth Configuration with prefix support
 OAUTH_CONFIG = {
     'google': {
-        'client_id': os.getenv('GOOGLE_CLIENT_ID', ''),
-        'client_secret': os.getenv('GOOGLE_CLIENT_SECRET', ''),
+        'client_id': get_prefixed_env('GOOGLE_OAUTH_CLIENT_ID') or get_prefixed_env('GOOGLE_CLIENT_ID'),
+        'client_secret': get_prefixed_env('GOOGLE_OAUTH_CLIENT_SECRET') or get_prefixed_env('GOOGLE_CLIENT_SECRET'),
         'auth_uri': 'https://accounts.google.com/o/oauth2/v2/auth',
         'token_uri': 'https://oauth2.googleapis.com/token',
         'scopes': ['openid', 'email', 'profile']
     },
     'github': {
-        'client_id': os.getenv('GITHUB_CLIENT_ID', ''),
-        'client_secret': os.getenv('GITHUB_CLIENT_SECRET', ''),
+        'client_id': get_prefixed_env('GITHUB_OAUTH_CLIENT_ID') or get_prefixed_env('GITHUB_CLIENT_ID'),
+        'client_secret': get_prefixed_env('GITHUB_OAUTH_CLIENT_SECRET') or get_prefixed_env('GITHUB_CLIENT_SECRET'),
         'auth_uri': 'https://github.com/login/oauth/authorize',
         'token_uri': 'https://github.com/login/oauth/access_token',
         'scopes': ['user:email', 'read:user']
     },
     'apple': {
-        'client_id': os.getenv('APPLE_CLIENT_ID', ''),
-        'team_id': os.getenv('APPLE_TEAM_ID', ''),
-        'key_id': os.getenv('APPLE_KEY_ID', ''),
-        'private_key': os.getenv('APPLE_PRIVATE_KEY', ''),
+        'client_id': get_prefixed_env('APPLE_CLIENT_ID'),
+        'team_id': get_prefixed_env('APPLE_TEAM_ID'),
+        'key_id': get_prefixed_env('APPLE_KEY_ID'),
+        'private_key': get_prefixed_env('APPLE_PRIVATE_KEY'),
         'auth_uri': 'https://appleid.apple.com/auth/authorize',
         'token_uri': 'https://appleid.apple.com/auth/token',
         'scopes': ['openid', 'email', 'name']
@@ -167,14 +181,17 @@ def oauth_callback(provider):
 def oauth_status():
     """Check OAuth configuration status"""
     
-    status = {}
+    status = {
+        'app_prefix': APP_PREFIX,
+        'providers': {}
+    }
     for provider in OAUTH_CONFIG:
         config = OAUTH_CONFIG[provider]
         is_configured = bool(config.get('client_id'))
-        status[provider] = {
+        status['providers'][provider] = {
             'configured': is_configured,
             'client_id': '***' if is_configured else None,
-            'has_secret': bool(config.get('client_secret'))
+            'has_secret': bool(config.get('client_secret')) or bool(config.get('private_key'))
         }
     
     return jsonify(status), 200
