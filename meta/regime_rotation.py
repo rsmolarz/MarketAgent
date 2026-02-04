@@ -12,6 +12,10 @@ def load_regime_stats(path=None):
         return json.load(f)
 
 
+SYSTEM_AGENTS = {'CodeGuardianAgent', 'HealthCheckAgent', 'MetaSupervisorAgent'}
+MIN_BASELINE_WEIGHT = 0.25
+
+
 def apply_regime_rotation(
     allocator_weights: dict,
     active_regime: str,
@@ -21,20 +25,25 @@ def apply_regime_rotation(
     """
     Applies regime-aware rotation to agent weights.
     
-    - Agents with no edge in current regime get muted (weight=0)
-    - Agents with edge get scaled by performance * hit_rate * confidence
-    - During transitions (low confidence), all weights are throttled
+    - Agents with regime stats get scaled by performance * hit_rate * confidence
+    - Agents WITHOUT stats get a minimum baseline weight (not 0) to ensure execution
+    - System agents always get full weight regardless of regime
+    - During transitions (low confidence), non-system agent weights are throttled
     """
     stats = load_regime_stats(stats_path)
 
     rotated = {}
 
     for agent, weight in allocator_weights.items():
+        if agent in SYSTEM_AGENTS:
+            rotated[agent] = weight
+            continue
+        
         agent_stats = stats.get(agent, {})
         regime_stats = agent_stats.get(active_regime)
 
         if not regime_stats:
-            rotated[agent] = 0.0
+            rotated[agent] = weight * MIN_BASELINE_WEIGHT * max(regime_confidence, 0.5)
             continue
 
         perf = max(regime_stats.get("mean_return", 0), 0)
@@ -42,7 +51,7 @@ def apply_regime_rotation(
 
         score = perf * hit
 
-        rotated[agent] = weight * score * regime_confidence
+        rotated[agent] = max(weight * score * regime_confidence, weight * MIN_BASELINE_WEIGHT * 0.5)
 
     return rotated
 

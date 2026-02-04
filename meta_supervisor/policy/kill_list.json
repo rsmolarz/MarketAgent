@@ -1,9 +1,1 @@
-{
-  "agents": [
-    "ArbitrageFinderAgent",
-    "CryptoFundingRateAgent",
-    "DailyPredictionAgent",
-    "CryptoPredictionAgent"
-  ],
-  "strategy_classes": []
-}
+{"agents": [], "strategy_classes": []}
