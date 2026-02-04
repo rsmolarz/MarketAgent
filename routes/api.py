@@ -1280,7 +1280,7 @@ def action_required_findings():
                     Finding.ta_regime.in_(favorable_regimes)
                 ),
                 and_(
-                    Finding.market_type == 'real_estate',
+                    Finding.market_type.in_(['real_estate', 'private_equity']),
                     Finding.real_estate_council == 'act'
                 )
             )
@@ -1317,9 +1317,19 @@ def backfill_trade_council():
         
         client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
         
+        from sqlalchemy import or_
+        
         findings = Finding.query.filter(
-            Finding.ta_council.is_(None),
-            Finding.fund_council.is_(None)
+            or_(
+                and_(
+                    Finding.ta_council.is_(None),
+                    Finding.fund_council.is_(None)
+                ),
+                and_(
+                    Finding.market_type.in_(['real_estate', 'private_equity']),
+                    Finding.real_estate_council.is_(None)
+                )
+            )
         ).order_by(Finding.timestamp.desc()).limit(limit).all()
         
         processed = 0
@@ -1364,12 +1374,20 @@ real_estate_council=ACT|WATCH|HOLD|N/A"""
                             elif 'real' in key:
                                 finding.real_estate_council = val
                 
-                if finding.ta_council == 'act' and finding.fund_council == 'act':
+                is_action_required = False
+                if finding.market_type in ['real_estate', 'private_equity']:
+                    if finding.real_estate_council == 'act':
+                        is_action_required = True
+                elif finding.ta_council == 'act' and finding.fund_council == 'act':
+                    is_action_required = True
+                    
+                if is_action_required:
                     act_count += 1
                     results.append({
                         "id": finding.id,
                         "title": finding.title[:50],
                         "agent": finding.agent_name,
+                        "market_type": finding.market_type,
                         "action_required": True
                     })
                 
