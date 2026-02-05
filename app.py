@@ -149,6 +149,7 @@ def create_app():
     from routes.deals import deals_bp
     from routes.distressed_platform import distressed_platform_bp
     from replit_auth import make_replit_blueprint, init_auth
+    from oauth_logins import oauth_bp
 
     init_auth(app)
     replit_bp = make_replit_blueprint()
@@ -167,10 +168,19 @@ def create_app():
     app.register_blueprint(deals_bp)
     app.register_blueprint(distressed_platform_bp)
     app.register_blueprint(replit_bp, url_prefix='/auth')
+    app.register_blueprint(oauth_bp)
 
     @app.route("/landing")
     def landing():
         return render_template("landing.html")
+
+    @app.route("/privacy")
+    def privacy():
+        return render_template("privacy.html")
+
+    @app.route("/terms")
+    def terms():
+        return render_template("terms.html")
 
     @app.route("/status")
     def status():
