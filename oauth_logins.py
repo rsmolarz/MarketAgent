@@ -48,6 +48,13 @@ OAUTH_CONFIG = {
         'auth_uri': 'https://appleid.apple.com/auth/authorize',
         'token_uri': 'https://appleid.apple.com/auth/token',
         'scopes': ['openid', 'email', 'name']
+    },
+    'facebook': {
+        'client_id': get_prefixed_env('FACEBOOK_APP_ID') or get_prefixed_env('FACEBOOK_CLIENT_ID'),
+        'client_secret': get_prefixed_env('FACEBOOK_APP_SECRET') or get_prefixed_env('FACEBOOK_CLIENT_SECRET'),
+        'auth_uri': 'https://www.facebook.com/v18.0/dialog/oauth',
+        'token_uri': 'https://graph.facebook.com/v18.0/oauth/access_token',
+        'scopes': ['email', 'public_profile']
     }
 }
 
@@ -99,6 +106,8 @@ class OAuth2Handler:
         elif self.provider == 'apple':
             # Apple doesn't provide user info endpoint in same way
             return self.decode_apple_jwt(access_token)
+        elif self.provider == 'facebook':
+            user_info_uri = 'https://graph.facebook.com/v18.0/me?fields=id,name,email,picture'
         else:
             return {'error': 'Unknown provider'}
         
