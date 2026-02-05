@@ -1,70 +1,70 @@
 {
-  "generated_at": "2026-02-04T08:25:21.881070Z",
+  "generated_at": "2026-02-05T08:25:20.794733Z",
   "items_count": 16,
   "insights": {
     "high_signal_items": [
       {
         "title": "Explainable Patterns in Cryptocurrency Microstructure",
         "url": "https://arxiv.org/abs/2602.00776v1",
-        "why_it_matters": "The study identifies stable cross-asset patterns in cryptocurrency microstructure, suggesting a portable representation of short-horizon returns. This could lead to the development of universal feature libraries for crypto markets, enhancing trading strategies across different assets."
+        "why_it_matters": "The study identifies stable cross-asset patterns in cryptocurrency limit-order-book microstructure, suggesting a portable microstructure representation of short-horizon returns. This could lead to the development of universal feature libraries for crypto markets, enhancing trading strategies."
       },
       {
         "title": "Generative AI for Stock Selection",
         "url": "https://arxiv.org/abs/2602.00196v1",
-        "why_it_matters": "The use of generative AI to automate feature discovery in stock selection shows significant improvements in Sharpe ratios, indicating potential for AI-driven strategies to outperform traditional methods in equity markets."
+        "why_it_matters": "The research demonstrates that generative AI can automate feature discovery in U.S. equities, providing economically motivated features that improve Sharpe ratios. This suggests potential for AI-driven stock selection strategies that reduce manual feature engineering."
       },
       {
-        "title": "Adaptive Benign Overfitting (ABO): Overparameterized RLS for Online Learning in Non-stationary Time-series",
-        "url": "https://arxiv.org/abs/2601.22200v1",
-        "why_it_matters": "ABO provides a stable online learning framework that adapts to non-stationary time-series, showing high accuracy in forecasting foreign exchange and electricity demand. This could enhance algorithmic trading strategies in volatile markets."
+        "title": "A unified theory of order flow, market impact, and volatility",
+        "url": "https://arxiv.org/abs/2601.23172v2",
+        "why_it_matters": "The paper presents a microstructural model that reconciles empirical properties of financial markets, such as persistent signed order flow and power-law market impact. This could inform the development of more accurate trading algorithms."
       }
     ],
     "new_agent_ideas": [
       {
         "agent_name": "Crypto Microstructure Arbitrage Agent",
-        "strategy_class": "Market Microstructure Analysis",
-        "edge_hypothesis": "Stable cross-asset microstructure patterns can be exploited for arbitrage opportunities across different cryptocurrencies.",
+        "strategy_class": "Market Microstructure",
+        "edge_hypothesis": "Stable cross-asset patterns in crypto microstructure can be exploited for arbitrage opportunities across different cryptocurrencies.",
         "markets": [
           "Cryptocurrency"
         ],
         "horizon": "Short-term",
         "data_required": [
-          "Order book data",
+          "Limit-order-book data",
           "Trade data"
         ],
-        "test_plan": "Develop a trading algorithm based on identified microstructure patterns and backtest on historical data from multiple cryptocurrencies.",
+        "test_plan": "Develop a trading algorithm based on identified microstructure patterns and backtest across multiple cryptocurrencies.",
         "confidence": 0.7
       },
       {
-        "agent_name": "AI-Enhanced Stock Selection Agent",
-        "strategy_class": "Feature Discovery and Selection",
-        "edge_hypothesis": "Generative AI can discover novel features that improve stock selection and enhance portfolio performance.",
+        "agent_name": "AI-Enhanced Stock Selector",
+        "strategy_class": "Quantitative Equity",
+        "edge_hypothesis": "Generative AI can discover novel features that enhance stock selection and improve risk-adjusted returns.",
         "markets": [
-          "Equities"
+          "U.S. Equities"
         ],
         "horizon": "Medium-term",
         "data_required": [
-          "Analyst reports",
+          "Analyst data",
           "Options data",
           "Price-volume data"
         ],
-        "test_plan": "Integrate AI-generated features into a stock selection model and evaluate performance against traditional models using historical data.",
+        "test_plan": "Integrate AI-generated features into a stock selection model and evaluate performance against traditional models.",
         "confidence": 0.8
       },
       {
-        "agent_name": "Adaptive Forecasting Agent",
-        "strategy_class": "Online Learning and Adaptation",
-        "edge_hypothesis": "Adaptive benign overfitting allows for accurate and stable forecasting in non-stationary environments, providing an edge in volatile markets.",
+        "agent_name": "Order Flow Impact Model",
+        "strategy_class": "Market Impact",
+        "edge_hypothesis": "Understanding the persistence of core order flow can improve predictions of market impact and volatility.",
         "markets": [
-          "Foreign Exchange",
-          "Energy"
+          "Equities",
+          "Futures"
         ],
-        "horizon": "Short to Medium-term",
+        "horizon": "Intraday",
         "data_required": [
-          "Time-series data",
-          "Market indicators"
+          "Order flow data",
+          "Trade volume data"
         ],
-        "test_plan": "Implement ABO in a live trading environment and monitor performance against benchmarks in FX and energy markets.",
+        "test_plan": "Implement the proposed microstructural model and test its predictive power on market impact and volatility.",
         "confidence": 0.75
       }
     ],
@@ -72,17 +72,17 @@
       {
         "name": "Binance Futures Order Book Data",
         "url": "https://www.binance.com/en/futures",
-        "use_case": "To analyze cross-asset microstructure patterns in cryptocurrency markets."
+        "use_case": "Analyzing cross-asset patterns in cryptocurrency microstructure for trading strategies."
       },
       {
-        "name": "Analyst Reports and Options Data",
-        "url": "https://www.bloomberg.com/professional/",
-        "use_case": "For feature discovery in stock selection using generative AI."
+        "name": "U.S. Equity Analyst Reports",
+        "url": "https://www.sec.gov/edgar/searchedgar/companysearch.html",
+        "use_case": "Generating AI-driven features for stock selection models."
       },
       {
-        "name": "Foreign Exchange and Electricity Demand Data",
-        "url": "https://www.oanda.com/",
-        "use_case": "To test adaptive forecasting models in non-stationary time-series environments."
+        "name": "Trade Volume Data",
+        "url": "https://www.nyse.com/market-data/historical",
+        "use_case": "Developing models for predicting market impact and volatility based on order flow."
       }
     ]
   }
