@@ -8,6 +8,7 @@ from agents.unusual_options_volume_agent import UnusualOptionsVolumeAgent
 from agents.crypto_stablecoin_premium_agent import CryptoStablecoinPremiumAgent
 from agents.distressed_property_agent import DistressedPropertyAgent
 from agents.code_guardian_agent import CodeGuardianAgent
+from agents.cta_flows_agent import CTAFlowsAgent
 """
 Market Inefficiency Detection Agents
 
@@ -50,6 +51,7 @@ AVAILABLE_AGENTS = [
     'DistressedPropertyAgent',
     'DatedBasisAgent',
     'CodeGuardianAgent',
+    'CTAFlowsAgent',
 ]
 
 

@@ -224,6 +224,20 @@ class CodeGuardianAgent(BaseAgent):
                             "symbol": agent_name,
                             "market_type": "system"
                         })
+
+                    if 'np.float' in content or 'np.int' in content:
+                        if 'float(' not in content and 'int(' not in content:
+                            findings.append({
+                                "title": f"NUMPY_TYPE_SQL_RISK: {agent_name}",
+                                "description": (
+                                    f"Agent uses numpy types (np.float64/np.int64) that may cause "
+                                    f"PostgreSQL insertion errors. Wrap with float()/int()."
+                                ),
+                                "severity": "high",
+                                "confidence": 0.85,
+                                "symbol": agent_name,
+                                "market_type": "system"
+                            })
                         
                 except SyntaxError as e:
                     findings.append({
@@ -236,6 +250,64 @@ class CodeGuardianAgent(BaseAgent):
                     })
                 except Exception as e:
                     logger.debug(f"Could not validate {agent_name}: {str(e)}")
+
+        ghost_findings = self._check_ghost_agents()
+        if ghost_findings:
+            findings.extend(ghost_findings)
+
+        return findings
+
+    def _check_ghost_agents(self) -> List[Dict[str, Any]]:
+        """Detect agents registered in schedule/DB but missing source files."""
+        findings = []
+        import json
+
+        schedule_path = os.path.join(self.project_root, 'agent_schedule.json')
+        if os.path.exists(schedule_path):
+            try:
+                with open(schedule_path, 'r') as f:
+                    schedule = json.load(f)
+
+                for agent_name in schedule:
+                    snake = ''.join(
+                        ['_' + c.lower() if c.isupper() else c for c in agent_name]
+                    ).lstrip('_')
+                    source_file = os.path.join(self.agent_dir, f"{snake}.py")
+                    if not os.path.exists(source_file):
+                        findings.append({
+                            "title": f"GHOST_AGENT: {agent_name}",
+                            "description": (
+                                f"Agent '{agent_name}' is registered in agent_schedule.json "
+                                f"but source file '{snake}.py' is missing. "
+                                f"Agent will fail at runtime."
+                            ),
+                            "severity": "critical",
+                            "confidence": 1.0,
+                            "symbol": agent_name,
+                            "market_type": "system"
+                        })
+            except Exception as e:
+                logger.debug(f"Could not check ghost agents: {e}")
+
+        pycache_dir = os.path.join(self.agent_dir, '__pycache__')
+        if os.path.exists(pycache_dir):
+            for cached in os.listdir(pycache_dir):
+                if cached.endswith('.pyc') and '_agent.' in cached:
+                    base_name = cached.split('.')[0]
+                    source_file = os.path.join(self.agent_dir, f"{base_name}.py")
+                    if not os.path.exists(source_file):
+                        findings.append({
+                            "title": f"ORPHANED_CACHE: {base_name}",
+                            "description": (
+                                f"Compiled cache '{cached}' exists but source file "
+                                f"'{base_name}.py' is missing. Stale cache may cause "
+                                f"unpredictable behavior."
+                            ),
+                            "severity": "high",
+                            "confidence": 1.0,
+                            "symbol": base_name,
+                            "market_type": "system"
+                        })
 
         return findings
 
