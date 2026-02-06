@@ -1271,8 +1271,11 @@ def action_required_findings():
         
         real_estate_types = ['real_estate', 'private_equity', 'distressed', 'distressed_debt', 'private_company']
         
+        excluded_types = ['system', 'meta', 'internal', 'governance']
+        
         findings = Finding.query.filter(
             Finding.timestamp >= cutoff,
+            or_(Finding.market_type.is_(None), not_(Finding.market_type.in_(excluded_types))),
             or_(
                 and_(
                     or_(Finding.market_type.is_(None), not_(Finding.market_type.in_(real_estate_types))),

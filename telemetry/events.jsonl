@@ -10345,3 +10345,7 @@
 {"ts": "2026-02-06T22:45:34.500534Z", "agent": "ArbitrageFinderAgent", "run_id": "aa54fec7-960b-4470-a04a-5607cde74d13", "latency_ms": 1, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "errors": 0}
 {"ts": "2026-02-06T22:45:36.218383+00:00", "agent": "ArbitrageFinderAgent", "run_id": "b0945b58-05e6-41b0-9b9b-3619694bdbf5", "latency_ms": 0, "cost_usd": null, "tokens_in": null, "tokens_out": null, "error": null, "reward": 0.0}
 {"ts": "2026-02-06T22:45:36.226787Z", "agent": "ArbitrageFinderAgent", "run_id": "eebba383-b740-461a-acd8-2e6ee0598175", "latency_ms": 8, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "errors": 0}
+{"ts": "2026-02-06T22:55:43.596411+00:00", "agent": "ArbitrageFinderAgent", "run_id": "c56ae0a7-a7ae-4a2b-9f37-5a9385c6d20f", "latency_ms": 1, "cost_usd": null, "tokens_in": null, "tokens_out": null, "error": null, "reward": -0.00019980026626730563}
+{"ts": "2026-02-06T22:55:43.596788Z", "agent": "ArbitrageFinderAgent", "run_id": "8595e578-8576-4ed8-acd5-3859271b3f63", "latency_ms": 1, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "errors": 0}
+{"ts": "2026-02-06T22:55:44.959078+00:00", "agent": "ArbitrageFinderAgent", "run_id": "04b022b3-70bd-45bf-9d51-ba7311e7463d", "latency_ms": 0, "cost_usd": null, "tokens_in": null, "tokens_out": null, "error": null, "reward": 0.0}
+{"ts": "2026-02-06T22:55:44.959765Z", "agent": "ArbitrageFinderAgent", "run_id": "2a6245a5-96fe-4b3e-9e67-2d3f3669c996", "latency_ms": 1, "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0, "errors": 0}

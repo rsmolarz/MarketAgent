@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-02-06T22:45:37.143810Z",
+  "generated_at": "2026-02-06T22:56:26.088815Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 3802,
-      "avg_latency_ms": 263.91,
+      "count": 3806,
+      "avg_latency_ms": 263.63,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0052,
       "error_rate": 0.0
