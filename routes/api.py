@@ -1252,35 +1252,39 @@ def triage_summary():
 @api_login_required
 def action_required_findings():
     """
-    Get findings that require action based on BOTH LLM council consensus AND TA regime approval.
+    Get findings that require action based on LLM council consensus AND regime approval.
     
     For equities/crypto: 
         - BOTH ta_council AND fund_council must be 'act'
-        - AND ta_regime must be favorable ('bullish', 'risk_on', 'uptrend', 'expansion')
-    For real estate: 
-        - real_estate_council must be 'act'
-        - AND ta_regime must be favorable
+        - AND regime must NOT be unfavorable (risk_off/crisis/bearish block action)
+    For real estate/PE: 
+        - real_estate_council must be 'act' (underwriting approval only)
     """
     try:
-        from sqlalchemy import or_, and_
+        from sqlalchemy import or_, and_, not_
         
         limit = request.args.get("limit", 50, type=int)
         hours = request.args.get("hours", 168, type=int)
         cutoff = datetime.utcnow() - timedelta(hours=hours)
         
-        favorable_regimes = ['bullish', 'risk_on', 'uptrend', 'expansion', 'recovery', 'accumulation']
+        blocking_regimes = ['risk_off', 'crisis', 'bearish', 'recession', 'panic']
+        
+        real_estate_types = ['real_estate', 'private_equity', 'distressed', 'distressed_debt', 'private_company']
         
         findings = Finding.query.filter(
             Finding.timestamp >= cutoff,
             or_(
                 and_(
-                    Finding.market_type.in_(['equity', 'crypto', 'technical']),
+                    or_(Finding.market_type.is_(None), not_(Finding.market_type.in_(real_estate_types))),
                     Finding.ta_council == 'act',
                     Finding.fund_council == 'act',
-                    Finding.ta_regime.in_(favorable_regimes)
+                    or_(
+                        Finding.ta_regime.is_(None),
+                        not_(Finding.ta_regime.in_(blocking_regimes))
+                    )
                 ),
                 and_(
-                    Finding.market_type.in_(['real_estate', 'private_equity']),
+                    Finding.market_type.in_(real_estate_types),
                     Finding.real_estate_council == 'act'
                 )
             )

@@ -13,7 +13,7 @@ def load_regime_stats(path=None):
 
 
 SYSTEM_AGENTS = {'CodeGuardianAgent', 'HealthCheckAgent', 'MetaSupervisorAgent'}
-MIN_BASELINE_WEIGHT = 0.25
+MIN_BASELINE_WEIGHT = 0.40
 
 
 def apply_regime_rotation(

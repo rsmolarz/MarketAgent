@@ -236,10 +236,11 @@ class AgentScheduler:
                 logger.warning(f"Agent {agent_name} is disabled by Meta-Agent ranking")
                 return
             
-            regime_weight = _regime_weights.get(agent_name, 0)
-            if regime_weight < 0.01:
-                logger.info(f"Agent {agent_name} muted by regime rotation (weight={regime_weight:.3f})")
-                return
+            if _regime_weights:
+                regime_weight = _regime_weights.get(agent_name, 1.0)
+                if regime_weight < 0.01:
+                    logger.info(f"Agent {agent_name} muted by regime rotation (weight={regime_weight:.3f})")
+                    return
         
         if is_force_started:
             logger.info(f"Agent {agent_name} running (force-started, bypassing restrictions)")
@@ -285,6 +286,7 @@ class AgentScheduler:
                 
                 # Store findings
                 if findings:
+                    stored_findings = []
                     for finding_data in findings:
                         finding = Finding()
                         finding.agent_name = agent_name
@@ -302,6 +304,7 @@ class AgentScheduler:
                         finding.market_type = finding_data.get('market_type')
                         db.session.add(finding)
                         db.session.flush()
+                        stored_findings.append(finding)
                         
                         if finding.severity == "critical" and not finding.auto_analyzed:
                             try:
@@ -318,6 +321,10 @@ class AgentScheduler:
                                 logger.error(f"Auto-analysis failed for finding {finding.id}: {analysis_err}")
                 
                 db.session.commit()
+                
+                self._run_council_on_findings(stored_findings)
+                
+                self._auto_create_deals(stored_findings)
                 logger.info(f"Agent {agent_name} completed - {len(findings) if findings else 0} findings")
                 
                 uncertainty = (_uncertainty_state or {}).get("score", 0.0)
@@ -389,6 +396,160 @@ class AgentScheduler:
             logger.error(f"Error running agent {agent_name} manually: {e}")
             return False
     
+    def _run_council_on_findings(self, findings):
+        """Run LLM trade council on new findings to populate ta_council/fund_council/real_estate_council."""
+        import os
+        if not findings:
+            return
+        
+        try:
+            from openai import OpenAI
+            
+            api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY")
+            base_url = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
+            
+            if not api_key:
+                logger.debug("No OpenAI API key configured, skipping council analysis")
+                return
+            
+            client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
+            
+            for finding in findings:
+                try:
+                    if finding.ta_council is not None:
+                        continue
+                    
+                    is_re = finding.market_type in ('real_estate', 'private_equity', 'private_company')
+                    is_re = is_re or 'distress' in (finding.agent_name or '').lower()
+                    is_re = is_re or 'property' in (finding.agent_name or '').lower()
+                    is_re = is_re or 'zillow' in (finding.agent_name or '').lower()
+                    
+                    prompt = (
+                        f"Analyze this market finding. "
+                        f"Agent: {finding.agent_name}, Symbol: {finding.symbol}, "
+                        f"Severity: {finding.severity}, Confidence: {finding.confidence}\n"
+                        f"Title: {finding.title}\n"
+                        f"Description: {(finding.description or '')[:400]}\n\n"
+                        f"For each council, respond ACT (trade now), WATCH (monitor), or HOLD (no action):\n"
+                        f"ta_council=ACT|WATCH|HOLD\n"
+                        f"fund_council=ACT|WATCH|HOLD\n"
+                        f"real_estate_council=ACT|WATCH|HOLD|N/A"
+                    )
+                    
+                    response = client.chat.completions.create(
+                        model='gpt-4o-mini',
+                        messages=[{'role': 'user', 'content': prompt}],
+                        max_tokens=80,
+                        temperature=0.2
+                    )
+                    
+                    text = response.choices[0].message.content or ''
+                    
+                    for line in text.strip().split('\n'):
+                        if '=' in line:
+                            key, val = line.split('=', 1)
+                            key = key.strip().lower()
+                            val = val.strip().lower()
+                            if val in ['act', 'watch', 'hold']:
+                                if 'ta' in key:
+                                    finding.ta_council = val
+                                elif 'fund' in key:
+                                    finding.fund_council = val
+                                elif 'real' in key:
+                                    finding.real_estate_council = val
+                    
+                    if is_re and finding.real_estate_council is None:
+                        finding.real_estate_council = finding.ta_council or 'watch'
+                    
+                except Exception as e:
+                    logger.debug(f"Council analysis failed for finding {finding.id}: {e}")
+                    continue
+            
+            from models import db
+            db.session.commit()
+            council_count = sum(1 for f in findings if f.ta_council is not None)
+            if council_count:
+                logger.info(f"Council analysis completed for {council_count}/{len(findings)} findings")
+            
+        except Exception as e:
+            logger.error(f"Council runner error: {e}")
+
+    def _auto_create_deals(self, findings):
+        """Auto-create distressed deals from real estate/PE findings."""
+        if not findings:
+            return
+        
+        try:
+            from models import db, DistressedDeal
+            
+            deal_agent_types = {
+                'distressedpropertyagent', 'zillowdistressagent',
+                'distresseddealevaluatoragent', 'industrialdistressscanneragent',
+                'privateequitydistressedassetfinder', 'privatecompanydistressagent',
+                'bigshortdealadapter', 'distressedmacrogateagent'
+            }
+            deal_market_types = {'real_estate', 'private_equity', 'private_company'}
+            
+            created = 0
+            for finding in findings:
+                try:
+                    agent_lower = (finding.agent_name or '').lower()
+                    is_deal_agent = agent_lower in deal_agent_types
+                    is_deal_market = (finding.market_type or '') in deal_market_types
+                    
+                    if not (is_deal_agent or is_deal_market):
+                        continue
+                    
+                    existing = DistressedDeal.query.filter_by(finding_id=finding.id).first()
+                    if existing:
+                        continue
+                    
+                    metadata = finding.finding_metadata or {}
+                    
+                    address = (
+                        metadata.get('address') or 
+                        metadata.get('property_address') or 
+                        metadata.get('company_name') or
+                        metadata.get('name') or
+                        finding.symbol or 
+                        f"{finding.agent_name} Finding #{finding.id}"
+                    )
+                    
+                    deal = DistressedDeal(
+                        property_address=address[:255],
+                        city=metadata.get('city') or metadata.get('metro'),
+                        state=metadata.get('state'),
+                        zip_code=metadata.get('zip_code'),
+                        property_type=metadata.get('property_type') or metadata.get('sector') or finding.market_type,
+                        distress_type=metadata.get('distress_type') or metadata.get('status') or 'agent_detected',
+                        asking_price=metadata.get('price') or metadata.get('asking_price') or metadata.get('market_value'),
+                        estimated_value=metadata.get('estimated_value') or metadata.get('zestimate') or metadata.get('recovery_value'),
+                        stage='screened',
+                        finding_id=finding.id,
+                        source_agent=finding.agent_name,
+                        deal_metadata={
+                            'finding_title': finding.title,
+                            'finding_severity': finding.severity,
+                            'finding_confidence': finding.confidence,
+                            'auto_created': True,
+                            **{k: v for k, v in metadata.items() if isinstance(v, (str, int, float, bool, type(None)))}
+                        }
+                    )
+                    
+                    db.session.add(deal)
+                    created += 1
+                    
+                except Exception as e:
+                    logger.debug(f"Auto-deal creation failed for finding {finding.id}: {e}")
+                    continue
+            
+            if created:
+                db.session.commit()
+                logger.info(f"Auto-created {created} deals from findings")
+        
+        except Exception as e:
+            logger.error(f"Auto-deal creation error: {e}")
+
     def _load_agent(self, agent_name: str) -> bool:
         """Load an agent class and instantiate it"""
         try:
