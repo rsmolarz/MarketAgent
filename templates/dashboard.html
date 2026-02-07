@@ -673,7 +673,7 @@ async function loadActionRequired() {
             return;
         }
         
-        let html = '<div class="table-responsive"><table class="table table-sm table-hover" style="table-layout:fixed;width:100%;"><thead><tr><th style="width:130px;">Time</th><th style="width:90px;">Symbol</th><th style="width:80px;">Market</th><th>Title</th><th style="width:50px;">TA</th><th style="width:50px;">Fund</th><th style="width:50px;">Conf</th><th style="width:170px;">Actions</th></tr></thead><tbody>';
+        let html = '<div class="table-responsive"><table class="table table-sm table-hover"><thead><tr><th style="white-space:nowrap;">Time</th><th style="white-space:nowrap;">Symbol</th><th style="white-space:nowrap;">Market</th><th style="white-space:nowrap;min-width:200px;">Title</th><th style="white-space:nowrap;">TA</th><th style="white-space:nowrap;">Fund</th><th style="white-space:nowrap;">Conf</th><th style="white-space:nowrap;">Actions</th></tr></thead><tbody>';
         
         for (const f of data.findings) {
             const time = new Date(f.timestamp).toLocaleString();
@@ -684,17 +684,17 @@ async function loadActionRequired() {
             const isRealEstate = ['real_estate','private_equity','distressed','distressed_debt','private_company'].includes(f.market_type);
             const tradeLabel = isRealEstate ? 'View Deal' : 'Trade Setup';
             const tradeBtnClass = isRealEstate ? 'btn-outline-info' : 'btn-danger';
-            const symbolDisplay = (f.symbol || '-').length > 12 ? (f.symbol || '-').substring(0, 12) + '…' : (f.symbol || '-');
-            const titleDisplay = (f.title || '').length > 60 ? (f.title || '').substring(0, 60) + '…' : (f.title || '');
+            const symbolDisplay = (f.symbol || '-').length > 14 ? (f.symbol || '-').substring(0, 14) + '…' : (f.symbol || '-');
+            const titleDisplay = (f.title || '').length > 50 ? (f.title || '').substring(0, 50) + '…' : (f.title || '');
             
             html += `<tr class="table-${sevClass}">
-                <td style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><small>${time}</small></td>
-                <td style="overflow:hidden;text-overflow:ellipsis;" title="${f.symbol || ''}"><strong>${symbolDisplay}</strong></td>
-                <td><span class="badge bg-secondary">${f.market_type || '-'}</span></td>
-                <td style="overflow:hidden;text-overflow:ellipsis;" title="${f.title || ''}">${titleDisplay}</td>
+                <td style="white-space:nowrap;"><small>${time}</small></td>
+                <td style="white-space:nowrap;" title="${f.symbol || ''}"><strong>${symbolDisplay}</strong></td>
+                <td style="white-space:nowrap;"><span class="badge bg-secondary">${f.market_type || '-'}</span></td>
+                <td title="${(f.title || '').replace(/"/g, '&quot;')}">${titleDisplay}</td>
                 <td><span class="badge bg-success">${taCouncil.toUpperCase()}</span></td>
                 <td><span class="badge bg-success">${fundCouncil.toUpperCase()}</span></td>
-                <td>${conf}</td>
+                <td style="white-space:nowrap;">${conf}</td>
                 <td style="white-space:nowrap;">
                     <div class="btn-group btn-group-sm" role="group">
                         <button class="btn btn-outline-primary btn-sm btn-ai-analyze" data-finding-id="${f.id}" title="Get AI analysis">
