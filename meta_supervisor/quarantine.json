@@ -2,59 +2,74 @@
   "agents": {
     "CryptoPredictionAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -3.336 <= limit -3.0",
-      "since": "2026-02-09T05:13:12.772999+00:00"
+      "reason": "Auto-quarantine: drawdown -4.398 <= limit -3.0",
+      "since": "2026-02-09T05:43:12.843863+00:00"
     },
     "ArbitrageFinderAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -3.559 <= limit -3.0",
-      "since": "2026-02-09T05:13:12.810689+00:00"
+      "reason": "Auto-quarantine: drawdown -3.621 <= limit -3.0",
+      "since": "2026-02-09T05:43:12.693569+00:00"
     },
     "IntradayVolumeSpikeAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -3.107 <= limit -3.0",
-      "since": "2026-02-09T05:13:12.749603+00:00"
+      "reason": "Auto-quarantine: drawdown -3.153 <= limit -3.0",
+      "since": "2026-02-09T05:43:12.766801+00:00"
     },
     "CodeGuardianAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -11.927 <= limit -3.0",
-      "since": "2026-02-09T05:13:12.827219+00:00"
+      "reason": "Auto-quarantine: drawdown -12.981 <= limit -3.0",
+      "since": "2026-02-09T05:43:12.780127+00:00"
     },
     "EquityMomentumAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -3.287 <= limit -3.0",
-      "since": "2026-02-09T05:13:12.722429+00:00"
+      "reason": "Auto-quarantine: drawdown -3.322 <= limit -3.0",
+      "since": "2026-02-09T05:43:12.781636+00:00"
     },
     "SentimentDivergenceAgent": {
-      "active": false,
-      "reason": "Auto-quarantine: drawdown -3.117 <= limit -3.0",
-      "since": "2026-02-09T05:08:32.395813+00:00"
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -3.399 <= limit -3.0",
+      "since": "2026-02-09T05:43:12.781193+00:00"
     },
     "TechnicalAnalysisAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -3.225 <= limit -3.0",
-      "since": "2026-02-09T05:13:12.659887+00:00"
+      "reason": "Auto-quarantine: drawdown -4.132 <= limit -3.0",
+      "since": "2026-02-09T05:43:12.823381+00:00"
     },
     "UnusualOptionsVolumeAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -3.279 <= limit -3.0",
-      "since": "2026-02-09T05:13:12.763251+00:00"
+      "reason": "Auto-quarantine: drawdown -3.281 <= limit -3.0",
+      "since": "2026-02-09T05:43:12.917085+00:00"
     },
     "InsiderTradingSignalAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -3.550 <= limit -3.0",
-      "since": "2026-02-09T05:13:12.769163+00:00"
+      "reason": "Auto-quarantine: drawdown -3.561 <= limit -3.0",
+      "since": "2026-02-09T05:43:12.884205+00:00"
     },
     "CryptoFundingRateAgent": {
-      "active": false,
-      "reason": "Auto-quarantine: drawdown -3.017 <= limit -3.0",
-      "since": "2026-02-09T04:52:55.161443+00:00"
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -4.915 <= limit -3.0",
+      "since": "2026-02-09T05:43:12.711799+00:00"
     },
     "IntradayVolatilitySpikeAgent": {
-      "active": false,
-      "reason": "Auto-quarantine: drawdown -3.022 <= limit -3.0",
-      "since": "2026-02-09T04:57:55.178818+00:00"
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -3.185 <= limit -3.0",
+      "since": "2026-02-09T05:43:12.740129+00:00"
+    },
+    "WhaleWalletWatcherAgent": {
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -3.003 <= limit -3.0",
+      "since": "2026-02-09T05:43:12.694181+00:00"
+    },
+    "MarketCorrectionAgent": {
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -4.560 <= limit -3.0",
+      "since": "2026-02-09T05:43:12.800144+00:00"
+    },
+    "GeopoliticalRiskAgent": {
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -3.314 <= limit -3.0",
+      "since": "2026-02-09T05:43:12.822943+00:00"
     }
   },
-  "updated_at": "2026-02-09T05:13:12.827306+00:00"
+  "updated_at": "2026-02-09T05:43:12.917170+00:00"
 }

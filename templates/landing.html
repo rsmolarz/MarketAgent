@@ -1,73 +1,113 @@
 {% extends "base.html" %}
 
-{% block title %}Market Inefficiency Detection Platform{% endblock %}
+{% block title %}Market Inefficiency Agents - AI-Powered Financial Analysis{% endblock %}
 
 {% block content %}
-<div class="container mt-5">
+<div class="container mt-4">
     <div class="row justify-content-center">
-        <div class="col-lg-8">
-            <div class="card shadow-lg border-0">
-                <div class="card-body text-center py-5">
-                    <div class="mb-4">
-                        <i data-feather="trending-up" class="text-primary" style="width: 80px; height: 80px;"></i>
-                    </div>
-                    <h1 class="display-5 fw-bold text-primary mb-3">Market Inefficiency Detection</h1>
-                    <p class="lead text-muted mb-4">
-                        AI-powered platform for detecting market inefficiencies, arbitrage opportunities, 
-                        and systemic risks across global financial markets.
+        <div class="col-lg-9">
+            <div class="text-center mb-4">
+                <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Market Inefficiency Agents" style="max-width: 280px; height: auto;" class="mb-3">
+            </div>
+
+            <div class="card shadow-lg border-0 mb-4">
+                <div class="card-body py-5 px-4">
+                    <h1 class="display-6 fw-bold text-center mb-3" style="color: #c9a84c;">Market Inefficiency Agents</h1>
+                    <p class="lead text-center text-muted mb-4">
+                        An AI-powered platform that uses 165+ specialized agents to detect market inefficiencies,
+                        arbitrage opportunities, and systemic risks across global financial markets in real time.
                     </p>
-                    <div class="row mb-4">
-                        <div class="col-md-4 mb-3">
-                            <div class="p-3">
-                                <i data-feather="activity" class="text-success mb-2" style="width: 32px; height: 32px;"></i>
-                                <h6>12 AI Agents</h6>
-                                <small class="text-muted">Monitoring markets 24/7</small>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-4">
+                            <div class="text-center p-3 rounded" style="background: rgba(255,255,255,0.04);">
+                                <i data-feather="cpu" class="text-warning mb-2" style="width: 36px; height: 36px;"></i>
+                                <h6 class="fw-bold">165+ AI Agents</h6>
+                                <small class="text-muted">Specialized agents monitor markets around the clock, analyzing crypto, equities, bonds, commodities, and alternative data sources.</small>
                             </div>
                         </div>
-                        <div class="col-md-4 mb-3">
-                            <div class="p-3">
-                                <i data-feather="globe" class="text-info mb-2" style="width: 32px; height: 32px;"></i>
-                                <h6>Global Coverage</h6>
-                                <small class="text-muted">Crypto, equities, bonds & more</small>
+                        <div class="col-md-4">
+                            <div class="text-center p-3 rounded" style="background: rgba(255,255,255,0.04);">
+                                <i data-feather="shield" class="text-info mb-2" style="width: 36px; height: 36px;"></i>
+                                <h6 class="fw-bold">Regime Detection</h6>
+                                <small class="text-muted">HMM-based regime classification and multi-model LLM Trade Council provide confidence-weighted market assessments and risk signals.</small>
                             </div>
                         </div>
-                        <div class="col-md-4 mb-3">
-                            <div class="p-3">
-                                <i data-feather="cpu" class="text-warning mb-2" style="width: 32px; height: 32px;"></i>
-                                <h6>AI Analysis</h6>
-                                <small class="text-muted">ChatGPT-powered insights</small>
+                        <div class="col-md-4">
+                            <div class="text-center p-3 rounded" style="background: rgba(255,255,255,0.04);">
+                                <i data-feather="trending-up" class="text-success mb-2" style="width: 36px; height: 36px;"></i>
+                                <h6 class="fw-bold">Actionable Insights</h6>
+                                <small class="text-muted">Real-time dashboard with actionable findings, trade recommendations requiring dual approval, and multi-channel notifications.</small>
                             </div>
                         </div>
                     </div>
+
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <div class="p-3 rounded" style="background: rgba(255,255,255,0.04);">
+                                <h6 class="fw-bold"><i data-feather="bar-chart-2" class="me-2 text-primary" style="width: 18px; height: 18px;"></i>What This App Does</h6>
+                                <ul class="small text-muted mb-0 ps-3">
+                                    <li>Scans global markets for pricing anomalies and arbitrage</li>
+                                    <li>Detects systemic risks, macro shifts, and regime changes</li>
+                                    <li>Evaluates distressed assets with institutional-grade analysis</li>
+                                    <li>Delivers trade ideas vetted by AI councils and regime filters</li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="p-3 rounded" style="background: rgba(255,255,255,0.04);">
+                                <h6 class="fw-bold"><i data-feather="lock" class="me-2 text-warning" style="width: 18px; height: 18px;"></i>Your Data & Privacy</h6>
+                                <ul class="small text-muted mb-0 ps-3">
+                                    <li>We only access your name and email for authentication</li>
+                                    <li>No financial accounts or trading data are accessed</li>
+                                    <li>Your data is never shared with third parties</li>
+                                    <li>You can request data deletion at any time</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
                     <hr class="my-4">
-                    <a href="{{ url_for('oauth.login_page') }}" class="btn btn-primary btn-lg px-5 mb-3">
-                        <i data-feather="log-in" class="me-2"></i>Sign In to Continue
-                    </a>
-                    <div class="d-flex justify-content-center align-items-center gap-3 mt-3 mb-2">
-                        <span class="text-muted small">Sign in with:</span>
-                        <div class="d-flex gap-2">
-                            <span class="badge bg-light text-dark border d-flex align-items-center gap-1" title="Google">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
-                                Google
-                            </span>
-                            <span class="badge bg-dark text-white d-flex align-items-center gap-1" title="Apple">
-                                <svg width="14" height="16" viewBox="0 0 14 17" fill="currentColor"><path d="M13.5 12.5c-.3.8-.7 1.5-1.2 2.1-.7.9-1.4 1.4-2 1.4-.4 0-.8-.1-1.4-.4-.6-.2-1.1-.4-1.5-.4s-.9.1-1.5.4c-.6.2-1 .4-1.4.4-.7 0-1.4-.5-2.1-1.5-.8-1.1-1.4-2.3-1.4-3.8 0-1.3.4-2.4 1.2-3.2.8-.8 1.7-1.2 2.8-1.2.5 0 1.1.1 1.8.4.7.3 1.1.4 1.3.4.2 0 .6-.2 1.4-.5.7-.3 1.3-.4 1.8-.4 1.3.1 2.3.5 3 1.3-1.2.7-1.8 1.7-1.8 3 0 1 .4 1.9 1.1 2.5.3.3.7.6 1.1.7-.1.3-.2.5-.2.6zM10 0c0 .8-.3 1.6-.8 2.3-.6.8-1.4 1.3-2.2 1.2 0-.1 0-.2 0-.3 0-.8.3-1.5.8-2.2C8.3.3 9.1-.1 10 0z"/></svg>
-                                Apple
-                            </span>
-                            <span class="badge bg-secondary text-white d-flex align-items-center gap-1" title="GitHub">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
-                                GitHub
-                            </span>
-                            <span class="badge bg-info text-white d-flex align-items-center gap-1" title="Email">
-                                <i data-feather="mail" style="width: 14px; height: 14px;"></i>
-                                Email
-                            </span>
+
+                    <div class="text-center">
+                        <a href="{{ url_for('oauth.login_page') }}" class="btn btn-lg px-5 mb-3 fw-bold" style="background: linear-gradient(135deg, #c9a84c, #a8893a); color: #fff; border: none;">
+                            <i data-feather="log-in" class="me-2" style="width: 20px; height: 20px;"></i>Sign In to Get Started
+                        </a>
+                        <div class="d-flex justify-content-center align-items-center gap-3 mt-3 mb-2">
+                            <span class="text-muted small">Sign in with:</span>
+                            <div class="d-flex gap-2 flex-wrap justify-content-center">
+                                <span class="badge bg-light text-dark border d-flex align-items-center gap-1" title="Google">
+                                    <svg width="14" height="14" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                                    Google
+                                </span>
+                                <span class="badge bg-dark text-white d-flex align-items-center gap-1" title="Apple">
+                                    <svg width="12" height="14" viewBox="0 0 170 200" fill="currentColor"><path d="M150.37 130.25c-2.45 5.66-5.35 10.87-8.71 15.66-4.58 6.53-8.33 11.05-11.22 13.56-4.48 4.12-9.28 6.23-14.42 6.35-3.69 0-8.14-1.05-13.32-3.18-5.2-2.12-9.97-3.17-14.34-3.17-4.58 0-9.49 1.05-14.75 3.17-5.27 2.13-9.52 3.24-12.78 3.35-4.93.21-9.84-1.96-14.75-6.52-3.13-2.73-7.04-7.41-11.75-14.04-5.03-7.08-9.16-15.29-12.41-24.65-3.47-10.11-5.21-19.9-5.21-29.38 0-10.87 2.35-20.24 7.04-28.08 3.69-6.31 8.6-11.3 14.75-14.95 6.15-3.66 12.79-5.52 19.96-5.72 3.91 0 9.05 1.21 15.43 3.59 6.36 2.39 10.45 3.6 12.25 3.6 1.35 0 5.91-1.42 13.63-4.23 7.3-2.61 13.46-3.69 18.51-3.27 13.68 1.1 23.95 6.5 30.78 16.23-12.24 7.42-18.31 17.82-18.2 31.16.11 10.39 3.88 19.04 11.28 25.9 3.35 3.18 7.1 5.64 11.26 7.38-.9 2.62-1.86 5.13-2.86 7.54zM119.11 7.24c0 8.15-2.97 15.75-8.9 22.77-7.16 8.39-15.82 13.23-25.21 12.47-.12-.97-.19-2-.19-3.07 0-7.82 3.4-16.19 9.44-23.04 3.01-3.46 6.84-6.33 11.49-8.63 4.64-2.27 9.03-3.52 13.16-3.74.12 1.1.21 2.2.21 3.24z"/></svg>
+                                    Apple
+                                </span>
+                                <span class="badge bg-secondary text-white d-flex align-items-center gap-1" title="GitHub">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+                                    GitHub
+                                </span>
+                                <span class="badge d-flex align-items-center gap-1" style="background: #1877F2; color: #fff;" title="Facebook">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                                    Facebook
+                                </span>
+                                <span class="badge bg-info text-white d-flex align-items-center gap-1" title="Email">
+                                    <i data-feather="mail" style="width: 14px; height: 14px;"></i>
+                                    Email
+                                </span>
+                            </div>
                         </div>
+                        <p class="small text-muted mt-2">
+                            Access is restricted to approved users only.
+                        </p>
                     </div>
-                    <p class="small text-muted mt-2">
-                        Access is restricted to approved users only.
-                    </p>
                 </div>
+            </div>
+
+            <div class="text-center mb-4">
+                <a href="{{ url_for('privacy') }}" class="text-muted small me-3">Privacy Policy</a>
+                <a href="{{ url_for('terms') }}" class="text-muted small">Terms of Service</a>
             </div>
         </div>
     </div>
