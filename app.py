@@ -170,6 +170,12 @@ def create_app():
     app.register_blueprint(replit_bp, url_prefix='/auth')
     app.register_blueprint(oauth_bp)
 
+    @app.route("/.well-known/apple-developer-domain-association.txt")
+    def apple_domain_verification():
+        verification_content = os.getenv('APPLE_DOMAIN_VERIFICATION', '')
+        from flask import Response
+        return Response(verification_content, mimetype='text/plain')
+
     @app.route("/landing")
     def landing():
         return render_template("landing.html")

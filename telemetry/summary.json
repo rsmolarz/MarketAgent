@@ -1,25 +1,25 @@
 {
-  "generated_at": "2026-02-09T21:33:39.386864Z",
+  "generated_at": "2026-02-09T21:43:39.377766Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 12070,
-      "avg_latency_ms": 736.03,
+      "count": 12078,
+      "avg_latency_ms": 735.54,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0132,
       "error_rate": 0.0
     },
     "WhaleWalletWatcherAgent": {
-      "count": 5116,
-      "avg_latency_ms": 599.94,
+      "count": 5120,
+      "avg_latency_ms": 599.47,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0168,
       "error_rate": 0.0
     },
     "CryptoFundingRateAgent": {
-      "count": 4047,
-      "avg_latency_ms": 1839.86,
+      "count": 4053,
+      "avg_latency_ms": 1850.57,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0318,
+      "avg_reward": -0.032,
       "error_rate": 0.0
     },
     "SentimentDivergenceAgent": {
@@ -86,59 +86,59 @@
       "error_rate": 0.0
     },
     "FundingRateAgent": {
-      "count": 2568,
-      "avg_latency_ms": 15.52,
+      "count": 2572,
+      "avg_latency_ms": 15.5,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0011,
       "error_rate": 0.0
     },
     "HeartbeatAgent": {
-      "count": 3721,
-      "avg_latency_ms": 1775.62,
+      "count": 3727,
+      "avg_latency_ms": 1774.76,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0178,
       "error_rate": 0.0
     },
     "IntradayOrderBookImbalanceAgent": {
-      "count": 3846,
-      "avg_latency_ms": 215.45,
+      "count": 3852,
+      "avg_latency_ms": 215.33,
       "total_cost_usd": 0.0,
       "avg_reward": 0.0175,
       "error_rate": 0.0
     },
     "IntradayVolatilitySpikeAgent": {
-      "count": 3445,
-      "avg_latency_ms": 1803.34,
+      "count": 3451,
+      "avg_latency_ms": 1802.75,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0262,
       "error_rate": 0.0
     },
     "IntradayVolumeSpikeAgent": {
-      "count": 2773,
-      "avg_latency_ms": 3127.67,
+      "count": 2779,
+      "avg_latency_ms": 3143.16,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0416,
-      "error_rate": 0.0631
+      "avg_reward": -0.0419,
+      "error_rate": 0.063
     },
     "VWAPAgent": {
-      "count": 2552,
-      "avg_latency_ms": 34.46,
+      "count": 2556,
+      "avg_latency_ms": 34.41,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0023,
       "error_rate": 0.0
     },
     "TapeReadingAgent": {
-      "count": 2552,
-      "avg_latency_ms": 37.6,
+      "count": 2556,
+      "avg_latency_ms": 37.54,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0025,
       "error_rate": 0.0
     },
     "HighFrequencyFlowAnalysisAgent": {
-      "count": 2556,
-      "avg_latency_ms": 57.5,
+      "count": 2560,
+      "avg_latency_ms": 57.41,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0041,
+      "avg_reward": -0.004,
       "error_rate": 0.0
     },
     "EquityMomentumAgent": {
