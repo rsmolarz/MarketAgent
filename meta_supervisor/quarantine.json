@@ -3,58 +3,58 @@
     "InsiderTradingSignalAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.439 <= limit -3.0",
-      "since": "2026-02-09T21:28:38.619177+00:00"
+      "since": "2026-02-09T21:33:38.673134+00:00"
     },
     "CodeGuardianAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -11.305 <= limit -3.0",
-      "since": "2026-02-09T21:28:38.626101+00:00"
+      "since": "2026-02-09T21:33:38.695589+00:00"
     },
     "ArbitrageFinderAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -5.450 <= limit -3.0",
-      "since": "2026-02-09T21:28:38.455470+00:00"
+      "since": "2026-02-09T21:33:38.436595+00:00"
     },
     "EquityMomentumAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -5.351 <= limit -3.0",
-      "since": "2026-02-09T21:28:38.517070+00:00"
+      "since": "2026-02-09T21:33:38.516836+00:00"
     },
     "SentimentDivergenceAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.690 <= limit -3.0",
-      "since": "2026-02-09T21:28:38.538280+00:00"
+      "since": "2026-02-09T21:33:38.548036+00:00"
     },
     "MarketCorrectionAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.793 <= limit -3.0",
-      "since": "2026-02-09T21:28:38.574267+00:00"
+      "since": "2026-02-09T21:33:38.570186+00:00"
     },
     "TechnicalAnalysisAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -5.875 <= limit -3.0",
-      "since": "2026-02-09T21:28:38.601003+00:00"
+      "since": "2026-02-09T21:33:38.601786+00:00"
     },
     "CryptoPredictionAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -4.116 <= limit -3.0",
-      "since": "2026-02-09T21:28:38.617960+00:00"
+      "since": "2026-02-09T21:33:38.643528+00:00"
     },
     "CryptoStablecoinPremiumAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.511 <= limit -3.0",
-      "since": "2026-02-09T21:28:38.618458+00:00"
+      "since": "2026-02-09T21:33:38.653967+00:00"
     },
     "UnusualOptionsVolumeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.268 <= limit -3.0",
-      "since": "2026-02-09T21:28:38.618886+00:00"
+      "since": "2026-02-09T21:33:38.666890+00:00"
     },
     "WhaleWalletWatcherAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.013 <= limit -3.0",
-      "since": "2026-02-09T21:28:38.476673+00:00"
+      "since": "2026-02-09T21:33:38.480065+00:00"
     }
   },
-  "updated_at": "2026-02-09T21:28:38.626162+00:00"
+  "updated_at": "2026-02-09T21:33:38.695659+00:00"
 }
