@@ -463,6 +463,27 @@ def email_register():
     return redirect(next_url or url_for('dashboard.index'))
 
 
+@oauth_bp.route('/facebook/deauthorize', methods=['GET', 'POST'])
+def facebook_deauthorize():
+    from flask import jsonify
+    return jsonify({'url': request.host_url.rstrip('/') + url_for('oauth.facebook_deauthorize'), 'confirmation_code': 'ok'}), 200
+
+
+@oauth_bp.route('/facebook/data-deletion', methods=['GET', 'POST'])
+def facebook_data_deletion():
+    from flask import jsonify
+    import hashlib, hmac, base64, json as _json
+    signed_request = request.form.get('signed_request', '')
+    confirmation_code = hashlib.sha256(signed_request.encode()).hexdigest()[:10]
+    status_url = request.host_url.rstrip('/') + url_for('oauth.facebook_deletion_status', code=confirmation_code)
+    return jsonify({'url': status_url, 'confirmation_code': confirmation_code}), 200
+
+
+@oauth_bp.route('/facebook/deletion-status/<code>')
+def facebook_deletion_status(code):
+    return render_template('base.html', content=f'Data deletion request {code} is being processed.'), 200
+
+
 @oauth_bp.route('/logout')
 def logout():
     from flask_login import logout_user as flask_logout
