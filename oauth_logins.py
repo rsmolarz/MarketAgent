@@ -31,6 +31,9 @@ APP_PREFIX = os.getenv('OAUTH_APP_PREFIX', 'MARKETAGENT')
 
 
 def _env(key, default=''):
+    override = os.getenv(f'OAUTH_OVERRIDE_{key}', '')
+    if override:
+        return override.strip()
     prefixed = os.getenv(f'{APP_PREFIX}_{key}', '')
     if prefixed:
         return prefixed.strip()
