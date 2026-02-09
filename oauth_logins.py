@@ -249,6 +249,8 @@ def start(provider):
         'state': state,
     }
 
+    session[f'oauth_redirect_uri_{provider}'] = redirect_uri
+
     if provider == 'apple':
         params['response_type'] = 'code'
         params['scope'] = cfg['scopes']
@@ -426,9 +428,15 @@ def _handle_apple_callback(code):
         raise Exception('Apple Sign-In is not properly configured. Check server logs for details.')
 
     cfg = PROVIDERS['apple']
-    redirect_uri = _get_redirect_uri('apple')
+    stored_redirect_uri = session.pop(f'oauth_redirect_uri_apple', None)
+    current_redirect_uri = _get_redirect_uri('apple')
+    redirect_uri = stored_redirect_uri or current_redirect_uri
 
-    logger.info(f"Apple callback: client_id={client_id}, redirect_uri={redirect_uri}")
+    logger.info(f"Apple callback: client_id={client_id}")
+    logger.info(f"Apple callback: stored_redirect_uri={stored_redirect_uri}")
+    logger.info(f"Apple callback: current_redirect_uri={current_redirect_uri}")
+    logger.info(f"Apple callback: using redirect_uri={redirect_uri}")
+    logger.info(f"Apple callback: client_secret_len={len(client_secret)}, code_len={len(code)}")
 
     resp = requests.post(cfg['token_url'], data={
         'client_id': client_id,
@@ -440,7 +448,9 @@ def _handle_apple_callback(code):
 
     if resp.status_code != 200:
         error_body = resp.text[:500]
-        logger.error(f"Apple token exchange failed: {resp.status_code} {error_body}")
+        logger.error(f"Apple token exchange FAILED: status={resp.status_code}")
+        logger.error(f"Apple token exchange response: {error_body}")
+        logger.error(f"Apple request data: client_id={client_id}, redirect_uri={redirect_uri}, code_prefix={code[:20]}...")
         try:
             err_json = resp.json()
             apple_error = err_json.get('error', 'unknown')
@@ -448,7 +458,7 @@ def _handle_apple_callback(code):
         except Exception:
             apple_error = f"HTTP {resp.status_code}"
             apple_desc = error_body
-        raise Exception(f'Apple token exchange: {apple_error} - {apple_desc}')
+        raise Exception(f'Apple token exchange: {apple_error} - {apple_desc} [redirect_uri={redirect_uri}]')
 
     tokens = resp.json()
     if 'error' in tokens:
