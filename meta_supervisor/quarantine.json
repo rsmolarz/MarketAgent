@@ -3,47 +3,47 @@
     "CryptoPredictionAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.336 <= limit -3.0",
-      "since": "2026-02-09T05:02:05.556987+00:00"
+      "since": "2026-02-09T05:08:32.433888+00:00"
     },
     "ArbitrageFinderAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -3.549 <= limit -3.0",
-      "since": "2026-02-09T05:02:05.330876+00:00"
+      "reason": "Auto-quarantine: drawdown -3.559 <= limit -3.0",
+      "since": "2026-02-09T05:08:32.396226+00:00"
     },
     "IntradayVolumeSpikeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.107 <= limit -3.0",
-      "since": "2026-02-09T05:02:05.458310+00:00"
+      "since": "2026-02-09T05:08:32.402621+00:00"
     },
     "CodeGuardianAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -11.927 <= limit -3.0",
-      "since": "2026-02-09T05:02:05.588593+00:00"
+      "since": "2026-02-09T05:08:32.458002+00:00"
     },
     "EquityMomentumAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.291 <= limit -3.0",
-      "since": "2026-02-09T05:02:05.357322+00:00"
+      "since": "2026-02-09T05:08:32.384265+00:00"
     },
     "SentimentDivergenceAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.117 <= limit -3.0",
-      "since": "2026-02-09T05:02:05.384356+00:00"
+      "since": "2026-02-09T05:08:32.395813+00:00"
     },
     "TechnicalAnalysisAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.225 <= limit -3.0",
-      "since": "2026-02-09T05:02:05.436962+00:00"
+      "since": "2026-02-09T05:08:32.396485+00:00"
     },
     "UnusualOptionsVolumeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.279 <= limit -3.0",
-      "since": "2026-02-09T05:02:05.479171+00:00"
+      "since": "2026-02-09T05:08:32.421842+00:00"
     },
     "InsiderTradingSignalAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.550 <= limit -3.0",
-      "since": "2026-02-09T05:02:05.520610+00:00"
+      "since": "2026-02-09T05:08:32.422352+00:00"
     },
     "CryptoFundingRateAgent": {
       "active": false,
@@ -56,5 +56,5 @@
       "since": "2026-02-09T04:57:55.178818+00:00"
     }
   },
-  "updated_at": "2026-02-09T05:02:05.593757+00:00"
+  "updated_at": "2026-02-09T05:08:32.458051+00:00"
 }
