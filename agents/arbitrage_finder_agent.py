@@ -64,6 +64,10 @@ class ArbitrageFinderAgent(BaseAgent):
         """
         Find arbitrage opportunities across exchanges
         """
+        from services.api_toggle import api_guard
+        if not api_guard("coinbase", "arbitrage finder exchange data"):
+            return []
+
         findings = []
         
         for pair in self.trading_pairs:

@@ -1,0 +1,150 @@
+{% extends "admin_layout.html" %}
+
+{% block title %}Admin - API Cost Controls{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <div>
+                <h2 class="mb-0">
+                    <i data-feather="toggle-left" class="me-2"></i>
+                    API Cost Controls
+                </h2>
+                <p class="text-muted">Enable or disable external APIs to manage costs during development</p>
+            </div>
+            <div class="d-flex gap-2">
+                <form action="{{ url_for('admin.toggle_all_apis') }}" method="POST" class="d-inline">
+                    <input type="hidden" name="action" value="disable">
+                    <button type="submit" class="btn btn-outline-danger" onclick="return confirm('Disable ALL external API calls? Agents will skip API-dependent work.')">
+                        <i data-feather="pause-circle" class="me-1"></i> Disable All
+                    </button>
+                </form>
+                <form action="{{ url_for('admin.toggle_all_apis') }}" method="POST" class="d-inline">
+                    <input type="hidden" name="action" value="enable">
+                    <button type="submit" class="btn btn-outline-success" onclick="return confirm('Enable ALL external API calls?')">
+                        <i data-feather="play-circle" class="me-1"></i> Enable All
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% set enabled_count = toggles.values()|selectattr('enabled')|list|length %}
+    {% set total_count = toggles|length %}
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card shadow-sm" style="border-left: 4px solid #28a745;">
+                <div class="card-body text-center">
+                    <h3 class="mb-0" style="color: #28a745;">{{ enabled_count }}</h3>
+                    <small class="text-muted">APIs Enabled</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow-sm" style="border-left: 4px solid #dc3545;">
+                <div class="card-body text-center">
+                    <h3 class="mb-0" style="color: #dc3545;">{{ total_count - enabled_count }}</h3>
+                    <small class="text-muted">APIs Disabled</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card shadow-sm" style="border-left: 4px solid #6c757d;">
+                <div class="card-body text-center">
+                    <h3 class="mb-0">{{ total_count }}</h3>
+                    <small class="text-muted">Total API Services</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% for cat_name, apis in categories.items() %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header" style="background: #2b2e4a;">
+                    <h5 class="mb-0">
+                        {% if cat_name == 'LLM' %}
+                        <i data-feather="cpu" class="me-2"></i>
+                        {% elif cat_name == 'Data' %}
+                        <i data-feather="database" class="me-2"></i>
+                        {% elif cat_name == 'Email' %}
+                        <i data-feather="mail" class="me-2"></i>
+                        {% elif cat_name == 'Integration' %}
+                        <i data-feather="link" class="me-2"></i>
+                        {% else %}
+                        <i data-feather="box" class="me-2"></i>
+                        {% endif %}
+                        {{ cat_name }}
+                        <span class="badge bg-secondary ms-2">{{ apis|length }}</span>
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 50px;">Status</th>
+                                <th>Service</th>
+                                <th>Description</th>
+                                <th style="width: 120px;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for api in apis %}
+                            <tr>
+                                <td class="text-center align-middle">
+                                    {% if api.enabled %}
+                                    <span class="badge bg-success" style="font-size: 0.85em;">ON</span>
+                                    {% else %}
+                                    <span class="badge bg-danger" style="font-size: 0.85em;">OFF</span>
+                                    {% endif %}
+                                </td>
+                                <td class="align-middle">
+                                    <strong>{{ api.label }}</strong>
+                                    <br><code class="text-muted" style="font-size: 0.75em;">{{ api.key }}</code>
+                                </td>
+                                <td class="align-middle text-muted">{{ api.description }}</td>
+                                <td class="align-middle">
+                                    <form action="{{ url_for('admin.toggle_api') }}" method="POST" class="d-inline">
+                                        <input type="hidden" name="api_name" value="{{ api.key }}">
+                                        {% if api.enabled %}
+                                        <input type="hidden" name="enabled" value="false">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                            <i data-feather="power" class="me-1"></i> Disable
+                                        </button>
+                                        {% else %}
+                                        <input type="hidden" name="enabled" value="true">
+                                        <button type="submit" class="btn btn-sm btn-outline-success">
+                                            <i data-feather="power" class="me-1"></i> Enable
+                                        </button>
+                                        {% endif %}
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm border-warning">
+                <div class="card-body">
+                    <h6 class="text-warning mb-2"><i data-feather="alert-triangle" class="me-1"></i> How it works</h6>
+                    <ul class="text-muted mb-0" style="font-size: 0.9em;">
+                        <li>When an API is <strong>disabled</strong>, agents and services that depend on it will skip those calls and log a message instead.</li>
+                        <li>Agents will still run on schedule but will produce findings based on cached/local data only.</li>
+                        <li>LLM APIs (OpenAI, Anthropic, Gemini) are typically the highest-cost services.</li>
+                        <li>Use <strong>Disable All</strong> during development to prevent any external API charges.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

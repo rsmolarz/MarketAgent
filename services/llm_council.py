@@ -82,6 +82,10 @@ Rules:
 
 
 def call_openai(prompt: str, timeout_sec: int = 20) -> Tuple[bool, str, Optional[str]]:
+    from services.api_toggle import api_guard
+    if not api_guard("openai", "LLM council OpenAI call"):
+        return False, "", "OpenAI API disabled via admin toggle"
+
     api_key = os.getenv("OPENAI_API_KEY", "") or os.getenv("AI_INTEGRATIONS_OPENAI_API_KEY", "")
     base_url = os.getenv("AI_INTEGRATIONS_OPENAI_BASE_URL", "https://api.openai.com/v1")
     
@@ -111,6 +115,10 @@ def call_openai(prompt: str, timeout_sec: int = 20) -> Tuple[bool, str, Optional
 
 
 def call_anthropic(prompt: str, timeout_sec: int = 20) -> Tuple[bool, str, Optional[str]]:
+    from services.api_toggle import api_guard
+    if not api_guard("anthropic", "LLM council Anthropic call"):
+        return False, "", "Anthropic API disabled via admin toggle"
+
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not api_key:
         return False, "", "ANTHROPIC_API_KEY missing"
@@ -140,6 +148,10 @@ def call_anthropic(prompt: str, timeout_sec: int = 20) -> Tuple[bool, str, Optio
 
 
 def call_gemini(prompt: str, timeout_sec: int = 20) -> Tuple[bool, str, Optional[str]]:
+    from services.api_toggle import api_guard
+    if not api_guard("gemini", "LLM council Gemini call"):
+        return False, "", "Gemini API disabled via admin toggle"
+
     api_key = os.getenv("GEMINI_API_KEY", "")
     if not api_key:
         return False, "", "GEMINI_API_KEY missing"

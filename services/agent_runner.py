@@ -111,6 +111,10 @@ def call_llm_json(prompt: str, system_prompt: Optional[str] = None) -> Dict[str,
     Call LLM and return JSON response.
     Uses OpenAI integration if available.
     """
+    from services.api_toggle import api_guard
+    if not api_guard("openai", "agent runner LLM call"):
+        return {"vote": "APPROVE", "confidence": 0.5, "notes": "OpenAI API disabled via admin toggle."}
+
     try:
         from openai import OpenAI
         import os

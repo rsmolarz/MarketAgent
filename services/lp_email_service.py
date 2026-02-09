@@ -118,6 +118,10 @@ def _attach_files(message: Mail, paths: list):
         message.add_attachment(attachment)
 
 def send_lp_email():
+    from services.api_toggle import api_guard
+    if not api_guard("sendgrid", "LP email"):
+        return False
+
     report = _load()
     if not report:
         logger.warning("No meta report found for LP email")
@@ -160,6 +164,10 @@ def send_lp_email():
 
 def send_lp_weekly_email():
     """Send weekly LP email with PDF attachments"""
+    from services.api_toggle import api_guard
+    if not api_guard("sendgrid", "LP weekly email"):
+        return False
+
     report = _load()
     if not report:
         logger.warning("No meta report found for LP weekly email")

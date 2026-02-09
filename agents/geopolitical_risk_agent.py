@@ -61,6 +61,10 @@ class GeopoliticalRiskAgent(BaseAgent):
         """
         Analyze geopolitical risks across hotspot regions
         """
+        from services.api_toggle import api_guard
+        if not api_guard("news_api", "geopolitical risk news fetch"):
+            return []
+
         findings = []
         
         for region, query in self.HOTSPOTS.items():

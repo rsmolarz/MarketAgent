@@ -76,6 +76,10 @@ class DistressedMacroGateAgent(BaseAgent):
         """
         Live analysis mode - fetches current regime and drawdown from system state.
         """
+        from services.api_toggle import api_guard
+        if not api_guard("yahoo_finance", "distressed macro gate market data"):
+            return []
+
         from analytics.regime import classify_regime
         from portfolio.governor import PortfolioDrawdownGovernor
         import yfinance as yf

@@ -61,6 +61,10 @@ def analyze_alert_with_claude(finding_data: dict) -> dict:
     Returns:
         Dictionary with analysis results or error information
     """
+    from services.api_toggle import api_guard
+    if not api_guard("anthropic", "Claude alert analysis"):
+        return {"error": False, "analysis": "Anthropic API is currently disabled via admin controls to manage costs.", "raw_response": ""}
+
     try:
         alert_text = f"""
 Market Alert to Analyze:

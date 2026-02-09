@@ -83,6 +83,10 @@ def sync_deal_to_crm(deal_id: int, trigger: str = "manual") -> Dict[str, Any]:
     Returns:
         Sync result with status for each CRM
     """
+    from services.api_toggle import api_guard
+    if not api_guard("crm_webhook", "CRM deal sync"):
+        return {"success": False, "error": "CRM webhooks disabled via admin toggle", "synced": []}
+
     from models import DistressedDeal, db
     
     deal = DistressedDeal.query.get(deal_id)

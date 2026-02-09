@@ -34,6 +34,10 @@ class WhaleWalletWatcherAgent(BaseAgent):
         """
         Analyze whale wallet activities for suspicious patterns
         """
+        from services.api_toggle import api_guard
+        if not api_guard("etherscan", "whale wallet Etherscan data"):
+            return []
+
         findings = []
         
         if not self.validate_config(['ETHERSCAN_API_KEY']):

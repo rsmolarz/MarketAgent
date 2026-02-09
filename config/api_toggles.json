@@ -1,0 +1,62 @@
+{
+  "openai": {
+    "label": "OpenAI (GPT)",
+    "enabled": true,
+    "category": "LLM",
+    "description": "GPT models for builder agent, council, analysis"
+  },
+  "anthropic": {
+    "label": "Anthropic (Claude)",
+    "enabled": true,
+    "category": "LLM",
+    "description": "Claude models for AI analysis, council, thesis compression"
+  },
+  "gemini": {
+    "label": "Google Gemini",
+    "enabled": true,
+    "category": "LLM",
+    "description": "Gemini models for LLM council ensemble"
+  },
+  "news_api": {
+    "label": "NewsAPI",
+    "enabled": true,
+    "category": "Data",
+    "description": "News headlines for geopolitical risk agent"
+  },
+  "alpha_vantage": {
+    "label": "Alpha Vantage",
+    "enabled": true,
+    "category": "Data",
+    "description": "Market data for financial analysis"
+  },
+  "coinbase": {
+    "label": "Coinbase",
+    "enabled": true,
+    "category": "Data",
+    "description": "Cryptocurrency prices and trading data"
+  },
+  "etherscan": {
+    "label": "Etherscan",
+    "enabled": true,
+    "category": "Data",
+    "description": "Ethereum blockchain data for whale tracking"
+  },
+  "sendgrid": {
+    "label": "SendGrid",
+    "enabled": true,
+    "category": "Email",
+    "description": "Email notifications and daily summaries"
+  },
+  "yahoo_finance": {
+    "label": "Yahoo Finance",
+    "enabled": true,
+    "category": "Data",
+    "description": "Stock prices, indices, bonds via yfinance"
+  },
+  "crm_webhook": {
+    "label": "CRM Webhooks",
+    "enabled": true,
+    "category": "Integration",
+    "description": "External CRM handoff and deal room sync"
+  }
+}

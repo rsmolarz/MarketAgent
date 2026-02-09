@@ -191,3 +191,43 @@ def approvals():
     
     return render_template('admin/approvals.html', 
                           pending=pending, approved=approved, rejected=rejected)
+
+
+@admin_bp.route('/api-toggles')
+def api_toggles():
+    """API Cost Control - Enable/disable external API calls"""
+    from services.api_toggle import load_toggles
+    toggles = load_toggles()
+    categories = {}
+    for key, val in toggles.items():
+        cat = val.get("category", "Other")
+        if cat not in categories:
+            categories[cat] = []
+        categories[cat].append({"key": key, **val})
+    return render_template('admin/api_toggles.html', categories=categories, toggles=toggles)
+
+
+@admin_bp.route('/api-toggles/toggle', methods=['POST'])
+def toggle_api():
+    """Toggle a single API on or off"""
+    from services.api_toggle import set_api_enabled
+    api_name = request.form.get('api_name', '')
+    enabled = request.form.get('enabled', 'false') == 'true'
+    if set_api_enabled(api_name, enabled):
+        status = 'enabled' if enabled else 'disabled'
+        flash(f'{api_name} has been {status}.', 'success')
+    else:
+        flash(f'Unknown API: {api_name}', 'danger')
+    return redirect(url_for('admin.api_toggles'))
+
+
+@admin_bp.route('/api-toggles/all', methods=['POST'])
+def toggle_all_apis():
+    """Enable or disable all APIs at once"""
+    from services.api_toggle import set_all_apis
+    action = request.form.get('action', 'disable')
+    enabled = action == 'enable'
+    set_all_apis(enabled)
+    status = 'enabled' if enabled else 'disabled'
+    flash(f'All APIs have been {status}.', 'success')
+    return redirect(url_for('admin.api_toggles'))

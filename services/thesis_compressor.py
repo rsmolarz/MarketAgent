@@ -15,6 +15,11 @@ Keep it tight. No fluff."""
 
 def call_llm(model: str, system: str, user: str, max_tokens: int = 600) -> str:
     """Call LLM for thesis generation."""
+    from services.api_toggle import api_guard
+    api_name = "openai" if model == "gpt" else "anthropic"
+    if not api_guard(api_name, f"thesis compression ({model})"):
+        return ""
+
     try:
         if model == "gpt":
             from openai import OpenAI

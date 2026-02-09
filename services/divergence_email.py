@@ -19,6 +19,10 @@ def load_divergence():
 
 def send_divergence_email():
     """Send divergence alert email"""
+    from services.api_toggle import api_guard
+    if not api_guard("sendgrid", "divergence alert email"):
+        return False
+
     div = load_divergence()
     
     if not div.get("alert"):
