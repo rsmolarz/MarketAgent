@@ -1,23 +1,23 @@
 {
-  "generated_at": "2026-02-09T20:14:08.253100Z",
+  "generated_at": "2026-02-09T20:39:03.333420Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 12010,
-      "avg_latency_ms": 731.77,
+      "count": 12030,
+      "avg_latency_ms": 730.55,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0131,
       "error_rate": 0.0
     },
     "WhaleWalletWatcherAgent": {
-      "count": 5098,
-      "avg_latency_ms": 594.23,
+      "count": 5104,
+      "avg_latency_ms": 594.59,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0166,
+      "avg_reward": -0.0167,
       "error_rate": 0.0
     },
     "CryptoFundingRateAgent": {
-      "count": 4033,
-      "avg_latency_ms": 1832.95,
+      "count": 4037,
+      "avg_latency_ms": 1831.13,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0316,
       "error_rate": 0.0
@@ -37,8 +37,8 @@
       "error_rate": 0.0
     },
     "CodeGuardianAgent": {
-      "count": 1696,
-      "avg_latency_ms": 962397.32,
+      "count": 1700,
+      "avg_latency_ms": 964678.13,
       "total_cost_usd": 0.0,
       "avg_reward": -0.4274,
       "error_rate": 0.0
@@ -86,57 +86,57 @@
       "error_rate": 0.0
     },
     "FundingRateAgent": {
-      "count": 2556,
-      "avg_latency_ms": 15.58,
+      "count": 2560,
+      "avg_latency_ms": 15.55,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0011,
       "error_rate": 0.0
     },
     "HeartbeatAgent": {
-      "count": 3707,
-      "avg_latency_ms": 1780.82,
+      "count": 3711,
+      "avg_latency_ms": 1778.9,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0178,
       "error_rate": 0.0
     },
     "IntradayOrderBookImbalanceAgent": {
-      "count": 3828,
-      "avg_latency_ms": 215.05,
+      "count": 3834,
+      "avg_latency_ms": 215.19,
       "total_cost_usd": 0.0,
-      "avg_reward": 0.0176,
+      "avg_reward": 0.0175,
       "error_rate": 0.0
     },
     "IntradayVolatilitySpikeAgent": {
-      "count": 3431,
-      "avg_latency_ms": 1805.92,
+      "count": 3435,
+      "avg_latency_ms": 1803.81,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0262,
       "error_rate": 0.0
     },
     "IntradayVolumeSpikeAgent": {
-      "count": 2759,
-      "avg_latency_ms": 3120.17,
+      "count": 2763,
+      "avg_latency_ms": 3115.65,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0414,
-      "error_rate": 0.0634
+      "error_rate": 0.0633
     },
     "VWAPAgent": {
-      "count": 2540,
-      "avg_latency_ms": 34.3,
+      "count": 2544,
+      "avg_latency_ms": 34.24,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0023,
       "error_rate": 0.0
     },
     "TapeReadingAgent": {
-      "count": 2540,
-      "avg_latency_ms": 37.35,
+      "count": 2544,
+      "avg_latency_ms": 37.29,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0024,
       "error_rate": 0.0
     },
     "HighFrequencyFlowAnalysisAgent": {
-      "count": 2544,
-      "avg_latency_ms": 57.69,
+      "count": 2548,
+      "avg_latency_ms": 57.6,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0041,
       "error_rate": 0.0
@@ -562,10 +562,10 @@
       "error_rate": 0.0
     },
     "UnusualOptionsVolumeAgent": {
-      "count": 1368,
-      "avg_latency_ms": 16746.02,
+      "count": 1372,
+      "avg_latency_ms": 16968.46,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0763,
+      "avg_reward": -0.0769,
       "error_rate": 0.0
     },
     "NFTMarketAgent": {
@@ -611,10 +611,10 @@
       "error_rate": 0.0
     },
     "GreatestTradeAgent": {
-      "count": 762,
-      "avg_latency_ms": 25600.24,
+      "count": 766,
+      "avg_latency_ms": 25686.43,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0965,
+      "avg_reward": -0.0971,
       "error_rate": 0.0
     },
     "DistressedMacroGateAgent": {
@@ -940,10 +940,10 @@
       "error_rate": 0.0
     },
     "EarningsSurpriseDriftAgent": {
-      "count": 705,
-      "avg_latency_ms": 16174.36,
+      "count": 709,
+      "avg_latency_ms": 16276.17,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.1365,
+      "avg_reward": -0.137,
       "error_rate": 0.0
     },
     "SignalReliabilityAgent": {
