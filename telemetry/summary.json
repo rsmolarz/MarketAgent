@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-02-09T06:02:04.923622Z",
+  "generated_at": "2026-02-09T06:07:23.127414Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 9198,
-      "avg_latency_ms": 534.18,
+      "count": 9210,
+      "avg_latency_ms": 533.49,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0109,
       "error_rate": 0.0
@@ -121,22 +121,22 @@
       "error_rate": 0.0743
     },
     "VWAPAgent": {
-      "count": 1716,
-      "avg_latency_ms": 29.14,
+      "count": 1720,
+      "avg_latency_ms": 29.08,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0021,
       "error_rate": 0.0
     },
     "TapeReadingAgent": {
-      "count": 1716,
-      "avg_latency_ms": 30.44,
+      "count": 1720,
+      "avg_latency_ms": 30.37,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0021,
       "error_rate": 0.0
     },
     "HighFrequencyFlowAnalysisAgent": {
-      "count": 1716,
-      "avg_latency_ms": 61.2,
+      "count": 1720,
+      "avg_latency_ms": 61.12,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0044,
       "error_rate": 0.0
