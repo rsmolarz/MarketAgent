@@ -3,28 +3,58 @@
     "CryptoPredictionAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -4.400 <= limit -3.0",
-      "since": "2026-02-09T05:44:14.574427+00:00"
+      "since": "2026-02-09T05:57:22.549924+00:00"
     },
     "InsiderTradingSignalAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.562 <= limit -3.0",
-      "since": "2026-02-09T05:44:14.831711+00:00"
+      "since": "2026-02-09T05:57:22.566691+00:00"
     },
     "UnusualOptionsVolumeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.287 <= limit -3.0",
-      "since": "2026-02-09T05:44:15.106283+00:00"
+      "since": "2026-02-09T05:57:22.589858+00:00"
     },
     "ArbitrageFinderAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.620 <= limit -3.0",
-      "since": "2026-02-09T05:44:15.199587+00:00"
+      "since": "2026-02-09T05:57:22.634705+00:00"
     },
     "CodeGuardianAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -11.323 <= limit -3.0",
-      "since": "2026-02-09T05:44:15.216682+00:00"
+      "since": "2026-02-09T05:57:22.666022+00:00"
+    },
+    "EquityMomentumAgent": {
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -3.152 <= limit -3.0",
+      "since": "2026-02-09T05:57:22.549258+00:00"
+    },
+    "SentimentDivergenceAgent": {
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -3.225 <= limit -3.0",
+      "since": "2026-02-09T05:57:22.412546+00:00"
+    },
+    "GeopoliticalRiskAgent": {
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -3.221 <= limit -3.0",
+      "since": "2026-02-09T05:57:22.464346+00:00"
+    },
+    "MarketCorrectionAgent": {
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -4.560 <= limit -3.0",
+      "since": "2026-02-09T05:57:22.485555+00:00"
+    },
+    "TechnicalAnalysisAgent": {
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -4.132 <= limit -3.0",
+      "since": "2026-02-09T05:57:22.548680+00:00"
+    },
+    "CryptoFundingRateAgent": {
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -3.941 <= limit -3.0",
+      "since": "2026-02-09T05:57:22.682437+00:00"
     }
   },
-  "updated_at": "2026-02-09T05:44:15.216755+00:00"
+  "updated_at": "2026-02-09T05:57:22.682537+00:00"
 }
