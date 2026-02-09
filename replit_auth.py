@@ -199,22 +199,25 @@ def require_login(f):
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated:
             session["next_url"] = get_next_navigation_url(request)
-            return redirect(url_for('replit_auth.login'))
+            return redirect(url_for('oauth.login_page'))
 
         if not is_user_whitelisted(current_user.email):
             return redirect(url_for('replit_auth.not_whitelisted'))
 
-        expires_in = replit.token.get('expires_in', 0) if replit.token else 0
-        if expires_in < 0:
-            issuer_url = os.environ.get('ISSUER_URL', "https://replit.com/oidc")
-            refresh_token_url = issuer_url + "/token"
-            try:
-                token = replit.refresh_token(token_url=refresh_token_url,
-                                             client_id=os.environ['REPL_ID'])
-            except InvalidGrantError:
-                session["next_url"] = get_next_navigation_url(request)
-                return redirect(url_for('replit_auth.login'))
-            replit.token_updater(token)
+        try:
+            expires_in = replit.token.get('expires_in', 0) if replit.token else 0
+            if expires_in < 0:
+                issuer_url = os.environ.get('ISSUER_URL', "https://replit.com/oidc")
+                refresh_token_url = issuer_url + "/token"
+                try:
+                    token = replit.refresh_token(token_url=refresh_token_url,
+                                                 client_id=os.environ['REPL_ID'])
+                except InvalidGrantError:
+                    session["next_url"] = get_next_navigation_url(request)
+                    return redirect(url_for('oauth.login_page'))
+                replit.token_updater(token)
+        except Exception:
+            pass
 
         return f(*args, **kwargs)
 
@@ -226,7 +229,7 @@ def require_admin(f):
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated:
             session["next_url"] = get_next_navigation_url(request)
-            return redirect(url_for('replit_auth.login'))
+            return redirect(url_for('oauth.login_page'))
 
         if not is_user_admin(current_user):
             flash('You do not have permission to access this page.', 'danger')

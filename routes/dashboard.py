@@ -63,7 +63,7 @@ def index():
         if current_user.is_authenticated and is_user_whitelisted(current_user.email):
             return render_template('dashboard.html', user=current_user)
         else:
-            return redirect(url_for('landing'))
+            return redirect(url_for('oauth.login_page'))
     except Exception as e:
         logger.error(f"Dashboard rendering failed: {e}")
         return redirect(url_for('landing'))

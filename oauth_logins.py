@@ -463,6 +463,13 @@ def email_register():
     return redirect(next_url or url_for('dashboard.index'))
 
 
+@oauth_bp.route('/logout')
+def logout():
+    from flask_login import logout_user as flask_logout
+    flask_logout()
+    return redirect(url_for('oauth.login_page'))
+
+
 @oauth_bp.route('/status')
 def status():
     result = {}

@@ -106,7 +106,7 @@
                         <ul class="dropdown-menu dropdown-menu-end">
                             <li><span class="dropdown-item-text small text-muted">{{ current_user.email }}</span></li>
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{{ url_for('replit_auth.logout') }}"><i data-feather="log-out" class="me-2"></i>Sign Out</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('oauth.logout') }}"><i data-feather="log-out" class="me-2"></i>Sign Out</a></li>
                         </ul>
                     </li>
                     {% endif %}
