@@ -403,12 +403,19 @@ def _handle_apple_callback(code):
     if resp.status_code != 200:
         error_body = resp.text[:500]
         logger.error(f"Apple token exchange failed: {resp.status_code} {error_body}")
-        raise Exception(f'Apple authentication failed (token exchange error)')
+        try:
+            err_json = resp.json()
+            apple_error = err_json.get('error', 'unknown')
+            apple_desc = err_json.get('error_description', '')
+        except Exception:
+            apple_error = f"HTTP {resp.status_code}"
+            apple_desc = error_body
+        raise Exception(f'Apple token exchange: {apple_error} - {apple_desc}')
 
     tokens = resp.json()
     if 'error' in tokens:
         logger.error(f"Apple token error: {tokens}")
-        raise Exception(f"Apple authentication failed: {tokens.get('error', 'unknown')}")
+        raise Exception(f"Apple token error: {tokens.get('error', 'unknown')} - {tokens.get('error_description', '')}")
 
     id_token = tokens.get('id_token')
     claims = jwt.decode(id_token, options={"verify_signature": False})
