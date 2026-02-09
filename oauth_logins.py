@@ -33,8 +33,9 @@ APP_PREFIX = os.getenv('OAUTH_APP_PREFIX', 'MARKETAGENT')
 def _env(key, default=''):
     prefixed = os.getenv(f'{APP_PREFIX}_{key}', '')
     if prefixed:
-        return prefixed
-    return os.getenv(key, default)
+        return prefixed.strip()
+    val = os.getenv(key, default)
+    return val.strip() if val else val
 
 
 PROVIDERS = {
@@ -95,10 +96,22 @@ def _generate_apple_client_secret():
     client_id = _get_client_id('apple')
     private_key = _env('APPLE_PRIVATE_KEY')
 
-    if not all([team_id, key_id, client_id, private_key]):
+    missing = []
+    if not team_id: missing.append('APPLE_TEAM_ID')
+    if not key_id: missing.append('APPLE_KEY_ID')
+    if not client_id: missing.append('APPLE_CLIENT_ID')
+    if not private_key: missing.append('APPLE_PRIVATE_KEY')
+    if missing:
+        logger.error(f"Apple Sign-In missing config: {', '.join(missing)}")
         return None
 
-    private_key = private_key.replace('\\n', '\n')
+    if '\\n' in private_key:
+        private_key = private_key.replace('\\n', '\n')
+
+    if not private_key.startswith('-----'):
+        private_key = f"-----BEGIN PRIVATE KEY-----\n{private_key}\n-----END PRIVATE KEY-----"
+
+    logger.info(f"Apple client secret: team={team_id}, key={key_id}, client={client_id}, pk_len={len(private_key)}")
 
     now = int(time.time())
     payload = {
@@ -115,7 +128,7 @@ def _generate_apple_client_secret():
     try:
         return jwt.encode(payload, private_key, algorithm='ES256', headers=headers)
     except Exception as e:
-        logger.error(f"Apple client secret generation failed: {e}")
+        logger.error(f"Apple client secret generation failed: {e}", exc_info=True)
         return None
 
 
@@ -322,20 +335,35 @@ def _handle_github_callback(code):
 def _handle_facebook_callback(code):
     cfg = PROVIDERS['facebook']
     redirect_uri = _get_redirect_uri('facebook')
+    client_id = _get_client_id('facebook')
+    client_secret = _get_client_secret('facebook')
+
+    logger.info(f"Facebook callback: client_id={client_id}, redirect_uri={redirect_uri}")
 
     resp = requests.get(cfg['token_url'], params={
-        'client_id': _get_client_id('facebook'),
-        'client_secret': _get_client_secret('facebook'),
+        'client_id': client_id,
+        'client_secret': client_secret,
         'code': code,
         'redirect_uri': redirect_uri,
     }, timeout=15)
-    resp.raise_for_status()
+
+    if resp.status_code != 200:
+        logger.error(f"Facebook token exchange failed: {resp.status_code} {resp.text[:500]}")
+        raise Exception(f'Facebook authentication failed (token exchange error)')
+
     tokens = resp.json()
+    if 'error' in tokens:
+        logger.error(f"Facebook token error: {tokens['error']}")
+        raise Exception(f"Facebook authentication failed: {tokens['error'].get('message', 'unknown')}")
 
     access_token = tokens.get('access_token')
     userinfo = requests.get(cfg['userinfo_url'], params={
         'access_token': access_token,
     }, timeout=10).json()
+
+    if 'error' in userinfo:
+        logger.error(f"Facebook userinfo error: {userinfo['error']}")
+        raise Exception('Failed to get user info from Facebook')
 
     email = userinfo.get('email')
     name = userinfo.get('name', '')
@@ -354,10 +382,12 @@ def _handle_apple_callback(code):
     client_id = _get_client_id('apple')
     client_secret = _generate_apple_client_secret()
     if not client_secret:
-        raise Exception('Apple Sign-In is not properly configured.')
+        raise Exception('Apple Sign-In is not properly configured. Check server logs for details.')
 
     cfg = PROVIDERS['apple']
     redirect_uri = _get_redirect_uri('apple')
+
+    logger.info(f"Apple callback: client_id={client_id}, redirect_uri={redirect_uri}")
 
     resp = requests.post(cfg['token_url'], data={
         'client_id': client_id,
@@ -366,8 +396,16 @@ def _handle_apple_callback(code):
         'redirect_uri': redirect_uri,
         'grant_type': 'authorization_code',
     }, timeout=15)
-    resp.raise_for_status()
+
+    if resp.status_code != 200:
+        error_body = resp.text[:500]
+        logger.error(f"Apple token exchange failed: {resp.status_code} {error_body}")
+        raise Exception(f'Apple authentication failed (token exchange error)')
+
     tokens = resp.json()
+    if 'error' in tokens:
+        logger.error(f"Apple token error: {tokens}")
+        raise Exception(f"Apple authentication failed: {tokens.get('error', 'unknown')}")
 
     id_token = tokens.get('id_token')
     claims = jwt.decode(id_token, options={"verify_signature": False})
