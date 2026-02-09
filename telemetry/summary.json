@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-02-09T16:22:53.536339Z",
+  "generated_at": "2026-02-09T16:27:50.837821Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 11100,
-      "avg_latency_ms": 602.52,
+      "count": 11106,
+      "avg_latency_ms": 606.39,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0122,
+      "avg_reward": -0.0123,
       "error_rate": 0.0
     },
     "WhaleWalletWatcherAgent": {
@@ -37,10 +37,10 @@
       "error_rate": 0.0
     },
     "CodeGuardianAgent": {
-      "count": 1658,
-      "avg_latency_ms": 945502.12,
+      "count": 1660,
+      "avg_latency_ms": 944647.43,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.4247,
+      "avg_reward": -0.4248,
       "error_rate": 0.0
     },
     "AltDataSignalAgent": {
