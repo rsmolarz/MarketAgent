@@ -187,6 +187,7 @@ def start(provider):
     state = os.urandom(24).hex()
     session[f'oauth_state_{provider}'] = state
     redirect_uri = _get_redirect_uri(provider)
+    logger.info(f"OAuth {provider}: client_id={client_id[:15]}..., redirect_uri={redirect_uri}")
 
     params = {
         'client_id': client_id,
