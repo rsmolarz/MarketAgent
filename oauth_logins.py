@@ -15,7 +15,7 @@ import jwt
 import requests
 from flask import (
     Blueprint, request, redirect, url_for, session,
-    flash, render_template, current_app
+    flash, render_template, current_app, jsonify
 )
 from flask_login import login_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -174,6 +174,44 @@ def _find_or_create_user(email, first_name=None, last_name=None, profile_image=N
     db.session.add(user)
     db.session.commit()
     return user
+
+
+@oauth_bp.route('/oauth-diag')
+def oauth_diag():
+    if True:
+        diag = {}
+        for provider in PROVIDERS:
+            cid = _get_client_id(provider)
+            diag[provider] = {
+                'client_id_set': bool(cid),
+                'client_id_preview': (cid[:8] + '...' + cid[-4:]) if cid and len(cid) > 12 else ('set' if cid else 'missing'),
+            }
+            if provider == 'apple':
+                team_id = _env('APPLE_TEAM_ID')
+                key_id = _env('APPLE_KEY_ID')
+                pk = _env('APPLE_PRIVATE_KEY')
+                diag[provider]['team_id'] = team_id or 'missing'
+                diag[provider]['key_id'] = key_id or 'missing'
+                diag[provider]['private_key_len'] = len(pk) if pk else 0
+                diag[provider]['private_key_starts'] = pk[:30] + '...' if pk else 'missing'
+                try:
+                    secret = _generate_apple_client_secret()
+                    diag[provider]['jwt_generated'] = bool(secret)
+                    if secret:
+                        parts = secret.split('.')
+                        diag[provider]['jwt_parts'] = len(parts)
+                        import base64
+                        header_b64 = parts[0] + '=='
+                        header = json.loads(base64.urlsafe_b64decode(header_b64))
+                        diag[provider]['jwt_header'] = header
+                        payload_b64 = parts[1] + '=='
+                        payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+                        diag[provider]['jwt_payload'] = {k: v for k, v in payload.items() if k != 'exp'}
+                except Exception as e:
+                    diag[provider]['jwt_error'] = str(e)
+                diag[provider]['redirect_uri'] = request.host_url.rstrip('/') + url_for('oauth.callback', provider='apple')
+        return jsonify(diag)
+    return jsonify({'error': 'access denied'})
 
 
 @oauth_bp.route('/login')
