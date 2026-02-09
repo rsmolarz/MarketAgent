@@ -538,3 +538,16 @@ def status():
     result['email'] = True
     from flask import jsonify
     return jsonify(result)
+
+
+@oauth_bp.route('/debug/redirect-uris')
+def debug_redirect_uris():
+    from flask import jsonify
+    uris = {}
+    for p in PROVIDERS:
+        uris[p] = {
+            'redirect_uri': _get_redirect_uri(p),
+            'configured': bool(_get_client_id(p)),
+        }
+    uris['_info'] = 'Register these redirect URIs in each provider console'
+    return jsonify(uris)
