@@ -593,7 +593,7 @@ def _handle_facebook_callback(code):
 
 
 def _handle_apple_callback(code, redirect_uri_from_state=None):
-    apple_client_id = os.environ.get('APPLE_CLIENT_ID', '').strip()
+    apple_client_id = (os.environ.get('MARKETAGENT_APPLE_CLIENT_ID', '') or os.environ.get('APPLE_CLIENT_ID', '')).strip()
     client_secret = _generate_apple_client_secret()
     if not client_secret:
         raise Exception('Apple Sign-In is not properly configured. Check server logs for details.')
