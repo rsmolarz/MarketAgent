@@ -50,7 +50,6 @@ run = ["sh", "-c", "gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app"
 ADMIN_EMAILS = "rsmolarz@rsmolarz.com"
 SENDGRID_FROM_EMAIL = "rsmolarz@medmoneyshow.com"
 GOOGLE_OAUTH_CLIENT_ID = "1080725733608-23efhg2f07i7hh5hd38b03h5jfgd53eg.apps.googleusercontent.com"
-OAUTH_OVERRIDE_APPLE_CLIENT_ID = "com.marketagent.web"
 
 [userenv.production]
 DEPLOYMENT_ENV = "production"
