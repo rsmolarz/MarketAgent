@@ -3,48 +3,48 @@
     "CodeGuardianAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -11.078 <= limit -3.0",
-      "since": "2026-02-10T14:11:33.470083+00:00"
+      "since": "2026-02-10T14:16:33.530567+00:00"
     },
     "MarketCorrectionAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.230 <= limit -3.0",
-      "since": "2026-02-10T14:11:33.540051+00:00"
+      "since": "2026-02-10T14:16:33.588942+00:00"
     },
     "EquityMomentumAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.054 <= limit -3.0",
-      "since": "2026-02-10T14:11:33.540438+00:00"
+      "since": "2026-02-10T14:16:33.625470+00:00"
     },
     "TechnicalAnalysisAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.149 <= limit -3.0",
-      "since": "2026-02-10T14:11:33.540703+00:00"
+      "since": "2026-02-10T14:16:33.657577+00:00"
     },
     "UnusualOptionsVolumeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -4.235 <= limit -3.0",
-      "since": "2026-02-10T14:11:33.541080+00:00"
+      "since": "2026-02-10T14:16:33.679238+00:00"
     },
     "InsiderTradingSignalAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.511 <= limit -3.0",
-      "since": "2026-02-10T14:11:33.394618+00:00"
+      "since": "2026-02-10T14:16:33.690354+00:00"
     },
     "EarningsSurpriseDriftAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.906 <= limit -3.0",
-      "since": "2026-02-10T14:11:33.412488+00:00"
+      "since": "2026-02-10T14:16:33.473766+00:00"
     },
     "ArbitrageFinderAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -4.478 <= limit -3.0",
-      "since": "2026-02-10T14:11:33.433908+00:00"
+      "reason": "Auto-quarantine: drawdown -4.479 <= limit -3.0",
+      "since": "2026-02-10T14:16:33.512959+00:00"
     },
     "CryptoFundingRateAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.919 <= limit -3.0",
-      "since": "2026-02-10T14:11:33.511554+00:00"
+      "since": "2026-02-10T14:16:33.562396+00:00"
     }
   },
-  "updated_at": "2026-02-10T14:11:33.541101+00:00"
+  "updated_at": "2026-02-10T14:16:33.690419+00:00"
 }
