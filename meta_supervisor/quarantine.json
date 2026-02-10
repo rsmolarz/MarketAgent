@@ -2,44 +2,44 @@
   "agents": {
     "IntradayVolumeSpikeAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -6.260 <= limit -3.0",
-      "since": "2026-02-10T00:14:51.175641+00:00"
+      "reason": "Auto-quarantine: drawdown -6.261 <= limit -3.0",
+      "since": "2026-02-10T00:27:06.705991+00:00"
     },
     "ArbitrageFinderAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -15.462 <= limit -3.0",
-      "since": "2026-02-10T00:17:04.060991+00:00"
+      "since": "2026-02-10T00:27:06.623442+00:00"
     },
     "CodeGuardianAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -15.082 <= limit -3.0",
-      "since": "2026-02-10T00:17:04.008451+00:00"
+      "since": "2026-02-10T00:27:06.566144+00:00"
     },
     "CryptoFundingRateAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -5.976 <= limit -3.0",
-      "since": "2026-02-10T00:17:03.875654+00:00"
+      "since": "2026-02-10T00:27:06.668092+00:00"
     },
     "UnusualOptionsVolumeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -4.776 <= limit -3.0",
-      "since": "2026-02-10T00:17:04.286510+00:00"
+      "since": "2026-02-10T00:27:06.749428+00:00"
     },
     "InsiderTradingSignalAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -4.553 <= limit -3.0",
-      "since": "2026-02-10T00:17:04.339347+00:00"
+      "since": "2026-02-10T00:27:06.784397+00:00"
     },
     "WhaleWalletWatcherAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.089 <= limit -3.0",
-      "since": "2026-02-10T00:17:04.077517+00:00"
+      "since": "2026-02-10T00:27:06.651905+00:00"
     },
     "IntradayVolatilitySpikeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.088 <= limit -3.0",
-      "since": "2026-02-10T00:17:04.204858+00:00"
+      "since": "2026-02-10T00:27:06.721916+00:00"
     }
   },
-  "updated_at": "2026-02-10T00:17:04.339499+00:00"
+  "updated_at": "2026-02-10T00:27:06.784488+00:00"
 }
