@@ -2,9 +2,9 @@
   "agents": {
     "ArbitrageFinderAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -10.907 <= limit -10.0",
-      "since": "2026-02-10T14:59:06.907880+00:00"
+      "reason": "Auto-quarantine: drawdown -10.913 <= limit -10.0",
+      "since": "2026-02-10T15:04:06.851888+00:00"
     }
   },
-  "updated_at": "2026-02-10T14:59:06.907947+00:00"
+  "updated_at": "2026-02-10T15:04:06.851961+00:00"
 }

@@ -93,6 +93,9 @@ def _get_redirect_uri(provider):
     fb_override = os.getenv('FACEBOOK_REDIRECT_DOMAIN', '').strip()
     if provider == 'facebook' and fb_override:
         return 'https://' + fb_override.rstrip('/') + url_for('oauth.callback', provider=provider)
+    apple_override = os.getenv('APPLE_REDIRECT_DOMAIN', '').strip()
+    if provider == 'apple' and apple_override:
+        return 'https://' + apple_override.rstrip('/') + url_for('oauth.callback', provider=provider)
     base = request.host_url.rstrip('/')
     if base.startswith('http://') and request.headers.get('X-Forwarded-Proto') == 'https':
         base = 'https://' + base[7:]
