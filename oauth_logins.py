@@ -290,7 +290,23 @@ def login_page():
     for p in PROVIDERS:
         providers_status[p] = bool(_get_client_id(p))
 
-    return render_template('login.html', providers=providers_status)
+    apple_direct_url = None
+    if providers_status.get('apple'):
+        state = os.urandom(24).hex()
+        session[f'oauth_state_apple'] = state
+        redirect_uri = _get_redirect_uri('apple')
+        session[f'oauth_redirect_uri_apple'] = redirect_uri
+        apple_params = {
+            'client_id': _get_client_id('apple'),
+            'redirect_uri': redirect_uri,
+            'state': state,
+            'response_type': 'code',
+            'scope': PROVIDERS['apple']['scopes'],
+            'response_mode': 'form_post',
+        }
+        apple_direct_url = PROVIDERS['apple']['auth_url'] + '?' + urlencode(apple_params, quote_via=quote)
+
+    return render_template('login.html', providers=providers_status, apple_direct_url=apple_direct_url)
 
 
 @oauth_bp.route('/start/<provider>')
