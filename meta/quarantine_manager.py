@@ -7,6 +7,10 @@ from telemetry.rolling_stats import update_prom_metrics
 
 EVENTS = Path("telemetry/events.jsonl")
 
+EXEMPT_AGENTS = {
+    'CodeGuardianAgent', 'HealthCheckAgent', 'MetaSupervisorAgent',
+}
+
 
 def compute_drawdown(rewards):
     equity = 0.0
@@ -19,7 +23,7 @@ def compute_drawdown(rewards):
     return dd
 
 
-def run(window=500, last_n=5000, dd_limit=-3.0, sharpe_floor=-0.05):
+def run(window=500, last_n=5000, dd_limit=-10.0, sharpe_floor=-0.05):
     if not EVENTS.exists():
         return {"ok": True, "quarantined": [], "cleared": []}
 
@@ -43,6 +47,11 @@ def run(window=500, last_n=5000, dd_limit=-3.0, sharpe_floor=-0.05):
     q_now = set()
 
     for agent, dq in by.items():
+        if agent in EXEMPT_AGENTS:
+            if agent in q_before:
+                clear_quarantine(agent)
+            continue
+
         rs = list(dq)
         dd = compute_drawdown(rs)
 

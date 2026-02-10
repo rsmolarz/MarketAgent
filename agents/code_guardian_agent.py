@@ -84,6 +84,14 @@ class CodeGuardianAgent(BaseAgent):
             if business_logic_findings:
                 findings.extend(business_logic_findings)
 
+            action_required_findings = self._check_action_required()
+            if action_required_findings:
+                findings.extend(action_required_findings)
+
+            scheduler_findings = self._check_scheduler_health()
+            if scheduler_findings:
+                findings.extend(scheduler_findings)
+
             logger.info(f"Code Guardian: {len(findings)} issues found")
             return findings
 
@@ -497,4 +505,124 @@ class CodeGuardianAgent(BaseAgent):
             except Exception as e:
                 logger.debug(f"Could not check business logic in {rule['file']}: {str(e)}")
         
+        return findings
+
+    def _check_action_required(self) -> List[Dict[str, Any]]:
+        """Monitor action-required findings and report on their status."""
+        findings = []
+        try:
+            from models import Finding as FindingModel
+            from datetime import timedelta
+            from sqlalchemy import or_, and_, not_
+
+            now = datetime.utcnow()
+            last_24h = now - timedelta(hours=24)
+            last_7d = now - timedelta(days=7)
+
+            blocking_regimes = ['risk_off', 'crisis', 'bearish', 'recession', 'panic']
+            trading_types = ['equity', 'crypto', 'macro', 'bonds', 'volatility', 'technical',
+                             'credit', 'structured_credit', 'geopolitical', 'commodities']
+            high_severities = ['high', 'critical']
+
+            action_count = FindingModel.query.filter(
+                FindingModel.timestamp >= last_7d,
+                or_(
+                    and_(
+                        FindingModel.ta_council == 'act',
+                        FindingModel.fund_council == 'act',
+                        or_(
+                            FindingModel.ta_regime.is_(None),
+                            not_(FindingModel.ta_regime.in_(blocking_regimes))
+                        )
+                    ),
+                    and_(
+                        FindingModel.market_type.in_(trading_types),
+                        FindingModel.severity.in_(high_severities),
+                        FindingModel.confidence >= 0.7,
+                        or_(
+                            FindingModel.ta_regime.is_(None),
+                            not_(FindingModel.ta_regime.in_(blocking_regimes))
+                        )
+                    )
+                )
+            ).count()
+
+            if action_count > 0:
+                findings.append({
+                    "title": f"ACTION_REQUIRED_ITEMS: {action_count}",
+                    "description": f"{action_count} findings require attention in the last 7 days (high-severity market signals or council-approved trades)",
+                    "severity": "high" if action_count > 10 else "medium",
+                    "confidence": 0.95,
+                    "symbol": "ACTION_REQUIRED",
+                    "market_type": "system"
+                })
+
+            stale_action = FindingModel.query.filter(
+                FindingModel.timestamp >= last_7d,
+                FindingModel.timestamp < last_24h,
+                FindingModel.market_type.in_(trading_types),
+                FindingModel.severity.in_(high_severities),
+                FindingModel.confidence >= 0.7
+            ).count()
+
+            if stale_action > 20:
+                findings.append({
+                    "title": f"STALE_ACTION_ITEMS: {stale_action}",
+                    "description": f"{stale_action} high-severity findings older than 24h still unresolved",
+                    "severity": "medium",
+                    "confidence": 0.85,
+                    "symbol": "STALE_ACTIONS",
+                    "market_type": "system"
+                })
+
+        except Exception as e:
+            logger.debug(f"Could not check action required: {e}")
+
+        return findings
+
+    def _check_scheduler_health(self) -> List[Dict[str, Any]]:
+        """Check if agents are running on schedule."""
+        findings = []
+        try:
+            from models import AgentStatus as AgentStatusModel
+            from datetime import timedelta
+
+            now = datetime.utcnow()
+            stale_threshold = now - timedelta(hours=2)
+
+            stale_agents = AgentStatusModel.query.filter(
+                AgentStatusModel.is_active == True,
+                AgentStatusModel.last_run < stale_threshold
+            ).all()
+
+            if stale_agents:
+                agent_names = [a.agent_name for a in stale_agents[:10]]
+                findings.append({
+                    "title": f"STALE_AGENTS: {len(stale_agents)} agents overdue",
+                    "description": f"These agents haven't run in 2+ hours: {', '.join(agent_names)}",
+                    "severity": "high",
+                    "confidence": 0.9,
+                    "symbol": "SCHEDULER",
+                    "market_type": "system"
+                })
+
+            import json
+            from pathlib import Path
+            q_path = Path("meta_supervisor/quarantine.json")
+            if q_path.exists():
+                q_data = json.loads(q_path.read_text())
+                quarantined = {k: v for k, v in q_data.get("agents", {}).items() if v.get("active")}
+                if quarantined:
+                    findings.append({
+                        "title": f"QUARANTINED_AGENTS: {len(quarantined)}",
+                        "description": f"Quarantined agents: {', '.join(list(quarantined.keys())[:10])}",
+                        "severity": "medium",
+                        "confidence": 1.0,
+                        "symbol": "QUARANTINE",
+                        "market_type": "system"
+                    })
+
+        except Exception as e:
+            logger.debug(f"Could not check scheduler health: {e}")
+
         return findings

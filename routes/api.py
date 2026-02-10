@@ -1252,13 +1252,19 @@ def triage_summary():
 @api_login_required
 def action_required_findings():
     """
-    Get findings that require action based on LLM council consensus AND regime approval.
+    Get findings that require action. Multi-tier trigger logic:
     
-    For equities/crypto: 
-        - BOTH ta_council AND fund_council must be 'act'
-        - AND regime must NOT be unfavorable (risk_off/crisis/bearish block action)
-    For real estate/PE: 
-        - real_estate_council must be 'act' (underwriting approval only)
+    Tier 1 (Council Approved): 
+        - BOTH ta_council AND fund_council == 'act' (any market_type except internal/governance)
+        - AND regime must NOT be blocking (risk_off/crisis/bearish/recession/panic)
+    Tier 2 (Real Estate): 
+        - real_estate_council == 'act' (underwriting approval only)
+    Tier 3 (High-Severity Market Signals):
+        - severity >= 'high' AND confidence >= 0.7
+        - market_type is a trading type (equity, crypto, macro, etc.)
+        - regime not blocking
+    Tier 4 (Code Guardian Alerts):
+        - agent_name == 'CodeGuardianAgent' AND severity >= 'high'
     """
     try:
         from sqlalchemy import or_, and_, not_
@@ -1271,14 +1277,18 @@ def action_required_findings():
         
         real_estate_types = ['real_estate', 'private_equity', 'distressed', 'distressed_debt', 'private_company']
         
-        excluded_types = ['system', 'meta', 'internal', 'governance']
+        excluded_types = ['internal', 'governance']
+        
+        trading_types = ['equity', 'crypto', 'macro', 'bonds', 'volatility', 'technical',
+                         'credit', 'structured_credit', 'geopolitical', 'commodities']
+        
+        high_severities = ['high', 'critical']
         
         findings = Finding.query.filter(
             Finding.timestamp >= cutoff,
             or_(Finding.market_type.is_(None), not_(Finding.market_type.in_(excluded_types))),
             or_(
                 and_(
-                    or_(Finding.market_type.is_(None), not_(Finding.market_type.in_(real_estate_types))),
                     Finding.ta_council == 'act',
                     Finding.fund_council == 'act',
                     or_(
@@ -1289,6 +1299,19 @@ def action_required_findings():
                 and_(
                     Finding.market_type.in_(real_estate_types),
                     Finding.real_estate_council == 'act'
+                ),
+                and_(
+                    Finding.market_type.in_(trading_types),
+                    Finding.severity.in_(high_severities),
+                    Finding.confidence >= 0.7,
+                    or_(
+                        Finding.ta_regime.is_(None),
+                        not_(Finding.ta_regime.in_(blocking_regimes))
+                    )
+                ),
+                and_(
+                    Finding.agent_name == 'CodeGuardianAgent',
+                    Finding.severity.in_(high_severities)
                 )
             )
         ).order_by(Finding.timestamp.desc()).limit(limit).all()

@@ -334,6 +334,124 @@
         </div>
     </div>
 
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-success">
+                <div class="card-header bg-success text-white d-flex align-items-center">
+                    <h5 class="mb-0">
+                        <i data-feather="eye" class="me-2"></i>
+                        Code Guardian Monitor
+                    </h5>
+                    <span class="badge bg-light text-success ms-auto">
+                        {% if cg_stats.is_active %}Active{% else %}Inactive{% endif %}
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-3">
+                            <div class="card bg-light border-0">
+                                <div class="card-body text-center py-3">
+                                    <div class="text-muted small mb-1">Last Run</div>
+                                    <div class="fw-bold">{{ cg_stats.last_run }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-light border-0">
+                                <div class="card-body text-center py-3">
+                                    <div class="text-muted small mb-1">Issues Found (24h)</div>
+                                    <div class="fw-bold fs-4">{{ cg_stats.findings_24h }}</div>
+                                    <div class="text-muted small">{{ cg_stats.findings_7d }} in 7 days</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card border-0 {% if cg_stats.high_severity_24h > 0 %}bg-danger bg-opacity-10{% else %}bg-light{% endif %}">
+                                <div class="card-body text-center py-3">
+                                    <div class="text-muted small mb-1">High Severity (24h)</div>
+                                    <div class="fw-bold fs-4 {% if cg_stats.high_severity_24h > 0 %}text-danger{% endif %}">{{ cg_stats.high_severity_24h }}</div>
+                                    <div class="text-muted small">{{ cg_stats.high_severity_7d }} in 7 days</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card border-0 {% if cg_stats.action_required_count > 0 %}bg-warning bg-opacity-25{% else %}bg-light{% endif %}">
+                                <div class="card-body text-center py-3">
+                                    <div class="text-muted small mb-1">Action Required</div>
+                                    <div class="fw-bold fs-4 {% if cg_stats.action_required_count > 0 %}text-warning{% endif %}">{{ cg_stats.action_required_count }}</div>
+                                    <div class="text-muted small">across all agents</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if cg_stats.quarantined_agents > 0 %}
+                    <div class="alert alert-warning mb-3">
+                        <i data-feather="alert-triangle" class="me-2" style="width:16px;height:16px;"></i>
+                        <strong>{{ cg_stats.quarantined_agents }} agent(s) quarantined</strong> due to performance drawdown
+                        <div class="mt-2 small">
+                            {% for agent, info in cg_stats.quarantine_details.items() %}
+                            <span class="badge bg-warning text-dark me-1 mb-1">{{ agent }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-success mb-3">
+                        <i data-feather="check-circle" class="me-2" style="width:16px;height:16px;"></i>
+                        No agents quarantined. All systems operational.
+                    </div>
+                    {% endif %}
+
+                    {% if cg_stats.recent_findings %}
+                    <h6 class="mb-2">Recent Code Guardian Findings (Last 24h)</h6>
+                    <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Issue</th>
+                                    <th>Severity</th>
+                                    <th>Confidence</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for f in cg_stats.recent_findings %}
+                                <tr>
+                                    <td><small class="text-muted">{{ f.timestamp.strftime('%H:%M') if f.timestamp else '-' }}</small></td>
+                                    <td>
+                                        <small>
+                                            <strong>{{ f.title or f.symbol or 'Issue' }}</strong>
+                                            {% if f.description %}<br><span class="text-muted">{{ f.description[:120] }}{% if f.description|length > 120 %}...{% endif %}</span>{% endif %}
+                                        </small>
+                                    </td>
+                                    <td>
+                                        {% if f.severity == 'critical' %}
+                                        <span class="badge bg-danger">Critical</span>
+                                        {% elif f.severity == 'high' %}
+                                        <span class="badge bg-warning text-dark">High</span>
+                                        {% elif f.severity == 'medium' %}
+                                        <span class="badge bg-info">Medium</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ f.severity or 'Low' }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td><small>{{ '%.0f%%' % (f.confidence * 100) if f.confidence else '-' }}</small></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center text-muted py-3">
+                        <i data-feather="check" class="me-1" style="width:16px;height:16px;"></i>
+                        No Code Guardian findings in the last 24 hours.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
     {% if is_super_admin %}
     <div class="row">
         <div class="col-12 mb-4">

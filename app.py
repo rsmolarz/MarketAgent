@@ -159,18 +159,18 @@ def create_app():
         thread = threading.Thread(target=delayed_init, daemon=True)
         thread.start()
 
-    # Only start scheduler in non-production or after health checks pass
-    if os.environ.get('DEPLOYMENT_ENV') == 'production':
-        init_scheduler_deferred()
-        logger.info("Scheduler initialization deferred for production startup")
-    else:
-        try:
-            from scheduler import AgentScheduler
-            scheduler = AgentScheduler(app)
-            app.extensions["scheduler"] = scheduler
-            logger.info("AgentScheduler initialized successfully")
-        except Exception as e:
-            logger.error(f"Scheduler failed to initialize: {e}")
+    if not app.extensions.get("scheduler"):
+        if os.environ.get('DEPLOYMENT_ENV') == 'production':
+            init_scheduler_deferred()
+            logger.info("Scheduler initialization deferred for production startup")
+        else:
+            try:
+                from scheduler import AgentScheduler
+                scheduler = AgentScheduler(app)
+                app.extensions["scheduler"] = scheduler
+                logger.info("AgentScheduler initialized successfully")
+            except Exception as e:
+                logger.error(f"Scheduler failed to initialize: {e}")
 
     # ------------------------------------------------------------------------------
     # ROUTES - Register Blueprints

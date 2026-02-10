@@ -742,7 +742,7 @@ class AgentScheduler:
         """Run quarantine checks based on drawdown"""
         with self.app.app_context():
             try:
-                res = quarantine_run(window=500, last_n=5000, dd_limit=-3.0)
+                res = quarantine_run(window=500, last_n=5000, dd_limit=-10.0)
                 logger.info(f"Quarantine check: quarantined={res.get('quarantined')} cleared={res.get('cleared')}")
             except Exception as e:
                 logger.error(f"Quarantine check error: {e}")

@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import current_user
-from models import Whitelist, User, db
+from models import Whitelist, User, Finding, AgentStatus, db
+from datetime import datetime, timedelta
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -34,8 +35,89 @@ def index():
     """Admin dashboard"""
     whitelist = Whitelist.query.order_by(Whitelist.added_at.desc()).all()
     users = User.query.order_by(User.created_at.desc()).all()
+    cg_stats = _get_code_guardian_stats()
     return render_template('admin/index.html', whitelist=whitelist, users=users,
-                           is_super_admin=is_super_admin())
+                           is_super_admin=is_super_admin(), cg_stats=cg_stats)
+
+
+def _get_code_guardian_stats():
+    """Get Code Guardian agent statistics for admin dashboard."""
+    try:
+        now = datetime.utcnow()
+        last_24h = now - timedelta(hours=24)
+        last_7d = now - timedelta(days=7)
+
+        status = AgentStatus.query.filter_by(agent_name='CodeGuardianAgent').first()
+
+        total_findings_24h = Finding.query.filter(
+            Finding.agent_name == 'CodeGuardianAgent',
+            Finding.timestamp >= last_24h
+        ).count()
+
+        total_findings_7d = Finding.query.filter(
+            Finding.agent_name == 'CodeGuardianAgent',
+            Finding.timestamp >= last_7d
+        ).count()
+
+        high_sev_24h = Finding.query.filter(
+            Finding.agent_name == 'CodeGuardianAgent',
+            Finding.timestamp >= last_24h,
+            Finding.severity.in_(['high', 'critical'])
+        ).count()
+
+        high_sev_7d = Finding.query.filter(
+            Finding.agent_name == 'CodeGuardianAgent',
+            Finding.timestamp >= last_7d,
+            Finding.severity.in_(['high', 'critical'])
+        ).count()
+
+        recent_findings = Finding.query.filter(
+            Finding.agent_name == 'CodeGuardianAgent',
+            Finding.timestamp >= last_24h
+        ).order_by(Finding.timestamp.desc()).limit(10).all()
+
+        action_required_count = Finding.query.filter(
+            Finding.timestamp >= last_7d,
+            Finding.severity.in_(['high', 'critical']),
+            Finding.confidence >= 0.7,
+            Finding.market_type.in_(['equity', 'crypto', 'macro', 'bonds', 'volatility',
+                                      'technical', 'credit', 'structured_credit',
+                                      'geopolitical', 'commodities'])
+        ).count()
+
+        quarantine_info = {}
+        try:
+            import json
+            from pathlib import Path
+            q_path = Path("meta_supervisor/quarantine.json")
+            if q_path.exists():
+                q_data = json.loads(q_path.read_text())
+                quarantine_info = {k: v for k, v in q_data.get("agents", {}).items() if v.get("active")}
+        except Exception:
+            pass
+
+        return {
+            'last_run': status.last_run.strftime('%Y-%m-%d %H:%M UTC') if status and status.last_run else 'Never',
+            'is_active': status.is_active if status else False,
+            'run_count_24h': status.run_count if status else 0,
+            'findings_24h': total_findings_24h,
+            'findings_7d': total_findings_7d,
+            'high_severity_24h': high_sev_24h,
+            'high_severity_7d': high_sev_7d,
+            'recent_findings': recent_findings,
+            'action_required_count': action_required_count,
+            'quarantined_agents': len(quarantine_info),
+            'quarantine_details': quarantine_info,
+        }
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Error getting Code Guardian stats: {e}")
+        return {
+            'last_run': 'Error', 'is_active': False, 'run_count_24h': 0,
+            'findings_24h': 0, 'findings_7d': 0, 'high_severity_24h': 0,
+            'high_severity_7d': 0, 'recent_findings': [], 'action_required_count': 0,
+            'quarantined_agents': 0, 'quarantine_details': {},
+        }
 
 
 @admin_bp.route('/whitelist/add', methods=['POST'])
