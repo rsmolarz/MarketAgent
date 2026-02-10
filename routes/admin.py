@@ -6,10 +6,17 @@ admin_bp = Blueprint('admin', __name__)
 
 
 def is_admin():
-    """Check if current user is an admin"""
+    """Check if current user has admin-level access (admin or super_admin)"""
     if not current_user.is_authenticated:
         return False
-    return current_user.is_admin
+    return current_user.role in ('super_admin', 'admin')
+
+
+def is_super_admin():
+    """Check if current user is a super admin"""
+    if not current_user.is_authenticated:
+        return False
+    return current_user.role == 'super_admin'
 
 
 @admin_bp.before_request
@@ -27,7 +34,8 @@ def index():
     """Admin dashboard"""
     whitelist = Whitelist.query.order_by(Whitelist.added_at.desc()).all()
     users = User.query.order_by(User.created_at.desc()).all()
-    return render_template('admin/index.html', whitelist=whitelist, users=users)
+    return render_template('admin/index.html', whitelist=whitelist, users=users,
+                           is_super_admin=is_super_admin())
 
 
 @admin_bp.route('/whitelist/add', methods=['POST'])
@@ -35,25 +43,40 @@ def add_to_whitelist():
     """Add email to whitelist"""
     email = request.form.get('email', '').strip().lower()
     notes = request.form.get('notes', '').strip()
-    
+    role = request.form.get('role', 'user').strip()
+
     if not email:
         flash('Email is required.', 'danger')
         return redirect(url_for('admin.index'))
-    
+
+    if role in ('super_admin', 'admin') and not is_super_admin():
+        flash('Only super admins can assign admin roles.', 'danger')
+        return redirect(url_for('admin.index'))
+
+    if role not in ('super_admin', 'admin', 'user'):
+        role = 'user'
+
     existing = Whitelist.query.filter_by(email=email).first()
     if existing:
         flash(f'{email} is already on the whitelist.', 'warning')
         return redirect(url_for('admin.index'))
-    
+
     entry = Whitelist(
         email=email,
         added_by=current_user.email,
-        notes=notes
+        notes=notes,
+        role=role
     )
     db.session.add(entry)
     db.session.commit()
-    
-    flash(f'{email} has been added to the whitelist.', 'success')
+
+    user = User.query.filter_by(email=email).first()
+    if user:
+        user.role = role
+        user.is_admin = role in ('super_admin', 'admin')
+        db.session.commit()
+
+    flash(f'{email} has been added to the whitelist as {role}.', 'success')
     return redirect(url_for('admin.index'))
 
 
@@ -62,25 +85,80 @@ def remove_from_whitelist(entry_id):
     """Remove email from whitelist"""
     entry = Whitelist.query.get_or_404(entry_id)
     email = entry.email
+
+    if entry.role in ('super_admin', 'admin') and not is_super_admin():
+        flash('Only super admins can remove admin accounts.', 'danger')
+        return redirect(url_for('admin.index'))
+
     db.session.delete(entry)
+
+    user = User.query.filter_by(email=email).first()
+    if user:
+        user.role = 'user'
+        user.is_admin = False
+
     db.session.commit()
-    
+
     flash(f'{email} has been removed from the whitelist.', 'success')
+    return redirect(url_for('admin.index'))
+
+
+@admin_bp.route('/whitelist/update-role/<int:entry_id>', methods=['POST'])
+def update_whitelist_role(entry_id):
+    """Update role for a whitelist entry - super_admin only"""
+    if not is_super_admin():
+        flash('Only super admins can change user roles.', 'danger')
+        return redirect(url_for('admin.index'))
+
+    entry = Whitelist.query.get_or_404(entry_id)
+    new_role = request.form.get('role', 'user').strip()
+
+    if new_role not in ('super_admin', 'admin', 'user'):
+        new_role = 'user'
+
+    entry.role = new_role
+    db.session.commit()
+
+    user = User.query.filter_by(email=entry.email).first()
+    if user:
+        user.role = new_role
+        user.is_admin = new_role in ('super_admin', 'admin')
+        db.session.commit()
+
+    flash(f'{entry.email} role updated to {new_role}.', 'success')
     return redirect(url_for('admin.index'))
 
 
 @admin_bp.route('/users/toggle-admin/<user_id>', methods=['POST'])
 def toggle_admin(user_id):
-    """Toggle admin status for a user"""
+    """Toggle admin status for a user - super_admin only"""
+    if not is_super_admin():
+        flash('Only super admins can change admin status.', 'danger')
+        return redirect(url_for('admin.index'))
+
     user = User.query.get_or_404(user_id)
-    
+
     if user.id == current_user.id:
         flash('You cannot change your own admin status.', 'danger')
         return redirect(url_for('admin.index'))
-    
-    user.is_admin = not user.is_admin
+
+    if user.role == 'super_admin':
+        flash('Cannot demote another super admin from this interface.', 'danger')
+        return redirect(url_for('admin.index'))
+
+    if user.role in ('admin',):
+        user.role = 'user'
+        user.is_admin = False
+    else:
+        user.role = 'admin'
+        user.is_admin = True
+
+    wl = Whitelist.query.filter_by(email=user.email).first()
+    if wl:
+        wl.role = user.role
+
     db.session.commit()
-    
+
     status = 'granted admin access' if user.is_admin else 'removed from admin'
     flash(f'{user.email} has been {status}.', 'success')
     return redirect(url_for('admin.index'))
@@ -92,21 +170,21 @@ def send_test_email():
     try:
         from services.daily_email_service import DailyEmailService
         service = DailyEmailService()
-        
+
         if not service.notifier.is_configured():
             flash('SendGrid is not configured. Please add SENDGRID_API_KEY.', 'danger')
             return redirect(url_for('admin.index'))
-        
+
         success = service.send_test_email(current_user.email)
-        
+
         if success:
             flash(f'Test email sent to {current_user.email}', 'success')
         else:
             flash('Failed to send test email. Check logs for details.', 'danger')
-            
+
     except Exception as e:
         flash(f'Error sending test email: {str(e)}', 'danger')
-    
+
     return redirect(url_for('admin.index'))
 
 
@@ -116,22 +194,22 @@ def send_daily_summary():
     try:
         from services.daily_email_service import DailyEmailService
         service = DailyEmailService()
-        
+
         if not service.notifier.is_configured():
             flash('SendGrid is not configured. Please add SENDGRID_API_KEY.', 'danger')
             return redirect(url_for('admin.index'))
-        
+
         success = service.send_daily_summary()
-        
+
         if success:
             emails = service.get_recipient_emails()
             flash(f'Daily summary sent to {len(emails)} recipients', 'success')
         else:
             flash('Failed to send daily summary. Check logs for details.', 'danger')
-            
+
     except Exception as e:
         flash(f'Error sending daily summary: {str(e)}', 'danger')
-    
+
     return redirect(url_for('admin.index'))
 
 
@@ -151,10 +229,9 @@ def agents_oversight():
     from models import AgentStatus
     import json
     from pathlib import Path
-    
+
     agents = AgentStatus.query.order_by(AgentStatus.agent_name).all()
-    
-    # Load telemetry data if available
+
     telemetry = {}
     tel_path = Path("telemetry/agent_runs.json")
     if tel_path.exists():
@@ -164,8 +241,7 @@ def agents_oversight():
             import logging
             logging.debug(f"Failed to load telemetry: {e}")
             pass
-    
-    # Load quarantine data
+
     quarantine = {}
     q_path = Path("meta/quarantine_state.json")
     if q_path.exists():
@@ -175,8 +251,8 @@ def agents_oversight():
             import logging
             logging.debug(f"Failed to load quarantine state: {e}")
             pass
-    
-    return render_template('admin/agents_oversight.html', 
+
+    return render_template('admin/agents_oversight.html',
                           agents=agents, telemetry=telemetry, quarantine=quarantine)
 
 
@@ -184,12 +260,12 @@ def agents_oversight():
 def approvals():
     """Approvals - View pending and historical approval events"""
     from models import ApprovalEvent
-    
+
     pending = ApprovalEvent.query.filter_by(status='pending').order_by(ApprovalEvent.created_at.desc()).all()
     approved = ApprovalEvent.query.filter_by(status='approved').order_by(ApprovalEvent.created_at.desc()).limit(20).all()
     rejected = ApprovalEvent.query.filter_by(status='rejected').order_by(ApprovalEvent.created_at.desc()).limit(20).all()
-    
-    return render_template('admin/approvals.html', 
+
+    return render_template('admin/approvals.html',
                           pending=pending, approved=approved, rejected=rejected)
 
 

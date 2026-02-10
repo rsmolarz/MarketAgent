@@ -38,10 +38,40 @@ def is_user_whitelisted(email):
 
 
 def is_user_admin(user):
-    """Check if user is an admin"""
+    """Check if user has admin-level access (admin or super_admin)"""
     if not user or not user.is_authenticated:
         return False
-    return user.is_admin
+    return user.role in ('super_admin', 'admin')
+
+
+def is_user_super_admin(user):
+    """Check if user is a super admin"""
+    if not user or not user.is_authenticated:
+        return False
+    return user.role == 'super_admin'
+
+
+def get_whitelist_role(email):
+    """Get the pre-assigned role for a whitelisted email"""
+    from models import Whitelist
+    if not email:
+        return 'user'
+    entry = Whitelist.query.filter_by(email=email.lower()).first()
+    if entry:
+        return entry.role or 'user'
+    return 'user'
+
+
+def sync_user_role(user):
+    """Sync user role from whitelist on login"""
+    from models import db
+    if not user or not user.email:
+        return
+    role = get_whitelist_role(user.email)
+    if role != user.role:
+        user.role = role
+        user.is_admin = role in ('super_admin', 'admin')
+        db.session.commit()
 
 
 class UserSessionStorage(BaseStorage):

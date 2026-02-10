@@ -1,6 +1,6 @@
 {% extends "admin_layout.html" %}
 
-{% block title %}Admin - Whitelist Management{% endblock %}
+{% block title %}Admin - Access Management{% endblock %}
 
 {% block content %}
 <div class="container-fluid py-4">
@@ -10,10 +10,17 @@
                 <i data-feather="shield" class="me-2"></i>
                 Access Management
             </h2>
-            <p class="text-muted">Manage who can access the platform</p>
+            <p class="text-muted">
+                Manage who can access the platform
+                {% if is_super_admin %}
+                <span class="badge bg-danger ms-2">Super Admin</span>
+                {% else %}
+                <span class="badge bg-warning ms-2">Admin</span>
+                {% endif %}
+            </p>
         </div>
     </div>
-    
+
     <div class="row">
         <div class="col-lg-6 mb-4">
             <div class="card shadow-sm h-100">
@@ -26,26 +33,41 @@
                 <div class="card-body">
                     <form action="{{ url_for('admin.add_to_whitelist') }}" method="POST" class="mb-4">
                         <div class="row g-2">
-                            <div class="col-md-5">
+                            <div class="col-md-4">
                                 <input type="email" class="form-control" name="email" placeholder="Email address" required>
                             </div>
-                            <div class="col-md-4">
+                            <div class="col-md-3">
                                 <input type="text" class="form-control" name="notes" placeholder="Notes (optional)">
                             </div>
                             <div class="col-md-3">
+                                {% if is_super_admin %}
+                                <select name="role" class="form-select">
+                                    <option value="user">User</option>
+                                    <option value="admin">Admin</option>
+                                    <option value="super_admin">Super Admin</option>
+                                </select>
+                                {% else %}
+                                <input type="hidden" name="role" value="user">
+                                <select class="form-select" disabled>
+                                    <option>User</option>
+                                </select>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-2">
                                 <button type="submit" class="btn btn-primary w-100">
                                     <i data-feather="plus" class="me-1"></i> Add
                                 </button>
                             </div>
                         </div>
                     </form>
-                    
+
                     {% if whitelist %}
                     <div class="table-responsive">
                         <table class="table table-hover">
                             <thead>
                                 <tr>
                                     <th>Email</th>
+                                    <th>Role</th>
                                     <th>Added</th>
                                     <th>Notes</th>
                                     <th></th>
@@ -55,14 +77,49 @@
                                 {% for entry in whitelist %}
                                 <tr>
                                     <td>{{ entry.email }}</td>
+                                    <td>
+                                        {% if entry.role == 'super_admin' %}
+                                        <span class="badge bg-danger">Super Admin</span>
+                                        {% elif entry.role == 'admin' %}
+                                        <span class="badge bg-warning text-dark">Admin</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">User</span>
+                                        {% endif %}
+                                    </td>
                                     <td><small class="text-muted">{{ entry.added_at.strftime('%Y-%m-%d') if entry.added_at else 'N/A' }}</small></td>
                                     <td><small class="text-muted">{{ entry.notes or '-' }}</small></td>
-                                    <td>
+                                    <td class="text-end">
+                                        {% if is_super_admin %}
+                                        <div class="btn-group btn-group-sm">
+                                            <form action="{{ url_for('admin.update_whitelist_role', entry_id=entry.id) }}" method="POST" class="d-inline">
+                                                {% if entry.role != 'user' %}
+                                                <input type="hidden" name="role" value="user">
+                                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Set as User" onclick="return confirm('Change role to User?')">
+                                                    <i data-feather="user"></i>
+                                                </button>
+                                                {% endif %}
+                                            </form>
+                                            {% if entry.role != 'admin' %}
+                                            <form action="{{ url_for('admin.update_whitelist_role', entry_id=entry.id) }}" method="POST" class="d-inline">
+                                                <input type="hidden" name="role" value="admin">
+                                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Set as Admin" onclick="return confirm('Change role to Admin?')">
+                                                    <i data-feather="shield"></i>
+                                                </button>
+                                            </form>
+                                            {% endif %}
+                                            <form action="{{ url_for('admin.remove_from_whitelist', entry_id=entry.id) }}" method="POST" class="d-inline">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove this email from the whitelist?')" title="Remove">
+                                                    <i data-feather="trash-2"></i>
+                                                </button>
+                                            </form>
+                                        </div>
+                                        {% elif entry.role == 'user' %}
                                         <form action="{{ url_for('admin.remove_from_whitelist', entry_id=entry.id) }}" method="POST" class="d-inline">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove this email from the whitelist?')">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove this email from the whitelist?')" title="Remove">
                                                 <i data-feather="trash-2"></i>
                                             </button>
                                         </form>
+                                        {% endif %}
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -78,7 +135,7 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="col-lg-6 mb-4">
             <div class="card shadow-sm h-100">
                 <div class="card-header bg-secondary text-white">
@@ -95,8 +152,8 @@
                                 <tr>
                                     <th>User</th>
                                     <th>Email</th>
-                                    <th>Admin</th>
-                                    <th></th>
+                                    <th>Role</th>
+                                    {% if is_super_admin %}<th></th>{% endif %}
                                 </tr>
                             </thead>
                             <tbody>
@@ -110,14 +167,17 @@
                                     </td>
                                     <td>{{ user.email or 'N/A' }}</td>
                                     <td>
-                                        {% if user.is_admin %}
-                                        <span class="badge bg-success">Admin</span>
+                                        {% if user.role == 'super_admin' %}
+                                        <span class="badge bg-danger">Super Admin</span>
+                                        {% elif user.role == 'admin' %}
+                                        <span class="badge bg-warning text-dark">Admin</span>
                                         {% else %}
                                         <span class="badge bg-secondary">User</span>
                                         {% endif %}
                                     </td>
+                                    {% if is_super_admin %}
                                     <td>
-                                        {% if user.id != current_user.id %}
+                                        {% if user.id != current_user.id and user.role != 'super_admin' %}
                                         <form action="{{ url_for('admin.toggle_admin', user_id=user.id) }}" method="POST" class="d-inline">
                                             <button type="submit" class="btn btn-sm btn-outline-warning" onclick="return confirm('Toggle admin status for this user?')">
                                                 <i data-feather="shield"></i>
@@ -125,6 +185,7 @@
                                         </form>
                                         {% endif %}
                                     </td>
+                                    {% endif %}
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -140,7 +201,7 @@
             </div>
         </div>
     </div>
-    
+
     <div class="row">
         <div class="col-12 mb-4">
             <div class="card shadow-sm">
@@ -177,5 +238,49 @@
             </div>
         </div>
     </div>
+
+    {% if is_super_admin %}
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card shadow-sm border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0">
+                        <i data-feather="lock" class="me-2"></i>
+                        Role Reference (Super Admin Only)
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <h6><span class="badge bg-danger me-1">Super Admin</span></h6>
+                            <ul class="small text-muted">
+                                <li>Full platform access</li>
+                                <li>Manage admin roles</li>
+                                <li>Add/remove all whitelist entries</li>
+                                <li>All admin tab features</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-4">
+                            <h6><span class="badge bg-warning text-dark me-1">Admin</span></h6>
+                            <ul class="small text-muted">
+                                <li>Full platform access</li>
+                                <li>Access to admin tabs</li>
+                                <li>Add regular user accounts</li>
+                                <li>Cannot manage admin roles</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-4">
+                            <h6><span class="badge bg-secondary me-1">User</span></h6>
+                            <ul class="small text-muted">
+                                <li>Full platform access</li>
+                                <li>No admin tab access</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

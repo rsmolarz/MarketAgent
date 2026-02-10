@@ -371,7 +371,9 @@ def callback(provider):
             flash('Your email is not on the approved access list. Contact an administrator.', 'warning')
             return redirect(url_for('oauth.login_page'))
 
+        from replit_auth import sync_user_role
         login_user(user)
+        sync_user_role(user)
         next_url = session.pop('next_url', None)
         return redirect(next_url or url_for('dashboard.index'))
 
@@ -567,7 +569,9 @@ def email_login():
 
     if user and user.password_hash:
         if check_password_hash(user.password_hash, password):
+            from replit_auth import sync_user_role
             login_user(user)
+            sync_user_role(user)
             next_url = session.pop('next_url', None)
             return redirect(next_url or url_for('dashboard.index'))
         else:
@@ -622,7 +626,9 @@ def email_register():
     db.session.add(user)
     db.session.commit()
 
+    from replit_auth import sync_user_role
     login_user(user)
+    sync_user_role(user)
     flash('Account created successfully!', 'success')
     next_url = session.pop('next_url', None)
     return redirect(next_url or url_for('dashboard.index'))

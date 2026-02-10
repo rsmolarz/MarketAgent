@@ -36,6 +36,7 @@ class User(UserMixin, db.Model):
     password_hash: Mapped[str | None] = mapped_column(String(256), nullable=True)
     auth_provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    role: Mapped[str] = mapped_column(String(20), default='user', nullable=False, server_default='user')
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
@@ -47,6 +48,14 @@ class User(UserMixin, db.Model):
         nullable=False,
     )
 
+    @property
+    def is_super_admin(self):
+        return self.role == 'super_admin'
+
+    @property
+    def has_admin_access(self):
+        return self.role in ('super_admin', 'admin')
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -55,6 +64,7 @@ class User(UserMixin, db.Model):
             "last_name": self.last_name,
             "profile_image_url": self.profile_image_url,
             "is_admin": self.is_admin,
+            "role": self.role,
             "created_at": self.created_at.isoformat(),
         }
 
@@ -76,6 +86,7 @@ class Whitelist(db.Model):
         DateTime, default=datetime.utcnow, nullable=False
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    role: Mapped[str] = mapped_column(String(20), default='user', nullable=False, server_default='user')
 
     def to_dict(self):
         return {
@@ -84,6 +95,7 @@ class Whitelist(db.Model):
             "added_by": self.added_by,
             "added_at": self.added_at.isoformat(),
             "notes": self.notes,
+            "role": self.role,
         }
 
 # =========================================================
