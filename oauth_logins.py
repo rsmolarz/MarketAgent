@@ -190,6 +190,7 @@ def oauth_diag():
             diag[provider] = {
                 'client_id_set': bool(cid),
                 'client_id_preview': (cid[:8] + '...' + cid[-4:]) if cid and len(cid) > 12 else ('set' if cid else 'missing'),
+                'redirect_uri': _get_redirect_uri(provider),
             }
             if provider == 'apple':
                 team_id = _env('APPLE_TEAM_ID')
@@ -214,7 +215,16 @@ def oauth_diag():
                         diag[provider]['jwt_payload'] = {k: v for k, v in payload.items() if k != 'exp'}
                 except Exception as e:
                     diag[provider]['jwt_error'] = str(e)
-                diag[provider]['redirect_uri'] = request.host_url.rstrip('/') + url_for('oauth.callback', provider='apple')
+            if provider == 'facebook':
+                cfg = PROVIDERS[provider]
+                fb_params = {
+                    'client_id': cid,
+                    'redirect_uri': _get_redirect_uri(provider),
+                    'state': 'test',
+                    'response_type': 'code',
+                    'scope': cfg['scopes'],
+                }
+                diag[provider]['auth_url_preview'] = cfg['auth_url'] + '?' + urlencode(fb_params, quote_via=quote)
         return jsonify(diag)
     return jsonify({'error': 'access denied'})
 
