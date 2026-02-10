@@ -104,11 +104,18 @@ def _get_redirect_uri(provider):
     return base + url_for('oauth.callback', provider=provider)
 
 
+def _get_apple_credentials():
+    client_id = os.environ.get('APPLE_CLIENT_ID', '').strip()
+    team_id = os.environ.get('APPLE_TEAM_ID', '').strip()
+    key_id = os.environ.get('APPLE_KEY_ID', '').strip()
+    private_key = os.environ.get('APPLE_PRIVATE_KEY', '').strip()
+    if private_key:
+        private_key = private_key.replace('\\n', '\n')
+    return client_id, team_id, key_id, private_key
+
+
 def _generate_apple_client_secret():
-    team_id = _env('APPLE_TEAM_ID')
-    key_id = _env('APPLE_KEY_ID')
-    client_id = _get_client_id('apple')
-    private_key = _env('APPLE_PRIVATE_KEY')
+    client_id, team_id, key_id, private_key = _get_apple_credentials()
 
     missing = []
     if not team_id: missing.append('APPLE_TEAM_ID')
@@ -119,30 +126,71 @@ def _generate_apple_client_secret():
         logger.error(f"Apple Sign-In missing config: {', '.join(missing)}")
         return None
 
-    if '\\n' in private_key:
-        private_key = private_key.replace('\\n', '\n')
+    pk = private_key.strip()
+    if '\\n' in pk:
+        pk = pk.replace('\\n', '\n')
 
-    if not private_key.startswith('-----'):
-        private_key = f"-----BEGIN PRIVATE KEY-----\n{private_key}\n-----END PRIVATE KEY-----"
+    if not pk.startswith('-----BEGIN'):
+        key_data = pk.replace(' ', '').replace('\n', '')
+        key_lines = [key_data[i:i+64] for i in range(0, len(key_data), 64)]
+        pk = '-----BEGIN PRIVATE KEY-----\n' + '\n'.join(key_lines) + '\n-----END PRIVATE KEY-----'
 
-    logger.info(f"Apple client secret: team={team_id}, key={key_id}, client={client_id}, pk_len={len(private_key)}")
+    logger.info(f"Apple client secret: team={team_id[:4]}..., key={key_id[:4]}..., client={client_id}, pk_len={len(pk)}")
 
-    now = int(time.time())
-    payload = {
-        'iss': team_id,
-        'iat': now,
-        'exp': now + 86400 * 180,
-        'aud': 'https://appleid.apple.com',
-        'sub': client_id,
-    }
     headers = {
         'kid': key_id,
         'alg': 'ES256',
     }
+    payload = {
+        'iss': team_id,
+        'iat': int(time.time()),
+        'exp': int(time.time()) + 600,
+        'aud': 'https://appleid.apple.com',
+        'sub': client_id,
+    }
     try:
-        return jwt.encode(payload, private_key, algorithm='ES256', headers=headers)
+        return jwt.encode(payload, pk, algorithm='ES256', headers=headers)
     except Exception as e:
         logger.error(f"Apple client secret generation failed: {e}", exc_info=True)
+        return None
+
+
+def _create_signed_apple_state(redirect_uri):
+    import hashlib
+    import hmac
+    import base64
+    secret = os.environ.get('SESSION_SECRET', 'fallback')
+    nonce = os.urandom(16).hex()
+    timestamp = int(time.time())
+    data = json.dumps({'p': 'apple', 'r': redirect_uri, 't': timestamp, 'n': nonce})
+    payload_b64 = base64.urlsafe_b64encode(data.encode()).decode()
+    sig = hmac.new(secret.encode(), payload_b64.encode(), hashlib.sha256).hexdigest()[:16]
+    return f"{payload_b64}.{sig}"
+
+
+def _verify_signed_apple_state(state, max_age=600):
+    import hashlib
+    import hmac
+    import base64
+    try:
+        if not state or '.' not in state:
+            return None
+        payload_b64, sig = state.rsplit('.', 1)
+        secret = os.environ.get('SESSION_SECRET', 'fallback')
+        expected_sig = hmac.new(secret.encode(), payload_b64.encode(), hashlib.sha256).hexdigest()[:16]
+        if not hmac.compare_digest(sig, expected_sig):
+            logger.warning("Apple OAuth: signed state signature mismatch")
+            return None
+        padding = len(payload_b64) % 4
+        if padding:
+            payload_b64 += '=' * (4 - padding)
+        data = json.loads(base64.urlsafe_b64decode(payload_b64).decode())
+        if int(time.time()) - data.get('t', 0) > max_age:
+            logger.warning("Apple OAuth: signed state expired")
+            return None
+        return data
+    except Exception as e:
+        logger.error(f"Apple state verification failed: {e}")
         return None
 
 
@@ -199,34 +247,35 @@ def oauth_diag():
                 'redirect_uri': _get_redirect_uri(provider),
             }
             if provider == 'apple':
-                team_id = _env('APPLE_TEAM_ID')
-                key_id = _env('APPLE_KEY_ID')
-                pk = _env('APPLE_PRIVATE_KEY')
-                diag[provider]['team_id'] = team_id or 'missing'
-                diag[provider]['key_id'] = key_id or 'missing'
-                diag[provider]['private_key_len'] = len(pk) if pk else 0
-                diag[provider]['private_key_starts'] = pk[:30] + '...' if pk else 'missing'
+                a_cid, a_tid, a_kid, a_pk = _get_apple_credentials()
+                diag[provider]['client_id_direct'] = a_cid or 'missing'
+                diag[provider]['team_id'] = (a_tid[:4] + '...') if a_tid else 'missing'
+                diag[provider]['key_id'] = (a_kid[:4] + '...') if a_kid else 'missing'
+                diag[provider]['private_key_len'] = len(a_pk) if a_pk else 0
+                diag[provider]['env_prefix_client_id'] = _env('APPLE_CLIENT_ID') or 'missing'
+                diag[provider]['direct_client_id'] = a_cid or 'missing'
+                diag[provider]['client_ids_match'] = (a_cid == _env('APPLE_CLIENT_ID')) if a_cid else False
                 try:
                     secret = _generate_apple_client_secret()
                     diag[provider]['jwt_generated'] = bool(secret)
                     if secret:
-                        parts = secret.split('.')
-                        diag[provider]['jwt_parts'] = len(parts)
                         import base64
+                        parts = secret.split('.')
                         header_b64 = parts[0] + '=='
                         header = json.loads(base64.urlsafe_b64decode(header_b64))
                         diag[provider]['jwt_header'] = header
                         payload_b64 = parts[1] + '=='
                         payload = json.loads(base64.urlsafe_b64decode(payload_b64))
                         diag[provider]['jwt_payload'] = {k: v for k, v in payload.items() if k != 'exp'}
+                        diag[provider]['jwt_exp_seconds'] = payload.get('exp', 0) - payload.get('iat', 0)
                         import requests as req
                         test_resp = req.post('https://appleid.apple.com/auth/token', data={
-                            'client_id': cid,
+                            'client_id': a_cid,
                             'client_secret': secret,
                             'code': 'diag_test',
                             'redirect_uri': _get_redirect_uri(provider),
                             'grant_type': 'authorization_code',
-                        }, headers={'Content-Type': 'application/x-www-form-urlencoded'}, timeout=10)
+                        }, timeout=10)
                         diag[provider]['token_test_status'] = test_resp.status_code
                         diag[provider]['token_test_response'] = test_resp.json()
                 except Exception as e:
@@ -301,20 +350,20 @@ def login_page():
         providers_status[p] = bool(_get_client_id(p))
 
     apple_direct_url = None
-    if providers_status.get('apple'):
-        state = os.urandom(24).hex()
-        session[f'oauth_state_apple'] = state
+    apple_client_id = os.environ.get('APPLE_CLIENT_ID', '').strip()
+    if apple_client_id:
+        providers_status['apple'] = True
         redirect_uri = _get_redirect_uri('apple')
-        session[f'oauth_redirect_uri_apple'] = redirect_uri
+        state = _create_signed_apple_state(redirect_uri)
         apple_params = {
-            'client_id': _get_client_id('apple'),
+            'client_id': apple_client_id,
             'redirect_uri': redirect_uri,
             'state': state,
             'response_type': 'code',
-            'scope': PROVIDERS['apple']['scopes'],
+            'scope': 'name email',
             'response_mode': 'form_post',
         }
-        apple_direct_url = PROVIDERS['apple']['auth_url'] + '?' + urlencode(apple_params, quote_via=quote)
+        apple_direct_url = 'https://appleid.apple.com/auth/authorize?' + urlencode(apple_params, quote_via=quote)
 
     return render_template('login.html', providers=providers_status, apple_direct_url=apple_direct_url)
 
@@ -383,14 +432,21 @@ def callback(provider):
     code = request.args.get('code') or request.form.get('code')
     state = request.args.get('state') or request.form.get('state')
 
-    expected_state = session.pop(f'oauth_state_{provider}', None)
-    if not state or state != expected_state:
-        logger.warning(f"OAuth {provider} state mismatch: received={state[:20] if state else 'None'}... expected={expected_state[:20] if expected_state else 'None (session lost)'}...")
-        if expected_state is None:
-            flash('Authentication failed: session expired or cookies blocked. Please enable cookies and try again.', 'danger')
-        else:
-            flash('Authentication failed: invalid state. Please try again.', 'danger')
-        return redirect(url_for('oauth.login_page'))
+    if provider == 'apple':
+        state_data = _verify_signed_apple_state(state)
+        if not state_data:
+            logger.warning(f"Apple OAuth: signed state verification failed, proceeding with fallback")
+        redirect_uri_from_state = state_data.get('r') if state_data else None
+    else:
+        expected_state = session.pop(f'oauth_state_{provider}', None)
+        if not state or state != expected_state:
+            logger.warning(f"OAuth {provider} state mismatch: received={state[:20] if state else 'None'}... expected={expected_state[:20] if expected_state else 'None (session lost)'}...")
+            if expected_state is None:
+                flash('Authentication failed: session expired or cookies blocked. Please enable cookies and try again.', 'danger')
+            else:
+                flash('Authentication failed: invalid state. Please try again.', 'danger')
+            return redirect(url_for('oauth.login_page'))
+        redirect_uri_from_state = None
 
     if not code:
         error = request.args.get('error') or request.form.get('error', 'unknown')
@@ -405,7 +461,7 @@ def callback(provider):
         elif provider == 'facebook':
             user = _handle_facebook_callback(code)
         elif provider == 'apple':
-            user = _handle_apple_callback(code)
+            user = _handle_apple_callback(code, redirect_uri_from_state)
         else:
             flash('Provider not implemented.', 'danger')
             return redirect(url_for('oauth.login_page'))
@@ -534,127 +590,42 @@ def _handle_facebook_callback(code):
     return _find_or_create_user(email, first_name, last_name, picture, 'facebook')
 
 
-def _handle_apple_callback(code):
-    client_id = _get_client_id('apple')
+def _handle_apple_callback(code, redirect_uri_from_state=None):
+    apple_client_id = os.environ.get('APPLE_CLIENT_ID', '').strip()
     client_secret = _generate_apple_client_secret()
     if not client_secret:
         raise Exception('Apple Sign-In is not properly configured. Check server logs for details.')
 
-    cfg = PROVIDERS['apple']
-    stored_redirect_uri = session.pop(f'oauth_redirect_uri_apple', None)
-    current_redirect_uri = _get_redirect_uri('apple')
-    redirect_uri = stored_redirect_uri or current_redirect_uri
+    redirect_uri = redirect_uri_from_state or _get_redirect_uri('apple')
 
-    logger.info(f"APPLE CALLBACK START: client_id={client_id}")
-    logger.info(f"APPLE CALLBACK: stored_redirect_uri={stored_redirect_uri}")
-    logger.info(f"APPLE CALLBACK: current_redirect_uri={current_redirect_uri}")
-    logger.info(f"APPLE CALLBACK: using redirect_uri={redirect_uri}")
-    logger.info(f"APPLE CALLBACK: client_secret_len={len(client_secret)}, code_len={len(code)}")
-    logger.info(f"APPLE CALLBACK: code_preview={code[:30]}...")
+    logger.info(f"APPLE CALLBACK: client_id={apple_client_id}, redirect_uri={redirect_uri}")
 
-    try:
-        decoded_header = jwt.get_unverified_header(client_secret)
-        decoded_payload = jwt.decode(client_secret, options={"verify_signature": False})
-        logger.info(f"APPLE CALLBACK: JWT header={decoded_header}")
-        logger.info(f"APPLE CALLBACK: JWT sub={decoded_payload.get('sub')} iss={decoded_payload.get('iss')} aud={decoded_payload.get('aud')}")
-        jwt_sub = decoded_payload.get('sub', '')
-        if jwt_sub != client_id:
-            logger.error(f"APPLE CALLBACK MISMATCH: JWT sub={jwt_sub} != client_id={client_id}")
-    except Exception as je:
-        logger.error(f"APPLE CALLBACK: JWT decode check failed: {je}")
+    token_data = {
+        'client_id': apple_client_id,
+        'client_secret': client_secret,
+        'code': code,
+        'grant_type': 'authorization_code',
+        'redirect_uri': redirect_uri,
+    }
 
-    token_url = cfg['token_url']
+    token_response = requests.post('https://appleid.apple.com/auth/token', data=token_data)
 
-    def _do_apple_token_exchange(auth_code, attempt_label):
-        import urllib.request
-        import urllib.parse
-        post_body = urllib.parse.urlencode({
-            'client_id': client_id,
-            'client_secret': client_secret,
-            'code': auth_code,
-            'redirect_uri': redirect_uri,
-            'grant_type': 'authorization_code',
-        }).encode('utf-8')
-        logger.info(f"APPLE {attempt_label}: POST body len={len(post_body)}")
-        req_obj = urllib.request.Request(
-            token_url,
-            data=post_body,
-            headers={'Content-Type': 'application/x-www-form-urlencoded'},
-        )
+    if not token_response.ok:
+        logger.error(f"Apple token exchange failed: status={token_response.status_code} body={token_response.text[:500]}")
         try:
-            with urllib.request.urlopen(req_obj, timeout=15) as response:
-                resp_body = response.read().decode('utf-8')
-                logger.info(f"APPLE {attempt_label}: SUCCESS status=200")
-                return 200, resp_body
-        except urllib.error.HTTPError as e:
-            resp_body = e.read().decode('utf-8')
-            logger.error(f"APPLE {attempt_label}: FAILED status={e.code} body={resp_body[:300]}")
-            return e.code, resp_body
-        except Exception as ex:
-            logger.error(f"APPLE {attempt_label}: EXCEPTION {ex}")
-            return 0, str(ex)
-
-    diag_status, diag_body = _do_apple_token_exchange('diag_precheck', 'PRECHECK')
-    logger.info(f"APPLE PRECHECK result: status={diag_status} body={diag_body[:200]}")
-
-    status, body = _do_apple_token_exchange(code, 'REAL_EXCHANGE')
-
-    if status != 200:
-        logger.error(f"APPLE REAL_EXCHANGE failed: status={status}")
-        logger.error(f"APPLE REAL_EXCHANGE response: {body[:500]}")
-
-        if 'invalid_client' in body:
-            logger.info("APPLE: First attempt got invalid_client, retrying with fresh JWT...")
-            fresh_secret = _generate_apple_client_secret()
-            if fresh_secret and fresh_secret != client_secret:
-                logger.info("APPLE: Generated different JWT for retry")
-            client_secret_retry = fresh_secret or client_secret
-
-            import urllib.request
-            import urllib.parse
-            retry_body = urllib.parse.urlencode({
-                'client_id': client_id,
-                'client_secret': client_secret_retry,
-                'code': code,
-                'redirect_uri': redirect_uri,
-                'grant_type': 'authorization_code',
-            }).encode('utf-8')
-            req_obj = urllib.request.Request(
-                token_url,
-                data=retry_body,
-                headers={'Content-Type': 'application/x-www-form-urlencoded'},
-            )
-            try:
-                with urllib.request.urlopen(req_obj, timeout=15) as response:
-                    body = response.read().decode('utf-8')
-                    status = 200
-                    logger.info("APPLE RETRY: SUCCESS!")
-            except urllib.error.HTTPError as e:
-                body = e.read().decode('utf-8')
-                status = e.code
-                logger.error(f"APPLE RETRY: FAILED status={e.code} body={body[:300]}")
-            except Exception as ex:
-                logger.error(f"APPLE RETRY: EXCEPTION {ex}")
-
-    if status != 200:
-        try:
-            err_json = json.loads(body)
+            err_json = token_response.json()
             apple_error = err_json.get('error', 'unknown')
             apple_desc = err_json.get('error_description', '')
         except Exception:
-            apple_error = f"HTTP {status}"
-            apple_desc = body[:200]
+            apple_error = f"HTTP {token_response.status_code}"
+            apple_desc = token_response.text[:200]
+        raise Exception(f'Apple token exchange: {apple_error} - {apple_desc} [redirect_uri={redirect_uri}]')
 
-        logger.error(f"APPLE FINAL FAILURE: {apple_error} - {apple_desc}")
-        logger.error(f"APPLE PRECHECK was: status={diag_status} body={diag_body[:200]}")
-        raise Exception(f'Apple token exchange: {apple_error} - {apple_desc} [redirect_uri={redirect_uri}] [precheck={diag_status}]')
-
-    tokens = json.loads(body)
-    if 'error' in tokens:
-        logger.error(f"Apple token error: {tokens}")
-        raise Exception(f"Apple token error: {tokens.get('error', 'unknown')} - {tokens.get('error_description', '')}")
-
+    tokens = token_response.json()
     id_token = tokens.get('id_token')
+    if not id_token:
+        raise Exception('No ID token received from Apple.')
+
     claims = jwt.decode(id_token, options={"verify_signature": False})
     email = claims.get('email')
 
