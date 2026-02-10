@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-02-10T17:57:11.945420Z",
+  "generated_at": "2026-02-10T18:07:07.856711Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 13926,
-      "avg_latency_ms": 1001.39,
+      "count": 13942,
+      "avg_latency_ms": 1000.24,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0187,
       "error_rate": 0.0
@@ -30,17 +30,17 @@
       "error_rate": 0.0
     },
     "TechnicalAnalysisAgent": {
-      "count": 2386,
-      "avg_latency_ms": 9809.4,
+      "count": 2390,
+      "avg_latency_ms": 9863.1,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0601,
+      "avg_reward": -0.0604,
       "error_rate": 0.0
     },
     "CodeGuardianAgent": {
-      "count": 1840,
-      "avg_latency_ms": 1000318.67,
+      "count": 1842,
+      "avg_latency_ms": 999471.41,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.4302,
+      "avg_reward": -0.4303,
       "error_rate": 0.0
     },
     "AltDataSignalAgent": {
@@ -149,10 +149,10 @@
       "error_rate": 0.0
     },
     "MarketCorrectionAgent": {
-      "count": 1776,
-      "avg_latency_ms": 12753.39,
+      "count": 1778,
+      "avg_latency_ms": 12788.81,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0761,
+      "avg_reward": -0.0763,
       "error_rate": 0.0
     },
     "CTAFlowsAgent": {
@@ -562,10 +562,10 @@
       "error_rate": 0.0
     },
     "UnusualOptionsVolumeAgent": {
-      "count": 1598,
-      "avg_latency_ms": 18959.53,
+      "count": 1604,
+      "avg_latency_ms": 19347.37,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0813,
+      "avg_reward": -0.0822,
       "error_rate": 0.0
     },
     "NFTMarketAgent": {
