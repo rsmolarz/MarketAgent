@@ -51,7 +51,7 @@ ADMIN_EMAILS = "rsmolarz@rsmolarz.com"
 SENDGRID_FROM_EMAIL = "rsmolarz@medmoneyshow.com"
 GOOGLE_OAUTH_CLIENT_ID = "1080725733608-23efhg2f07i7hh5hd38b03h5jfgd53eg.apps.googleusercontent.com"
 FACEBOOK_REDIRECT_DOMAIN = "marketinefficiencyagents.com"
-APPLE_REDIRECT_DOMAIN = "marketinefficiencyagents.com"
+APPLE_REDIRECT_DOMAIN = "market-agent-rsmolarz.replit.app"
 
 [userenv.production]
 DEPLOYMENT_ENV = "production"
