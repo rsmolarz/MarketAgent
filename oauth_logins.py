@@ -545,52 +545,111 @@ def _handle_apple_callback(code):
     current_redirect_uri = _get_redirect_uri('apple')
     redirect_uri = stored_redirect_uri or current_redirect_uri
 
-    logger.info(f"Apple callback: client_id={client_id}")
-    logger.info(f"Apple callback: stored_redirect_uri={stored_redirect_uri}")
-    logger.info(f"Apple callback: current_redirect_uri={current_redirect_uri}")
-    logger.info(f"Apple callback: using redirect_uri={redirect_uri}")
-    logger.info(f"Apple callback: client_secret_len={len(client_secret)}, code_len={len(code)}")
+    logger.info(f"APPLE CALLBACK START: client_id={client_id}")
+    logger.info(f"APPLE CALLBACK: stored_redirect_uri={stored_redirect_uri}")
+    logger.info(f"APPLE CALLBACK: current_redirect_uri={current_redirect_uri}")
+    logger.info(f"APPLE CALLBACK: using redirect_uri={redirect_uri}")
+    logger.info(f"APPLE CALLBACK: client_secret_len={len(client_secret)}, code_len={len(code)}")
+    logger.info(f"APPLE CALLBACK: code_preview={code[:30]}...")
 
     try:
         decoded_header = jwt.get_unverified_header(client_secret)
         decoded_payload = jwt.decode(client_secret, options={"verify_signature": False})
-        logger.info(f"Apple callback: JWT header={decoded_header}")
-        logger.info(f"Apple callback: JWT payload iss={decoded_payload.get('iss')} sub={decoded_payload.get('sub')} aud={decoded_payload.get('aud')}")
+        logger.info(f"APPLE CALLBACK: JWT header={decoded_header}")
+        logger.info(f"APPLE CALLBACK: JWT sub={decoded_payload.get('sub')} iss={decoded_payload.get('iss')} aud={decoded_payload.get('aud')}")
+        jwt_sub = decoded_payload.get('sub', '')
+        if jwt_sub != client_id:
+            logger.error(f"APPLE CALLBACK MISMATCH: JWT sub={jwt_sub} != client_id={client_id}")
     except Exception as je:
-        logger.error(f"Apple callback: JWT decode check failed: {je}")
+        logger.error(f"APPLE CALLBACK: JWT decode check failed: {je}")
 
-    post_data = {
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'code': code,
-        'redirect_uri': redirect_uri,
-        'grant_type': 'authorization_code',
-    }
-    logger.info(f"Apple callback: POST to {cfg['token_url']}")
+    token_url = cfg['token_url']
 
-    resp = requests.post(cfg['token_url'], data=post_data,
-                         headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                         timeout=15)
-
-    if resp.status_code != 200:
-        error_body = resp.text[:500]
-        logger.error(f"Apple token exchange FAILED: status={resp.status_code}")
-        logger.error(f"Apple token exchange response: {error_body}")
-        logger.error(f"Apple request data: client_id={client_id}, redirect_uri={redirect_uri}, code_prefix={code[:20]}...")
+    def _do_apple_token_exchange(auth_code, attempt_label):
+        import urllib.request
+        import urllib.parse
+        post_body = urllib.parse.urlencode({
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'code': auth_code,
+            'redirect_uri': redirect_uri,
+            'grant_type': 'authorization_code',
+        }).encode('utf-8')
+        logger.info(f"APPLE {attempt_label}: POST body len={len(post_body)}")
+        req_obj = urllib.request.Request(
+            token_url,
+            data=post_body,
+            headers={'Content-Type': 'application/x-www-form-urlencoded'},
+        )
         try:
-            err_json = resp.json()
+            with urllib.request.urlopen(req_obj, timeout=15) as response:
+                resp_body = response.read().decode('utf-8')
+                logger.info(f"APPLE {attempt_label}: SUCCESS status=200")
+                return 200, resp_body
+        except urllib.error.HTTPError as e:
+            resp_body = e.read().decode('utf-8')
+            logger.error(f"APPLE {attempt_label}: FAILED status={e.code} body={resp_body[:300]}")
+            return e.code, resp_body
+        except Exception as ex:
+            logger.error(f"APPLE {attempt_label}: EXCEPTION {ex}")
+            return 0, str(ex)
+
+    diag_status, diag_body = _do_apple_token_exchange('diag_precheck', 'PRECHECK')
+    logger.info(f"APPLE PRECHECK result: status={diag_status} body={diag_body[:200]}")
+
+    status, body = _do_apple_token_exchange(code, 'REAL_EXCHANGE')
+
+    if status != 200:
+        logger.error(f"APPLE REAL_EXCHANGE failed: status={status}")
+        logger.error(f"APPLE REAL_EXCHANGE response: {body[:500]}")
+
+        if 'invalid_client' in body:
+            logger.info("APPLE: First attempt got invalid_client, retrying with fresh JWT...")
+            fresh_secret = _generate_apple_client_secret()
+            if fresh_secret and fresh_secret != client_secret:
+                logger.info("APPLE: Generated different JWT for retry")
+            client_secret_retry = fresh_secret or client_secret
+
+            import urllib.request
+            import urllib.parse
+            retry_body = urllib.parse.urlencode({
+                'client_id': client_id,
+                'client_secret': client_secret_retry,
+                'code': code,
+                'redirect_uri': redirect_uri,
+                'grant_type': 'authorization_code',
+            }).encode('utf-8')
+            req_obj = urllib.request.Request(
+                token_url,
+                data=retry_body,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'},
+            )
+            try:
+                with urllib.request.urlopen(req_obj, timeout=15) as response:
+                    body = response.read().decode('utf-8')
+                    status = 200
+                    logger.info("APPLE RETRY: SUCCESS!")
+            except urllib.error.HTTPError as e:
+                body = e.read().decode('utf-8')
+                status = e.code
+                logger.error(f"APPLE RETRY: FAILED status={e.code} body={body[:300]}")
+            except Exception as ex:
+                logger.error(f"APPLE RETRY: EXCEPTION {ex}")
+
+    if status != 200:
+        try:
+            err_json = json.loads(body)
             apple_error = err_json.get('error', 'unknown')
             apple_desc = err_json.get('error_description', '')
         except Exception:
-            apple_error = f"HTTP {resp.status_code}"
-            apple_desc = error_body
-        if apple_error == 'invalid_client':
-            logger.error("Apple invalid_client: This usually means redirect_uri mismatch or client_secret JWT issue")
-            logger.error(f"Apple: Verify redirect_uri '{redirect_uri}' is registered in Apple Developer Portal")
-            logger.error(f"Apple: JWT sub={client_id}, kid={jwt.get_unverified_header(client_secret).get('kid')}")
-        raise Exception(f'Apple token exchange: {apple_error} - {apple_desc} [redirect_uri={redirect_uri}]')
+            apple_error = f"HTTP {status}"
+            apple_desc = body[:200]
 
-    tokens = resp.json()
+        logger.error(f"APPLE FINAL FAILURE: {apple_error} - {apple_desc}")
+        logger.error(f"APPLE PRECHECK was: status={diag_status} body={diag_body[:200]}")
+        raise Exception(f'Apple token exchange: {apple_error} - {apple_desc} [redirect_uri={redirect_uri}] [precheck={diag_status}]')
+
+    tokens = json.loads(body)
     if 'error' in tokens:
         logger.error(f"Apple token error: {tokens}")
         raise Exception(f"Apple token error: {tokens.get('error', 'unknown')} - {tokens.get('error_description', '')}")
