@@ -21,105 +21,100 @@
         </div>
     </div>
 
-    <div class="row">
-        <div class="col-lg-6 mb-4">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-primary text-white">
+    {% if is_super_admin %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-danger">
+                <div class="card-header bg-danger text-white d-flex align-items-center">
                     <h5 class="mb-0">
-                        <i data-feather="list" class="me-2"></i>
-                        Whitelist ({{ whitelist|length }} entries)
+                        <i data-feather="shield" class="me-2"></i>
+                        Admin & Super Admin Accounts
                     </h5>
+                    <span class="badge bg-light text-danger ms-auto">Super Admin Only</span>
                 </div>
                 <div class="card-body">
+                    <p class="text-muted mb-3">Add administrators who can manage the platform. Super Admins have full control; Admins can add regular users but cannot manage admin accounts.</p>
                     <form action="{{ url_for('admin.add_to_whitelist') }}" method="POST" class="mb-4">
-                        <div class="row g-2">
-                            <div class="col-md-4">
-                                <input type="email" class="form-control" name="email" placeholder="Email address" required>
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-5">
+                                <label class="form-label small text-muted">Email Address</label>
+                                <input type="email" class="form-control" name="email" placeholder="admin@example.com" required>
                             </div>
                             <div class="col-md-3">
-                                <input type="text" class="form-control" name="notes" placeholder="Notes (optional)">
-                            </div>
-                            <div class="col-md-3">
-                                {% if is_super_admin %}
+                                <label class="form-label small text-muted">Role</label>
                                 <select name="role" class="form-select">
-                                    <option value="user">User</option>
                                     <option value="admin">Admin</option>
                                     <option value="super_admin">Super Admin</option>
                                 </select>
-                                {% else %}
-                                <input type="hidden" name="role" value="user">
-                                <select class="form-select" disabled>
-                                    <option>User</option>
-                                </select>
-                                {% endif %}
                             </div>
                             <div class="col-md-2">
-                                <button type="submit" class="btn btn-primary w-100">
-                                    <i data-feather="plus" class="me-1"></i> Add
+                                <label class="form-label small text-muted">Notes</label>
+                                <input type="text" class="form-control" name="notes" placeholder="Optional">
+                            </div>
+                            <div class="col-md-2">
+                                <button type="submit" class="btn btn-danger w-100">
+                                    <i data-feather="plus" class="me-1"></i> Add Admin
                                 </button>
                             </div>
                         </div>
                     </form>
 
-                    {% if whitelist %}
+                    {% set admin_entries = whitelist | selectattr('role', 'in', ['super_admin', 'admin']) | list %}
+                    {% if admin_entries %}
                     <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
                                 <tr>
                                     <th>Email</th>
                                     <th>Role</th>
                                     <th>Added</th>
                                     <th>Notes</th>
-                                    <th></th>
+                                    <th class="text-end">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for entry in whitelist %}
+                                {% for entry in admin_entries %}
                                 <tr>
-                                    <td>{{ entry.email }}</td>
+                                    <td>
+                                        <i data-feather="user-check" class="me-1 text-danger" style="width:14px;height:14px;"></i>
+                                        {{ entry.email }}
+                                    </td>
                                     <td>
                                         {% if entry.role == 'super_admin' %}
                                         <span class="badge bg-danger">Super Admin</span>
-                                        {% elif entry.role == 'admin' %}
-                                        <span class="badge bg-warning text-dark">Admin</span>
                                         {% else %}
-                                        <span class="badge bg-secondary">User</span>
+                                        <span class="badge bg-warning text-dark">Admin</span>
                                         {% endif %}
                                     </td>
                                     <td><small class="text-muted">{{ entry.added_at.strftime('%Y-%m-%d') if entry.added_at else 'N/A' }}</small></td>
                                     <td><small class="text-muted">{{ entry.notes or '-' }}</small></td>
                                     <td class="text-end">
-                                        {% if is_super_admin %}
                                         <div class="btn-group btn-group-sm">
                                             <form action="{{ url_for('admin.update_whitelist_role', entry_id=entry.id) }}" method="POST" class="d-inline">
-                                                {% if entry.role != 'user' %}
-                                                <input type="hidden" name="role" value="user">
-                                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Set as User" onclick="return confirm('Change role to User?')">
-                                                    <i data-feather="user"></i>
+                                                {% if entry.role == 'admin' %}
+                                                <input type="hidden" name="role" value="super_admin">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Promote to Super Admin" onclick="return confirm('Promote to Super Admin?')">
+                                                    <i data-feather="arrow-up"></i>
+                                                </button>
+                                                {% elif entry.role == 'super_admin' %}
+                                                <input type="hidden" name="role" value="admin">
+                                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Demote to Admin" onclick="return confirm('Demote to Admin?')">
+                                                    <i data-feather="arrow-down"></i>
                                                 </button>
                                                 {% endif %}
                                             </form>
-                                            {% if entry.role != 'admin' %}
                                             <form action="{{ url_for('admin.update_whitelist_role', entry_id=entry.id) }}" method="POST" class="d-inline">
-                                                <input type="hidden" name="role" value="admin">
-                                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Set as Admin" onclick="return confirm('Change role to Admin?')">
-                                                    <i data-feather="shield"></i>
+                                                <input type="hidden" name="role" value="user">
+                                                <button type="submit" class="btn btn-sm btn-outline-secondary" title="Demote to Regular User" onclick="return confirm('Remove admin privileges and make this a regular user?')">
+                                                    <i data-feather="user"></i>
                                                 </button>
                                             </form>
-                                            {% endif %}
                                             <form action="{{ url_for('admin.remove_from_whitelist', entry_id=entry.id) }}" method="POST" class="d-inline">
-                                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove this email from the whitelist?')" title="Remove">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove this admin from the whitelist entirely?')" title="Remove">
                                                     <i data-feather="trash-2"></i>
                                                 </button>
                                             </form>
                                         </div>
-                                        {% elif entry.role == 'user' %}
-                                        <form action="{{ url_for('admin.remove_from_whitelist', entry_id=entry.id) }}" method="POST" class="d-inline">
-                                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove this email from the whitelist?')" title="Remove">
-                                                <i data-feather="trash-2"></i>
-                                            </button>
-                                        </form>
-                                        {% endif %}
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -127,33 +122,120 @@
                         </table>
                     </div>
                     {% else %}
-                    <div class="text-center text-muted py-4">
-                        <i data-feather="inbox" style="width: 48px; height: 48px;" class="mb-2"></i>
-                        <p>No entries in the whitelist yet.</p>
+                    <div class="text-center text-muted py-3">
+                        <p class="mb-0"><small>No admin accounts yet.</small></p>
                     </div>
                     {% endif %}
                 </div>
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="col-lg-6 mb-4">
-            <div class="card shadow-sm h-100">
-                <div class="card-header bg-secondary text-white">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card shadow-sm border-primary">
+                <div class="card-header bg-primary text-white d-flex align-items-center">
                     <h5 class="mb-0">
                         <i data-feather="users" class="me-2"></i>
+                        Regular Users
+                    </h5>
+                    {% set user_entries = whitelist | selectattr('role', 'equalto', 'user') | list %}
+                    <span class="badge bg-light text-primary ms-auto">{{ user_entries|length }} users</span>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted mb-3">Add users who can access the platform with standard permissions. They can view dashboards and data but cannot manage other users.</p>
+                    <form action="{{ url_for('admin.add_to_whitelist') }}" method="POST" class="mb-4">
+                        <input type="hidden" name="role" value="user">
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-6">
+                                <label class="form-label small text-muted">Email Address</label>
+                                <input type="email" class="form-control" name="email" placeholder="user@example.com" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label small text-muted">Notes</label>
+                                <input type="text" class="form-control" name="notes" placeholder="Optional">
+                            </div>
+                            <div class="col-md-2">
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i data-feather="plus" class="me-1"></i> Add User
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    {% if user_entries %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Email</th>
+                                    <th>Added</th>
+                                    <th>Notes</th>
+                                    <th class="text-end">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for entry in user_entries %}
+                                <tr>
+                                    <td>
+                                        <i data-feather="user" class="me-1 text-primary" style="width:14px;height:14px;"></i>
+                                        {{ entry.email }}
+                                    </td>
+                                    <td><small class="text-muted">{{ entry.added_at.strftime('%Y-%m-%d') if entry.added_at else 'N/A' }}</small></td>
+                                    <td><small class="text-muted">{{ entry.notes or '-' }}</small></td>
+                                    <td class="text-end">
+                                        <div class="btn-group btn-group-sm">
+                                            {% if is_super_admin %}
+                                            <form action="{{ url_for('admin.update_whitelist_role', entry_id=entry.id) }}" method="POST" class="d-inline">
+                                                <input type="hidden" name="role" value="admin">
+                                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Promote to Admin" onclick="return confirm('Promote this user to Admin?')">
+                                                    <i data-feather="shield"></i>
+                                                </button>
+                                            </form>
+                                            {% endif %}
+                                            <form action="{{ url_for('admin.remove_from_whitelist', entry_id=entry.id) }}" method="POST" class="d-inline">
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove this user from the whitelist?')" title="Remove">
+                                                    <i data-feather="trash-2"></i>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="text-center text-muted py-3">
+                        <p class="mb-0"><small>No regular users added yet.</small></p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-lg-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-secondary text-white d-flex align-items-center">
+                    <h5 class="mb-0">
+                        <i data-feather="activity" class="me-2"></i>
                         Registered Users ({{ users|length }})
                     </h5>
                 </div>
                 <div class="card-body">
                     {% if users %}
                     <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
                                 <tr>
                                     <th>User</th>
                                     <th>Email</th>
                                     <th>Role</th>
-                                    {% if is_super_admin %}<th></th>{% endif %}
+                                    <th>Login Method</th>
+                                    {% if is_super_admin %}<th class="text-end">Actions</th>{% endif %}
                                 </tr>
                             </thead>
                             <tbody>
@@ -175,13 +257,26 @@
                                         <span class="badge bg-secondary">User</span>
                                         {% endif %}
                                     </td>
-                                    {% if is_super_admin %}
                                     <td>
+                                        {% if user.oauth_provider %}
+                                        <span class="badge bg-info text-white">{{ user.oauth_provider|capitalize }}</span>
+                                        {% else %}
+                                        <span class="badge bg-light text-dark">Email</span>
+                                        {% endif %}
+                                    </td>
+                                    {% if is_super_admin %}
+                                    <td class="text-end">
                                         {% if user.id != current_user.id and user.role != 'super_admin' %}
                                         <form action="{{ url_for('admin.toggle_admin', user_id=user.id) }}" method="POST" class="d-inline">
-                                            <button type="submit" class="btn btn-sm btn-outline-warning" onclick="return confirm('Toggle admin status for this user?')">
+                                            {% if user.role == 'admin' %}
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary" onclick="return confirm('Remove admin access?')" title="Remove Admin">
+                                                <i data-feather="shield-off"></i>
+                                            </button>
+                                            {% else %}
+                                            <button type="submit" class="btn btn-sm btn-outline-warning" onclick="return confirm('Grant admin access?')" title="Make Admin">
                                                 <i data-feather="shield"></i>
                                             </button>
+                                            {% endif %}
                                         </form>
                                         {% endif %}
                                     </td>
