@@ -2,28 +2,28 @@
   "agents": {
     "IntradayVolumeSpikeAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -6.262 <= limit -3.0",
-      "since": "2026-02-10T02:23:16.041739+00:00"
+      "reason": "Auto-quarantine: drawdown -3.172 <= limit -3.0",
+      "since": "2026-02-10T02:39:00.900140+00:00"
     },
     "ArbitrageFinderAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -11.882 <= limit -3.0",
-      "since": "2026-02-10T02:23:15.914653+00:00"
+      "reason": "Auto-quarantine: drawdown -8.251 <= limit -3.0",
+      "since": "2026-02-10T02:39:00.924466+00:00"
     },
     "CodeGuardianAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -12.223 <= limit -3.0",
-      "since": "2026-02-10T02:23:15.902845+00:00"
+      "reason": "Auto-quarantine: drawdown -11.173 <= limit -3.0",
+      "since": "2026-02-10T02:39:00.917293+00:00"
     },
     "CryptoFundingRateAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -5.981 <= limit -3.0",
-      "since": "2026-02-10T02:23:15.968762+00:00"
+      "reason": "Auto-quarantine: drawdown -3.035 <= limit -3.0",
+      "since": "2026-02-10T02:39:00.916370+00:00"
     },
     "UnusualOptionsVolumeAgent": {
-      "active": true,
+      "active": false,
       "reason": "Auto-quarantine: drawdown -3.301 <= limit -3.0",
-      "since": "2026-02-10T02:23:15.846687+00:00"
+      "since": "2026-02-10T02:34:00.888171+00:00"
     },
     "InsiderTradingSignalAgent": {
       "active": false,
@@ -36,50 +36,50 @@
       "since": "2026-02-10T01:25:57.029720+00:00"
     },
     "IntradayVolatilitySpikeAgent": {
-      "active": true,
+      "active": false,
       "reason": "Auto-quarantine: drawdown -3.092 <= limit -3.0",
-      "since": "2026-02-10T02:23:16.016603+00:00"
+      "since": "2026-02-10T02:34:00.975579+00:00"
     },
     "SentimentDivergenceAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.123 <= limit -3.0",
-      "since": "2026-02-10T02:23:16.067365+00:00"
+      "since": "2026-02-10T02:39:00.931172+00:00"
     },
     "MarketCorrectionAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -3.993 <= limit -3.0",
-      "since": "2026-02-10T02:23:16.083564+00:00"
+      "reason": "Auto-quarantine: drawdown -3.994 <= limit -3.0",
+      "since": "2026-02-10T02:39:00.826245+00:00"
     },
     "GeopoliticalRiskAgent": {
-      "active": false,
-      "reason": "Auto-quarantine: drawdown -3.544 <= limit -3.0",
-      "since": "2026-02-10T01:45:50.317890+00:00"
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -3.304 <= limit -3.0",
+      "since": "2026-02-10T02:39:00.882655+00:00"
     },
     "TechnicalAnalysisAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -3.234 <= limit -3.0",
-      "since": "2026-02-10T02:23:16.085782+00:00"
+      "reason": "Auto-quarantine: drawdown -3.238 <= limit -3.0",
+      "since": "2026-02-10T02:39:00.843443+00:00"
     },
     "CryptoPredictionAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -3.275 <= limit -3.0",
-      "since": "2026-02-10T02:23:16.086261+00:00"
+      "reason": "Auto-quarantine: drawdown -3.281 <= limit -3.0",
+      "since": "2026-02-10T02:39:00.875666+00:00"
     },
     "EquityMomentumAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -3.690 <= limit -3.0",
-      "since": "2026-02-10T02:23:16.081607+00:00"
+      "since": "2026-02-10T02:39:00.813170+00:00"
     },
     "HeartbeatAgent": {
-      "active": true,
+      "active": false,
       "reason": "Auto-quarantine: drawdown -3.041 <= limit -3.0",
-      "since": "2026-02-10T02:23:15.935888+00:00"
+      "since": "2026-02-10T02:34:00.943062+00:00"
     },
     "EarningsSurpriseDriftAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -4.068 <= limit -3.0",
-      "since": "2026-02-10T02:23:16.113750+00:00"
+      "since": "2026-02-10T02:39:00.939687+00:00"
     }
   },
-  "updated_at": "2026-02-10T02:23:16.113809+00:00"
+  "updated_at": "2026-02-10T02:39:00.939714+00:00"
 }
