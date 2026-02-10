@@ -78,6 +78,9 @@ def create_app():
             "pool_pre_ping": True,
             "pool_recycle": 300,
         },
+        SESSION_COOKIE_SECURE=True,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE='Lax',
     )
 
     # ------------------------------------------------------------------------------

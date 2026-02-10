@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-02-10T01:50:57.743009Z",
+  "generated_at": "2026-02-10T02:03:23.445862Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 12392,
-      "avg_latency_ms": 758.36,
+      "count": 12404,
+      "avg_latency_ms": 757.64,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0136,
       "error_rate": 0.0
@@ -37,10 +37,10 @@
       "error_rate": 0.0
     },
     "CodeGuardianAgent": {
-      "count": 1718,
-      "avg_latency_ms": 960912.48,
+      "count": 1726,
+      "avg_latency_ms": 966679.38,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.4281,
+      "avg_reward": -0.428,
       "error_rate": 0.0
     },
     "AltDataSignalAgent": {

@@ -283,7 +283,11 @@ def callback(provider):
 
     expected_state = session.pop(f'oauth_state_{provider}', None)
     if not state or state != expected_state:
-        flash('Authentication failed: invalid state. Please try again.', 'danger')
+        logger.warning(f"OAuth {provider} state mismatch: received={state[:20] if state else 'None'}... expected={expected_state[:20] if expected_state else 'None (session lost)'}...")
+        if expected_state is None:
+            flash('Authentication failed: session expired or cookies blocked. Please enable cookies and try again.', 'danger')
+        else:
+            flash('Authentication failed: invalid state. Please try again.', 'danger')
         return redirect(url_for('oauth.login_page'))
 
     if not code:
@@ -622,3 +626,34 @@ def debug_redirect_uris():
     }
     uris['_info'] = 'Register these EXACT redirect URIs in each provider console'
     return jsonify(uris)
+
+
+@oauth_bp.route('/debug/session-test')
+def debug_session_test():
+    """Test if sessions work correctly on this deployment."""
+    from flask import jsonify
+    test_val = session.get('_debug_session_test')
+    if test_val:
+        session.pop('_debug_session_test', None)
+        return jsonify({
+            'status': 'OK',
+            'message': 'Session cookies are working correctly',
+            'stored_value': test_val,
+            'session_cookie_config': {
+                'secure': current_app.config.get('SESSION_COOKIE_SECURE'),
+                'samesite': current_app.config.get('SESSION_COOKIE_SAMESITE'),
+                'httponly': current_app.config.get('SESSION_COOKIE_HTTPONLY'),
+            }
+        })
+    else:
+        session['_debug_session_test'] = 'test_' + os.urandom(8).hex()
+        return jsonify({
+            'status': 'STEP1',
+            'message': 'Session value set. Refresh this page to verify it persists.',
+            'hint': 'If refreshing shows status OK, sessions work. If it shows STEP1 again, session cookies are broken.',
+            'session_cookie_config': {
+                'secure': current_app.config.get('SESSION_COOKIE_SECURE'),
+                'samesite': current_app.config.get('SESSION_COOKIE_SAMESITE'),
+                'httponly': current_app.config.get('SESSION_COOKIE_HTTPONLY'),
+            }
+        })
