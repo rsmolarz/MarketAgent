@@ -67,7 +67,8 @@ PROVIDERS = {
         'scopes': 'email public_profile',
     },
     'apple': {
-        'client_id_key': 'APPLE_CLIENT_ID',
+        'client_id_key': 'MARKETAGENT_APPLE_CLIENT_ID',
+        'client_id_fallback': 'APPLE_CLIENT_ID',
         'auth_url': 'https://appleid.apple.com/auth/authorize',
         'token_url': 'https://appleid.apple.com/auth/token',
         'scopes': 'name email',
@@ -78,7 +79,11 @@ PROVIDERS = {
 def _get_client_id(provider):
     cfg = PROVIDERS.get(provider, {})
     key = cfg.get('client_id_key', '')
-    return _env(key) or _env(key.replace('OAUTH_', ''))
+    fallback = cfg.get('client_id_fallback', '')
+    val = _env(key) or _env(key.replace('OAUTH_', ''))
+    if not val and fallback:
+        val = _env(fallback) or _env(fallback.replace('OAUTH_', ''))
+    return val
 
 
 def _get_client_secret(provider):
