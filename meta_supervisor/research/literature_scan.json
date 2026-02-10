@@ -1,88 +1,85 @@
 {
-  "generated_at": "2026-02-09T08:25:30.106634Z",
-  "items_count": 16,
+  "generated_at": "2026-02-10T08:25:38.184760Z",
+  "items_count": 8,
   "insights": {
     "high_signal_items": [
       {
+        "title": "QuantaAlpha: An Evolutionary Framework for LLM-Driven Alpha Mining",
+        "url": "https://arxiv.org/abs/2602.07085v1",
+        "why_it_matters": "QuantaAlpha introduces a novel evolutionary framework for alpha mining that enhances factor discovery through trajectory-level mutation and crossover operations. This approach shows strong robustness under market distribution shifts, making it a promising tool for generating consistent excess returns across different indices."
+      },
+      {
         "title": "Insider Purchase Signals in Microcap Equities: Gradient Boosting Detection of Abnormal Returns",
         "url": "https://arxiv.org/abs/2602.06198v1",
-        "why_it_matters": "This paper identifies a momentum pattern in insider purchases of microcap stocks, suggesting a potential trading strategy based on insider activity and price movements. The use of machine learning to predict abnormal returns provides a novel approach to exploiting inefficiencies in illiquid markets."
+        "why_it_matters": "This research provides a machine learning approach to predict abnormal returns based on insider purchase signals in microcap equities. The gradient boosting classifier achieves significant predictive accuracy, highlighting a momentum pattern that can be exploited for trading strategies."
       },
       {
-        "title": "Explainable Patterns in Cryptocurrency Microstructure",
-        "url": "https://arxiv.org/abs/2602.00776v1",
-        "why_it_matters": "The study reveals stable cross-asset patterns in cryptocurrency order books, suggesting a portable microstructure representation for short-horizon returns. This could lead to the development of universal feature libraries for crypto markets, enhancing trading strategies across different assets."
-      },
-      {
-        "title": "Generative AI for Stock Selection",
-        "url": "https://arxiv.org/abs/2602.00196v1",
-        "why_it_matters": "The use of generative AI for feature discovery in stock selection demonstrates significant improvements in Sharpe ratios, indicating that AI-generated features can enhance traditional trading models and reduce manual feature engineering."
+        "title": "Algorithmic Monitoring: Measuring Market Stress with Machine Learning",
+        "url": "https://arxiv.org/abs/2602.07066v1",
+        "why_it_matters": "The Market Stress Probability Index (MSPI) offers a new method to estimate market stress using machine learning, providing a transparent and easily updated measure of near-term equity-market stress risk. This can be crucial for risk management and strategic asset allocation."
       }
     ],
     "new_agent_ideas": [
       {
-        "agent_name": "Microcap Insider Momentum Agent",
-        "strategy_class": "Momentum",
-        "edge_hypothesis": "Insider purchases in microcap stocks following a price appreciation signal further positive returns due to slower information incorporation in illiquid markets.",
+        "agent_name": "Trajectory-Based Alpha Miner",
+        "strategy_class": "Evolutionary Alpha Mining",
+        "edge_hypothesis": "By using trajectory-level mutation and crossover operations, the agent can discover and refine alpha factors that are robust to market regime shifts.",
         "markets": [
-          "Microcap Equities"
+          "CSI 300",
+          "CSI 500",
+          "S&P 500"
         ],
-        "horizon": "Short-term",
+        "horizon": "Medium to Long-term",
         "data_required": [
-          "SEC Form 4 filings",
-          "Price data",
-          "Market capitalization"
+          "Historical price data",
+          "Factor performance data",
+          "Market regime indicators"
         ],
-        "test_plan": "Backtest using historical insider purchase data and price movements to validate momentum strategy.",
-        "confidence": 0.7
+        "test_plan": "Implement the QuantaAlpha framework on historical data from CSI 300 and S&P 500, evaluate the Information Coefficient (IC) and Annualized Rate of Return (ARR) over multiple market conditions.",
+        "confidence": 0.85
       },
       {
-        "agent_name": "Crypto Microstructure Arbitrage Agent",
-        "strategy_class": "Arbitrage",
-        "edge_hypothesis": "Stable cross-asset patterns in cryptocurrency order books can be exploited for arbitrage opportunities across different crypto assets.",
+        "agent_name": "Microcap Insider Momentum Detector",
+        "strategy_class": "Machine Learning-Based Signal Detection",
+        "edge_hypothesis": "Insider purchase signals in microcap equities can predict abnormal returns, especially when disclosed after significant price appreciation.",
         "markets": [
-          "Cryptocurrency"
+          "U.S. Microcap Stocks"
         ],
-        "horizon": "Short-term",
+        "horizon": "Short to Medium-term",
         "data_required": [
-          "Order book data",
-          "Trade data"
+          "SEC Form 4 filings",
+          "Historical price data",
+          "Insider transaction history"
         ],
-        "test_plan": "Implement a backtest using historical order book data to identify arbitrage opportunities based on identified patterns.",
+        "test_plan": "Train a gradient boosting classifier on historical insider purchase data, validate the model on out-of-sample data, and assess the precision and recall of predicted abnormal returns.",
         "confidence": 0.8
       },
       {
-        "agent_name": "AI-Enhanced Stock Selector",
-        "strategy_class": "Stock Selection",
-        "edge_hypothesis": "AI-generated features provide unique insights that are weakly correlated with traditional features, offering a new dimension for stock selection.",
+        "agent_name": "Market Stress Probability Monitor",
+        "strategy_class": "Risk Management",
+        "edge_hypothesis": "Using cross-sectional fragility signals, the agent can estimate the probability of market stress, aiding in proactive risk management.",
         "markets": [
-          "U.S. Equities"
+          "U.S. Equity Market"
         ],
-        "horizon": "Medium-term",
+        "horizon": "Short-term",
         "data_required": [
-          "Analyst data",
-          "Options data",
-          "Price-volume data"
+          "CRSP daily data",
+          "Cross-sectional fragility signals"
         ],
-        "test_plan": "Integrate AI-generated features into existing stock selection models and evaluate performance improvements.",
+        "test_plan": "Develop the MSPI using historical CRSP data, backtest its predictive accuracy during known stress periods, and compare against traditional volatility measures.",
         "confidence": 0.75
       }
     ],
     "new_data_sources": [
       {
+        "name": "CRSP Daily Data",
+        "url": "https://www.crsp.org/",
+        "use_case": "Used for constructing the Market Stress Probability Index (MSPI) to estimate market stress probabilities."
+      },
+      {
         "name": "SEC Form 4 Filings",
         "url": "https://www.sec.gov/edgar/searchedgar/companysearch.html",
-        "use_case": "To track insider trading activities for potential momentum strategies in microcap equities."
-      },
-      {
-        "name": "Binance Futures Order Book Data",
-        "url": "https://www.binance.com/en/futures",
-        "use_case": "To analyze cross-asset patterns in cryptocurrency microstructure for arbitrage opportunities."
-      },
-      {
-        "name": "Analyst and Options Data",
-        "url": "https://www.nasdaq.com/market-activity/stocks",
-        "use_case": "To generate AI-driven features for enhanced stock selection strategies."
+        "use_case": "Provides insider transaction data for predicting abnormal returns in microcap equities."
       }
     ]
   }
