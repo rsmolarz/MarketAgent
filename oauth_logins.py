@@ -611,6 +611,14 @@ def debug_redirect_uris():
         uris[p] = {
             'redirect_uri': _get_redirect_uri(p),
             'configured': bool(_get_client_id(p)),
+            'client_id_preview': (_get_client_id(p) or '')[:15] + '...',
         }
-    uris['_info'] = 'Register these redirect URIs in each provider console'
+    uris['_request_info'] = {
+        'host_url': request.host_url,
+        'host': request.host,
+        'scheme': request.scheme,
+        'x_forwarded_proto': request.headers.get('X-Forwarded-Proto', ''),
+        'x_forwarded_host': request.headers.get('X-Forwarded-Host', ''),
+    }
+    uris['_info'] = 'Register these EXACT redirect URIs in each provider console'
     return jsonify(uris)
