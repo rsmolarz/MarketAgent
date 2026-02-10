@@ -90,6 +90,9 @@ def _get_client_secret(provider):
 
 
 def _get_redirect_uri(provider):
+    fb_override = os.getenv('FACEBOOK_REDIRECT_DOMAIN', '').strip()
+    if provider == 'facebook' and fb_override:
+        return 'https://' + fb_override.rstrip('/') + url_for('oauth.callback', provider=provider)
     base = request.host_url.rstrip('/')
     if base.startswith('http://') and request.headers.get('X-Forwarded-Proto') == 'https':
         base = 'https://' + base[7:]
