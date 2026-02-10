@@ -14,6 +14,42 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _seed_whitelist(db):
+    """Ensure required admin whitelist entries exist with correct roles on every startup."""
+    from models import Whitelist, User
+
+    REQUIRED_ENTRIES = [
+        {'email': 'rsmolarz@rsmolarz.com', 'role': 'super_admin'},
+        {'email': 'rsmolarz@hotmail.com', 'role': 'super_admin'},
+        {'email': 'bfunston@storpartners.com', 'role': 'admin'},
+    ]
+
+    try:
+        for entry_data in REQUIRED_ENTRIES:
+            email = entry_data['email'].lower()
+            role = entry_data['role']
+            existing = Whitelist.query.filter_by(email=email).first()
+            if not existing:
+                entry = Whitelist(email=email, role=role, added_by='system')
+                entry.added_at = datetime.utcnow()
+                db.session.add(entry)
+                logger.info(f"Seeded whitelist: {email} as {role}")
+            elif existing.role != role:
+                existing.role = role
+                logger.info(f"Updated whitelist role: {email} to {role}")
+
+            user = User.query.filter_by(email=email).first()
+            if user and user.role != role:
+                user.role = role
+                user.is_admin = role in ('super_admin', 'admin')
+                logger.info(f"Synced user role: {email} to {role}")
+
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Whitelist seeding failed: {e}")
+
+
 def _apply_finding_council_migration(db):
     """Add LLM council columns to findings table if they don't exist."""
     from sqlalchemy import inspect, text
@@ -96,6 +132,7 @@ def create_app():
             logger.info("Database tables created successfully")
 
             _apply_finding_council_migration(db)
+            _seed_whitelist(db)
         except Exception as e:
             logger.error(f"Database initialization failed: {e}")
 
