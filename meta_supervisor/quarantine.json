@@ -8,7 +8,7 @@
     "CryptoFundingRateAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.232 <= limit -10.0",
-      "since": "2026-02-10T20:11:40.341751+00:00"
+      "since": "2026-02-10T20:19:00.395701+00:00"
     },
     "IntradayVolumeSpikeAgent": {
       "active": false,
@@ -18,8 +18,8 @@
     "UnusualOptionsVolumeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.644 <= limit -10.0",
-      "since": "2026-02-10T20:11:40.424310+00:00"
+      "since": "2026-02-10T20:19:00.410594+00:00"
     }
   },
-  "updated_at": "2026-02-10T20:11:40.424384+00:00"
+  "updated_at": "2026-02-10T20:19:00.415759+00:00"
 }
