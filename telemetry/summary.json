@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-02-10T19:33:01.559459Z",
+  "generated_at": "2026-02-10T19:37:54.679899Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 14062,
-      "avg_latency_ms": 997.87,
+      "count": 14074,
+      "avg_latency_ms": 1003.39,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0186,
+      "avg_reward": -0.0188,
       "error_rate": 0.0
     },
     "WhaleWalletWatcherAgent": {
@@ -30,15 +30,15 @@
       "error_rate": 0.0
     },
     "TechnicalAnalysisAgent": {
-      "count": 2404,
-      "avg_latency_ms": 10133.45,
+      "count": 2408,
+      "avg_latency_ms": 10207.66,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0609,
+      "avg_reward": -0.0612,
       "error_rate": 0.0
     },
     "CodeGuardianAgent": {
-      "count": 1842,
-      "avg_latency_ms": 999471.41,
+      "count": 1844,
+      "avg_latency_ms": 998628.51,
       "total_cost_usd": 0.0,
       "avg_reward": -0.4303,
       "error_rate": 0.0
@@ -107,8 +107,8 @@
       "error_rate": 0.0
     },
     "IntradayVolatilitySpikeAgent": {
-      "count": 4165,
-      "avg_latency_ms": 1908.74,
+      "count": 4167,
+      "avg_latency_ms": 1925.93,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0269,
       "error_rate": 0.0
@@ -149,10 +149,10 @@
       "error_rate": 0.0
     },
     "MarketCorrectionAgent": {
-      "count": 1792,
-      "avg_latency_ms": 12919.3,
+      "count": 1796,
+      "avg_latency_ms": 13004.19,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0768,
+      "avg_reward": -0.0771,
       "error_rate": 0.0
     },
     "CTAFlowsAgent": {
@@ -408,10 +408,10 @@
       "error_rate": 0.0
     },
     "InsiderTradingSignalAgent": {
-      "count": 1684,
-      "avg_latency_ms": 7602.81,
+      "count": 1688,
+      "avg_latency_ms": 7677.77,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0823,
+      "avg_reward": -0.0826,
       "error_rate": 0.0
     },
     "GeopoliticalRiskAgent": {

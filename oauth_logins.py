@@ -354,6 +354,8 @@ def login_page():
     if apple_client_id:
         providers_status['apple'] = True
         redirect_uri = _get_redirect_uri('apple')
+        logger.info(f"Apple redirect_uri being sent: {redirect_uri}")
+        logger.info(f"APPLE_REDIRECT_DOMAIN env: {os.environ.get('APPLE_REDIRECT_DOMAIN', 'NOT SET')}")
         state = _create_signed_apple_state(redirect_uri)
         apple_params = {
             'client_id': apple_client_id,
