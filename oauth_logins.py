@@ -331,6 +331,20 @@ def start(provider):
         params['prompt'] = 'select_account'
 
     auth_url = cfg['auth_url'] + '?' + urlencode(params, quote_via=quote)
+
+    if provider == 'apple':
+        return f'''<!DOCTYPE html>
+<html><head>
+<meta http-equiv="refresh" content="0;url={auth_url}">
+<title>Redirecting to Apple Sign-In...</title>
+</head><body style="background:#111;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui">
+<div style="text-align:center">
+<p>Redirecting to Apple Sign-In...</p>
+<p style="margin-top:1rem"><a href="{auth_url}" style="color:#0a84ff">Click here if not redirected</a></p>
+</div>
+<script>window.location.href="{auth_url}";</script>
+</body></html>'''
+
     return redirect(auth_url)
 
 
