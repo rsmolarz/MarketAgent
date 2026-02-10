@@ -225,8 +225,54 @@ def oauth_diag():
                     'scope': cfg['scopes'],
                 }
                 diag[provider]['auth_url_preview'] = cfg['auth_url'] + '?' + urlencode(fb_params, quote_via=quote)
+        diag['request_info'] = {
+            'host': request.host,
+            'host_url': request.host_url,
+            'x_forwarded_proto': request.headers.get('X-Forwarded-Proto', 'none'),
+            'x_forwarded_host': request.headers.get('X-Forwarded-Host', 'none'),
+        }
         return jsonify(diag)
     return jsonify({'error': 'access denied'})
+
+
+@oauth_bp.route('/fb-debug')
+def fb_debug():
+    cid = _get_client_id('facebook')
+    redirect_uri = _get_redirect_uri('facebook')
+    cfg = PROVIDERS['facebook']
+    params = {
+        'client_id': cid,
+        'redirect_uri': redirect_uri,
+        'state': 'debug_test',
+        'response_type': 'code',
+        'scope': cfg['scopes'],
+    }
+    auth_url = cfg['auth_url'] + '?' + urlencode(params, quote_via=quote)
+    html = f"""<!DOCTYPE html>
+<html><head><title>Facebook OAuth Debug</title>
+<style>body{{font-family:monospace;padding:20px;background:#1a1a2e;color:#e0e0e0}}
+.box{{background:#16213e;padding:15px;border-radius:8px;margin:10px 0;word-break:break-all}}
+.label{{color:#00d4ff;font-weight:bold}}
+a{{color:#4fc3f7}}
+.btn{{display:inline-block;background:#1877f2;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;margin-top:15px;font-size:16px}}</style>
+</head><body>
+<h2>Facebook OAuth Debug</h2>
+<div class="box"><span class="label">App ID:</span> {cid}</div>
+<div class="box"><span class="label">Redirect URI:</span> {redirect_uri}</div>
+<div class="box"><span class="label">Auth URL (v22.0):</span> {cfg['auth_url']}</div>
+<div class="box"><span class="label">Scopes:</span> {cfg['scopes']}</div>
+<div class="box"><span class="label">Your current domain:</span> {request.host}</div>
+<h3>Required Facebook Console Settings:</h3>
+<div class="box">
+<p><span class="label">Settings > Basic > App Domains:</span> {request.host.split(':')[0]}</p>
+<p><span class="label">Settings > Basic > Site URL:</span> https://{request.host.split(':')[0]}/</p>
+<p><span class="label">Facebook Login > Settings > Valid OAuth Redirect URIs:</span> {redirect_uri}</p>
+</div>
+<h3>Full Authorization URL:</h3>
+<div class="box" style="font-size:12px">{auth_url}</div>
+<a class="btn" href="{auth_url}">Test Facebook Login</a>
+</body></html>"""
+    return html
 
 
 @oauth_bp.route('/login')

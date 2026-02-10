@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-02-10T12:52:16.164341Z",
+  "generated_at": "2026-02-10T12:57:14.512588Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 13560,
-      "avg_latency_ms": 997.55,
+      "count": 13566,
+      "avg_latency_ms": 1000.13,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0186,
       "error_rate": 0.0
@@ -611,10 +611,10 @@
       "error_rate": 0.0
     },
     "GreatestTradeAgent": {
-      "count": 860,
-      "avg_latency_ms": 26960.95,
+      "count": 864,
+      "avg_latency_ms": 27120.58,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0986,
+      "avg_reward": -0.0993,
       "error_rate": 0.0
     },
     "DistressedMacroGateAgent": {
