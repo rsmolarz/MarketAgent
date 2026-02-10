@@ -61,9 +61,9 @@ PROVIDERS = {
     'facebook': {
         'client_id_key': 'FACEBOOK_APP_ID',
         'client_secret_key': 'FACEBOOK_APP_SECRET',
-        'auth_url': 'https://www.facebook.com/v19.0/dialog/oauth',
-        'token_url': 'https://graph.facebook.com/v19.0/oauth/access_token',
-        'userinfo_url': 'https://graph.facebook.com/v19.0/me?fields=id,name,email,picture.type(large)',
+        'auth_url': 'https://www.facebook.com/v22.0/dialog/oauth',
+        'token_url': 'https://graph.facebook.com/v22.0/oauth/access_token',
+        'userinfo_url': 'https://graph.facebook.com/v22.0/me?fields=id,name,email,picture.type(large)',
         'scopes': 'email public_profile',
     },
     'apple': {
