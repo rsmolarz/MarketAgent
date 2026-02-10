@@ -219,6 +219,16 @@ def oauth_diag():
                         payload_b64 = parts[1] + '=='
                         payload = json.loads(base64.urlsafe_b64decode(payload_b64))
                         diag[provider]['jwt_payload'] = {k: v for k, v in payload.items() if k != 'exp'}
+                        import requests as req
+                        test_resp = req.post('https://appleid.apple.com/auth/token', data={
+                            'client_id': cid,
+                            'client_secret': secret,
+                            'code': 'diag_test',
+                            'redirect_uri': _get_redirect_uri(provider),
+                            'grant_type': 'authorization_code',
+                        }, headers={'Content-Type': 'application/x-www-form-urlencoded'}, timeout=10)
+                        diag[provider]['token_test_status'] = test_resp.status_code
+                        diag[provider]['token_test_response'] = test_resp.json()
                 except Exception as e:
                     diag[provider]['jwt_error'] = str(e)
             if provider == 'facebook':
@@ -541,13 +551,26 @@ def _handle_apple_callback(code):
     logger.info(f"Apple callback: using redirect_uri={redirect_uri}")
     logger.info(f"Apple callback: client_secret_len={len(client_secret)}, code_len={len(code)}")
 
-    resp = requests.post(cfg['token_url'], data={
+    try:
+        decoded_header = jwt.get_unverified_header(client_secret)
+        decoded_payload = jwt.decode(client_secret, options={"verify_signature": False})
+        logger.info(f"Apple callback: JWT header={decoded_header}")
+        logger.info(f"Apple callback: JWT payload iss={decoded_payload.get('iss')} sub={decoded_payload.get('sub')} aud={decoded_payload.get('aud')}")
+    except Exception as je:
+        logger.error(f"Apple callback: JWT decode check failed: {je}")
+
+    post_data = {
         'client_id': client_id,
         'client_secret': client_secret,
         'code': code,
         'redirect_uri': redirect_uri,
         'grant_type': 'authorization_code',
-    }, timeout=15)
+    }
+    logger.info(f"Apple callback: POST to {cfg['token_url']}")
+
+    resp = requests.post(cfg['token_url'], data=post_data,
+                         headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                         timeout=15)
 
     if resp.status_code != 200:
         error_body = resp.text[:500]
@@ -561,6 +584,10 @@ def _handle_apple_callback(code):
         except Exception:
             apple_error = f"HTTP {resp.status_code}"
             apple_desc = error_body
+        if apple_error == 'invalid_client':
+            logger.error("Apple invalid_client: This usually means redirect_uri mismatch or client_secret JWT issue")
+            logger.error(f"Apple: Verify redirect_uri '{redirect_uri}' is registered in Apple Developer Portal")
+            logger.error(f"Apple: JWT sub={client_id}, kid={jwt.get_unverified_header(client_secret).get('kid')}")
         raise Exception(f'Apple token exchange: {apple_error} - {apple_desc} [redirect_uri={redirect_uri}]')
 
     tokens = resp.json()
