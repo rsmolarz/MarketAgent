@@ -90,7 +90,12 @@ def _get_client_secret(provider):
 
 
 def _get_redirect_uri(provider):
-    return request.host_url.rstrip('/') + url_for('oauth.callback', provider=provider)
+    base = request.host_url.rstrip('/')
+    if base.startswith('http://') and request.headers.get('X-Forwarded-Proto') == 'https':
+        base = 'https://' + base[7:]
+    if not base.startswith('http://localhost') and base.startswith('http://'):
+        base = 'https://' + base[7:]
+    return base + url_for('oauth.callback', provider=provider)
 
 
 def _generate_apple_client_secret():
