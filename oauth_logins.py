@@ -105,10 +105,10 @@ def _get_redirect_uri(provider):
 
 
 def _get_apple_credentials():
-    client_id = os.environ.get('APPLE_CLIENT_ID', '').strip()
-    team_id = os.environ.get('APPLE_TEAM_ID', '').strip()
-    key_id = os.environ.get('APPLE_KEY_ID', '').strip()
-    private_key = os.environ.get('APPLE_PRIVATE_KEY', '').strip()
+    client_id = (os.environ.get('MARKETAGENT_APPLE_CLIENT_ID', '') or os.environ.get('APPLE_CLIENT_ID', '')).strip()
+    team_id = (os.environ.get('MARKETAGENT_APPLE_TEAM_ID', '') or os.environ.get('APPLE_TEAM_ID', '')).strip()
+    key_id = (os.environ.get('MARKETAGENT_APPLE_KEY_ID', '') or os.environ.get('APPLE_KEY_ID', '')).strip()
+    private_key = (os.environ.get('MARKETAGENT_APPLE_PRIVATE_KEY', '') or os.environ.get('APPLE_PRIVATE_KEY', '')).strip()
     if private_key:
         private_key = private_key.replace('\\n', '\n')
     return client_id, team_id, key_id, private_key
@@ -350,12 +350,12 @@ def login_page():
         providers_status[p] = bool(_get_client_id(p))
 
     apple_direct_url = None
-    apple_client_id = os.environ.get('APPLE_CLIENT_ID', '').strip()
+    apple_client_id = (os.environ.get('MARKETAGENT_APPLE_CLIENT_ID', '') or os.environ.get('APPLE_CLIENT_ID', '')).strip()
     if apple_client_id:
         providers_status['apple'] = True
         redirect_uri = _get_redirect_uri('apple')
         logger.info(f"Apple redirect_uri being sent: {redirect_uri}")
-        logger.info(f"APPLE_REDIRECT_DOMAIN env: {os.environ.get('APPLE_REDIRECT_DOMAIN', 'NOT SET')}")
+        logger.info(f"Apple client_id being used: {apple_client_id}")
         state = _create_signed_apple_state(redirect_uri)
         apple_params = {
             'client_id': apple_client_id,
