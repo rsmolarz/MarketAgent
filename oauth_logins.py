@@ -606,7 +606,7 @@ def _handle_facebook_callback(code):
 
 
 def _handle_apple_callback(code, redirect_uri_from_state=None):
-    apple_client_id, apple_team_id, apple_key_id, _ = _get_apple_credentials()
+    apple_client_id, apple_team_id, apple_key_id, apple_pk = _get_apple_credentials()
     client_secret = _generate_apple_client_secret()
     if not client_secret:
         raise Exception('Apple Sign-In is not properly configured. Check server logs for details.')
@@ -614,31 +614,63 @@ def _handle_apple_callback(code, redirect_uri_from_state=None):
     redirect_uri = redirect_uri_from_state or _get_redirect_uri('apple')
 
     import base64 as b64mod
+    import hashlib
+    jwt_payload = {}
     try:
         jwt_parts = client_secret.split('.')
         jwt_header = json.loads(b64mod.urlsafe_b64decode(jwt_parts[0] + '=='))
         jwt_payload = json.loads(b64mod.urlsafe_b64decode(jwt_parts[1] + '=='))
         logger.info(f"APPLE CALLBACK JWT header: {jwt_header}")
-        logger.info(f"APPLE CALLBACK JWT payload: sub={jwt_payload.get('sub')}, iss={jwt_payload.get('iss')}, aud={jwt_payload.get('aud')}")
+        logger.info(f"APPLE CALLBACK JWT payload: sub={jwt_payload.get('sub')}, iss={jwt_payload.get('iss')}, aud={jwt_payload.get('aud')}, iat={jwt_payload.get('iat')}, exp={jwt_payload.get('exp')}")
+        logger.info(f"APPLE CALLBACK JWT length: {len(client_secret)}, parts: {len(jwt_parts[0])}/{len(jwt_parts[1])}/{len(jwt_parts[2])}")
     except Exception as je:
         logger.error(f"APPLE CALLBACK JWT decode error: {je}")
 
-    logger.info(f"APPLE CALLBACK: client_id={apple_client_id}, redirect_uri={redirect_uri}, redirect_uri_from_state={redirect_uri_from_state}, code_len={len(code) if code else 0}")
+    pk_hash = hashlib.sha256(apple_pk.encode()).hexdigest()[:16] if apple_pk else 'none'
+    logger.info(f"APPLE CALLBACK: client_id={apple_client_id}, redirect_uri={redirect_uri}, redirect_uri_from_state={redirect_uri_from_state}, code_len={len(code) if code else 0}, pk_hash={pk_hash}")
 
-    token_data = {
+    try:
+        from cryptography.hazmat.primitives.serialization import load_pem_private_key
+        pk_bytes = apple_pk.encode() if apple_pk else b''
+        if pk_bytes:
+            priv_key = load_pem_private_key(pk_bytes, password=None)
+            pub_key = priv_key.public_key()
+            verified_payload = jwt.decode(client_secret, pub_key, algorithms=['ES256'], audience='https://appleid.apple.com')
+            logger.info(f"APPLE CALLBACK: JWT self-verification PASSED, sub={verified_payload.get('sub')}")
+    except Exception as verify_err:
+        logger.error(f"APPLE CALLBACK: JWT self-verification FAILED: {verify_err}")
+
+    diag_resp = requests.post('https://appleid.apple.com/auth/token', data={
+        'client_id': apple_client_id,
+        'client_secret': client_secret,
+        'code': 'diag_test_from_callback',
+        'grant_type': 'authorization_code',
+        'redirect_uri': redirect_uri,
+    }, timeout=10)
+    logger.info(f"APPLE CALLBACK DIAG TEST: status={diag_resp.status_code} body={diag_resp.text[:300]}")
+
+    from urllib.parse import urlencode as ue
+    token_body = ue({
         'client_id': apple_client_id,
         'client_secret': client_secret,
         'code': code,
         'grant_type': 'authorization_code',
         'redirect_uri': redirect_uri,
-    }
+    })
+    logger.info(f"APPLE CALLBACK: encoded body length={len(token_body)}, client_id_in_body={'client_id=' + apple_client_id in token_body}")
 
-    token_response = requests.post('https://appleid.apple.com/auth/token', data=token_data, timeout=15)
+    token_response = requests.post(
+        'https://appleid.apple.com/auth/token',
+        data=token_body,
+        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+        timeout=15
+    )
 
     if not token_response.ok:
         logger.error(f"Apple token exchange FAILED: status={token_response.status_code} body={token_response.text[:500]}")
-        logger.error(f"Apple token request sent: client_id={apple_client_id}, team_id={apple_team_id}, key_id={apple_key_id}, redirect_uri={redirect_uri}, code_len={len(code) if code else 0}")
-        logger.error(f"Apple JWT sub={jwt_payload.get('sub') if 'jwt_payload' in dir() else 'unknown'}")
+        logger.error(f"Apple token request: client_id={apple_client_id}, team_id={apple_team_id}, key_id={apple_key_id}, redirect_uri={redirect_uri}, code_len={len(code) if code else 0}")
+        logger.error(f"Apple JWT claims: sub={jwt_payload.get('sub')}, iss={jwt_payload.get('iss')}, exp_in={jwt_payload.get('exp', 0) - jwt_payload.get('iat', 0)}s")
+        logger.error(f"Apple response headers: {dict(token_response.headers)}")
         try:
             err_json = token_response.json()
             apple_error = err_json.get('error', 'unknown')
