@@ -293,6 +293,21 @@ def oauth_diag():
                         diag[provider]['token_test_response'] = test_resp.json()
                 except Exception as e:
                     diag[provider]['jwt_error'] = str(e)
+            if provider == 'google':
+                bare_cid = os.getenv('GOOGLE_OAUTH_CLIENT_ID', '')
+                pfx_cid = os.getenv('MARKETAGENT_GOOGLE_OAUTH_CLIENT_ID', '')
+                bare_sec = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', '')
+                pfx_sec = os.getenv('MARKETAGENT_GOOGLE_OAUTH_CLIENT_SECRET', '')
+                diag[provider]['bare_client_id_preview'] = (bare_cid[:12] + '...' + bare_cid[-6:]) if bare_cid and len(bare_cid) > 18 else ('short:' + bare_cid if bare_cid else 'missing')
+                diag[provider]['prefixed_client_id_preview'] = (pfx_cid[:12] + '...' + pfx_cid[-6:]) if pfx_cid and len(pfx_cid) > 18 else ('short:' + pfx_cid if pfx_cid else 'missing')
+                diag[provider]['bare_secret_len'] = len(bare_sec) if bare_sec else 0
+                diag[provider]['prefixed_secret_len'] = len(pfx_sec) if pfx_sec else 0
+                diag[provider]['ids_match'] = bare_cid == pfx_cid if (bare_cid and pfx_cid) else 'n/a'
+                diag[provider]['secrets_match'] = bare_sec == pfx_sec if (bare_sec and pfx_sec) else 'n/a'
+                resolved_cid = _get_client_id('google')
+                resolved_sec = _get_client_secret('google')
+                diag[provider]['resolved_client_id_preview'] = (resolved_cid[:12] + '...' + resolved_cid[-6:]) if resolved_cid and len(resolved_cid) > 18 else ('short:' + resolved_cid if resolved_cid else 'missing')
+                diag[provider]['resolved_secret_len'] = len(resolved_sec) if resolved_sec else 0
             if provider == 'facebook':
                 cfg = PROVIDERS[provider]
                 fb_params = {
