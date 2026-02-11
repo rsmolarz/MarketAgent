@@ -1,9 +1,9 @@
 {
-  "generated_at": "2026-02-11T13:12:08.802853Z",
+  "generated_at": "2026-02-11T13:17:54.614944Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 16697,
-      "avg_latency_ms": 1132.68,
+      "count": 16701,
+      "avg_latency_ms": 1132.4,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0215,
       "error_rate": 0.0
@@ -93,8 +93,8 @@
       "error_rate": 0.0
     },
     "HeartbeatAgent": {
-      "count": 5628,
-      "avg_latency_ms": 3853.48,
+      "count": 5630,
+      "avg_latency_ms": 3852.98,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0263,
       "error_rate": 0.0
@@ -107,10 +107,10 @@
       "error_rate": 0.0
     },
     "IntradayVolatilitySpikeAgent": {
-      "count": 5220,
-      "avg_latency_ms": 5429.72,
+      "count": 5224,
+      "avg_latency_ms": 5428.66,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0357,
+      "avg_reward": -0.0358,
       "error_rate": 0.0
     },
     "IntradayVolumeSpikeAgent": {
