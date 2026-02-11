@@ -34,11 +34,14 @@ def _env(key, default=''):
     override = os.getenv(f'OAUTH_OVERRIDE_{key}', '')
     if override:
         return override.strip()
+    val = os.getenv(key, '')
+    if val:
+        return val.strip()
     prefixed = os.getenv(f'{APP_PREFIX}_{key}', '')
     if prefixed:
         return prefixed.strip()
-    val = os.getenv(key, default)
-    return val.strip() if val else val
+    fallback = os.getenv(key, default)
+    return fallback.strip() if fallback else fallback
 
 
 PROVIDERS = {
