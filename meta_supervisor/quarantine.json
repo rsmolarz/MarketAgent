@@ -2,18 +2,18 @@
   "agents": {
     "ArbitrageFinderAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -10.892 <= limit -10.0",
-      "since": "2026-02-11T02:07:13.726917+00:00"
+      "reason": "Auto-quarantine: drawdown -10.893 <= limit -10.0",
+      "since": "2026-02-11T02:14:54.603838+00:00"
     },
     "CryptoFundingRateAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -12.130 <= limit -10.0",
-      "since": "2026-02-11T02:07:13.817061+00:00"
+      "since": "2026-02-11T02:14:54.611128+00:00"
     },
     "IntradayVolumeSpikeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.169 <= limit -10.0",
-      "since": "2026-02-11T02:07:13.598428+00:00"
+      "since": "2026-02-11T02:14:54.583302+00:00"
     },
     "UnusualOptionsVolumeAgent": {
       "active": false,
@@ -23,7 +23,7 @@
     "CryptoPredictionAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.345 <= limit -10.0",
-      "since": "2026-02-11T02:07:13.902836+00:00"
+      "since": "2026-02-11T02:14:54.634692+00:00"
     },
     "InsiderTradingSignalAgent": {
       "active": false,
@@ -33,7 +33,7 @@
     "TechnicalAnalysisAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.771 <= limit -10.0",
-      "since": "2026-02-11T02:07:13.952145+00:00"
+      "since": "2026-02-11T02:14:54.657417+00:00"
     },
     "MarketCorrectionAgent": {
       "active": false,
@@ -53,13 +53,13 @@
     "IntradayVolatilitySpikeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.137 <= limit -10.0",
-      "since": "2026-02-11T02:07:13.626797+00:00"
+      "since": "2026-02-11T02:14:54.584237+00:00"
     },
     "SentimentDivergenceAgent": {
-      "active": true,
+      "active": false,
       "reason": "Auto-quarantine: drawdown -10.223 <= limit -10.0",
       "since": "2026-02-11T02:07:13.534491+00:00"
     }
   },
-  "updated_at": "2026-02-11T02:07:13.952217+00:00"
+  "updated_at": "2026-02-11T02:14:54.657472+00:00"
 }
