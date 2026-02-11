@@ -500,14 +500,22 @@ def callback(provider):
 def _handle_google_callback(code):
     cfg = PROVIDERS['google']
     redirect_uri = _get_redirect_uri('google')
+    client_id = _get_client_id('google')
+    client_secret = _get_client_secret('google')
+
+    logger.info(f"Google token exchange: client_id={client_id[:20]}... redirect_uri={redirect_uri}")
+    logger.info(f"Google client_secret present: {bool(client_secret)}, length={len(client_secret) if client_secret else 0}")
 
     resp = requests.post(cfg['token_url'], data={
-        'client_id': _get_client_id('google'),
-        'client_secret': _get_client_secret('google'),
+        'client_id': client_id,
+        'client_secret': client_secret,
         'code': code,
         'redirect_uri': redirect_uri,
         'grant_type': 'authorization_code',
     }, timeout=15)
+
+    if resp.status_code != 200:
+        logger.error(f"Google token exchange failed: {resp.status_code} {resp.text[:500]}")
     resp.raise_for_status()
     tokens = resp.json()
 

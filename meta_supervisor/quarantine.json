@@ -2,29 +2,29 @@
   "agents": {
     "ArbitrageFinderAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -13.292 <= limit -10.0",
-      "since": "2026-02-11T13:54:01.609278+00:00"
+      "reason": "Auto-quarantine: drawdown -13.298 <= limit -10.0",
+      "since": "2026-02-11T13:55:35.406141+00:00"
     },
     "MarketCorrectionAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.231 <= limit -10.0",
-      "since": "2026-02-11T13:54:01.576871+00:00"
+      "since": "2026-02-11T13:55:35.405772+00:00"
     },
     "CryptoFundingRateAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -11.362 <= limit -10.0",
-      "since": "2026-02-11T13:54:01.609695+00:00"
+      "since": "2026-02-11T13:55:35.406411+00:00"
     },
     "IntradayVolumeSpikeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -11.601 <= limit -10.0",
-      "since": "2026-02-11T13:54:01.609980+00:00"
+      "since": "2026-02-11T13:55:35.408018+00:00"
     },
     "UnusualOptionsVolumeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.403 <= limit -10.0",
-      "since": "2026-02-11T13:54:01.536772+00:00"
+      "since": "2026-02-11T13:55:35.405329+00:00"
     }
   },
-  "updated_at": "2026-02-11T13:54:01.610001+00:00"
+  "updated_at": "2026-02-11T13:55:35.408064+00:00"
 }
