@@ -67,8 +67,8 @@ PROVIDERS = {
         'scopes': 'email public_profile',
     },
     'apple': {
-        'client_id_key': 'MARKETAGENT_APPLE_CLIENT_ID',
-        'client_id_fallback': 'APPLE_CLIENT_ID',
+        'client_id_key': 'APPLE_CLIENT_ID',
+        'client_id_fallback': 'MARKETAGENT_APPLE_CLIENT_ID',
         'auth_url': 'https://appleid.apple.com/auth/authorize',
         'token_url': 'https://appleid.apple.com/auth/token',
         'scopes': 'name email',
@@ -110,12 +110,13 @@ def _get_redirect_uri(provider):
 
 
 def _get_apple_credentials():
-    client_id = (os.environ.get('MARKETAGENT_APPLE_CLIENT_ID', '') or os.environ.get('APPLE_CLIENT_ID', '')).strip()
-    team_id = (os.environ.get('MARKETAGENT_APPLE_TEAM_ID', '') or os.environ.get('APPLE_TEAM_ID', '')).strip()
-    key_id = (os.environ.get('MARKETAGENT_APPLE_KEY_ID', '') or os.environ.get('APPLE_KEY_ID', '')).strip()
-    private_key = (os.environ.get('MARKETAGENT_APPLE_PRIVATE_KEY', '') or os.environ.get('APPLE_PRIVATE_KEY', '')).strip()
+    client_id = (os.environ.get('APPLE_CLIENT_ID', '') or os.environ.get('MARKETAGENT_APPLE_CLIENT_ID', '')).strip()
+    team_id = (os.environ.get('APPLE_TEAM_ID', '') or os.environ.get('MARKETAGENT_APPLE_TEAM_ID', '')).strip()
+    key_id = (os.environ.get('APPLE_KEY_ID', '') or os.environ.get('MARKETAGENT_APPLE_KEY_ID', '')).strip()
+    private_key = (os.environ.get('APPLE_PRIVATE_KEY', '') or os.environ.get('MARKETAGENT_APPLE_PRIVATE_KEY', '')).strip()
     if private_key:
         private_key = private_key.replace('\\n', '\n')
+    logger.info(f"Apple credentials resolved: client_id={client_id}, team_id={team_id}, key_id={key_id}, pk_len={len(private_key)}")
     return client_id, team_id, key_id, private_key
 
 
@@ -355,7 +356,7 @@ def login_page():
         providers_status[p] = bool(_get_client_id(p))
 
     apple_direct_url = None
-    apple_client_id = (os.environ.get('MARKETAGENT_APPLE_CLIENT_ID', '') or os.environ.get('APPLE_CLIENT_ID', '')).strip()
+    apple_client_id = (os.environ.get('APPLE_CLIENT_ID', '') or os.environ.get('MARKETAGENT_APPLE_CLIENT_ID', '')).strip()
     if apple_client_id:
         providers_status['apple'] = True
         redirect_uri = _get_redirect_uri('apple')
@@ -598,14 +599,14 @@ def _handle_facebook_callback(code):
 
 
 def _handle_apple_callback(code, redirect_uri_from_state=None):
-    apple_client_id = (os.environ.get('MARKETAGENT_APPLE_CLIENT_ID', '') or os.environ.get('APPLE_CLIENT_ID', '')).strip()
+    apple_client_id, apple_team_id, apple_key_id, _ = _get_apple_credentials()
     client_secret = _generate_apple_client_secret()
     if not client_secret:
         raise Exception('Apple Sign-In is not properly configured. Check server logs for details.')
 
     redirect_uri = redirect_uri_from_state or _get_redirect_uri('apple')
 
-    logger.info(f"APPLE CALLBACK: client_id={apple_client_id}, redirect_uri={redirect_uri}")
+    logger.info(f"APPLE CALLBACK: client_id={apple_client_id}, team_id={apple_team_id}, key_id={apple_key_id}, redirect_uri={redirect_uri}")
 
     token_data = {
         'client_id': apple_client_id,
@@ -615,10 +616,11 @@ def _handle_apple_callback(code, redirect_uri_from_state=None):
         'redirect_uri': redirect_uri,
     }
 
-    token_response = requests.post('https://appleid.apple.com/auth/token', data=token_data)
+    token_response = requests.post('https://appleid.apple.com/auth/token', data=token_data, timeout=15)
 
     if not token_response.ok:
         logger.error(f"Apple token exchange failed: status={token_response.status_code} body={token_response.text[:500]}")
+        logger.error(f"Apple token request details: client_id={apple_client_id}, team_id={apple_team_id}, key_id={apple_key_id}, redirect_uri={redirect_uri}")
         try:
             err_json = token_response.json()
             apple_error = err_json.get('error', 'unknown')
