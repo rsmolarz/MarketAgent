@@ -110,7 +110,11 @@ def _get_redirect_uri(provider):
 
 
 def _get_apple_credentials():
-    client_id = (os.environ.get('APPLE_CLIENT_ID', '') or os.environ.get('MARKETAGENT_APPLE_CLIENT_ID', '')).strip()
+    cid_apple = os.environ.get('APPLE_CLIENT_ID', '').strip()
+    cid_market = os.environ.get('MARKETAGENT_APPLE_CLIENT_ID', '').strip()
+    client_id = cid_apple or cid_market
+    if cid_apple and cid_market and cid_apple != cid_market:
+        logger.warning(f"Apple client_id mismatch: APPLE_CLIENT_ID={cid_apple} vs MARKETAGENT_APPLE_CLIENT_ID={cid_market}. Using APPLE_CLIENT_ID={cid_apple}")
     team_id = (os.environ.get('APPLE_TEAM_ID', '') or os.environ.get('MARKETAGENT_APPLE_TEAM_ID', '')).strip()
     key_id = (os.environ.get('APPLE_KEY_ID', '') or os.environ.get('MARKETAGENT_APPLE_KEY_ID', '')).strip()
     private_key = (os.environ.get('APPLE_PRIVATE_KEY', '') or os.environ.get('MARKETAGENT_APPLE_PRIVATE_KEY', '')).strip()
@@ -356,7 +360,7 @@ def login_page():
         providers_status[p] = bool(_get_client_id(p))
 
     apple_direct_url = None
-    apple_client_id = (os.environ.get('APPLE_CLIENT_ID', '') or os.environ.get('MARKETAGENT_APPLE_CLIENT_ID', '')).strip()
+    apple_client_id, _, _, _ = _get_apple_credentials()
     if apple_client_id:
         providers_status['apple'] = True
         redirect_uri = _get_redirect_uri('apple')
@@ -382,7 +386,10 @@ def start(provider):
         flash('Unknown sign-in provider.', 'danger')
         return redirect(url_for('oauth.login_page'))
 
-    client_id = _get_client_id(provider)
+    if provider == 'apple':
+        client_id, _, _, _ = _get_apple_credentials()
+    else:
+        client_id = _get_client_id(provider)
     if not client_id:
         flash(f'{provider.title()} sign-in is not configured.', 'warning')
         return redirect(url_for('oauth.login_page'))
@@ -391,7 +398,7 @@ def start(provider):
     state = os.urandom(24).hex()
     session[f'oauth_state_{provider}'] = state
     redirect_uri = _get_redirect_uri(provider)
-    logger.info(f"OAuth {provider}: client_id={client_id[:15]}..., redirect_uri={redirect_uri}")
+    logger.info(f"OAuth {provider}: client_id={client_id}, redirect_uri={redirect_uri}")
 
     params = {
         'client_id': client_id,
