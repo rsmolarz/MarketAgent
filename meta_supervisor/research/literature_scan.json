@@ -1,29 +1,29 @@
 {
-  "generated_at": "2026-02-10T08:25:38.184760Z",
-  "items_count": 8,
+  "generated_at": "2026-02-11T08:25:16.506532Z",
+  "items_count": 16,
   "insights": {
     "high_signal_items": [
       {
         "title": "QuantaAlpha: An Evolutionary Framework for LLM-Driven Alpha Mining",
         "url": "https://arxiv.org/abs/2602.07085v1",
-        "why_it_matters": "QuantaAlpha introduces a novel evolutionary framework for alpha mining that enhances factor discovery through trajectory-level mutation and crossover operations. This approach shows strong robustness under market distribution shifts, making it a promising tool for generating consistent excess returns across different indices."
+        "why_it_matters": "QuantaAlpha demonstrates a robust framework for alpha mining that adapts to market regime shifts and noise, showing significant gains in Information Coefficient and Annualized Rate of Return. This indicates potential for developing adaptive trading strategies that can perform well across different market conditions."
       },
       {
         "title": "Insider Purchase Signals in Microcap Equities: Gradient Boosting Detection of Abnormal Returns",
         "url": "https://arxiv.org/abs/2602.06198v1",
-        "why_it_matters": "This research provides a machine learning approach to predict abnormal returns based on insider purchase signals in microcap equities. The gradient boosting classifier achieves significant predictive accuracy, highlighting a momentum pattern that can be exploited for trading strategies."
+        "why_it_matters": "The study highlights the predictive power of insider purchase signals in microcap stocks, using gradient boosting to achieve a high AUC. This suggests a potential strategy for exploiting insider trading patterns to predict abnormal returns."
       },
       {
         "title": "Algorithmic Monitoring: Measuring Market Stress with Machine Learning",
         "url": "https://arxiv.org/abs/2602.07066v1",
-        "why_it_matters": "The Market Stress Probability Index (MSPI) offers a new method to estimate market stress using machine learning, providing a transparent and easily updated measure of near-term equity-market stress risk. This can be crucial for risk management and strategic asset allocation."
+        "why_it_matters": "The development of a Market Stress Probability Index (MSPI) using machine learning provides a novel tool for predicting market stress, which can be crucial for risk management and strategic asset allocation."
       }
     ],
     "new_agent_ideas": [
       {
-        "agent_name": "Trajectory-Based Alpha Miner",
-        "strategy_class": "Evolutionary Alpha Mining",
-        "edge_hypothesis": "By using trajectory-level mutation and crossover operations, the agent can discover and refine alpha factors that are robust to market regime shifts.",
+        "agent_name": "Adaptive Alpha Miner",
+        "strategy_class": "Evolutionary Algorithm",
+        "edge_hypothesis": "By using trajectory-level mutation and crossover operations, the agent can adapt to market regime shifts and noise, improving alpha mining efficiency.",
         "markets": [
           "CSI 300",
           "CSI 500",
@@ -32,32 +32,32 @@
         "horizon": "Medium to Long-term",
         "data_required": [
           "Historical price data",
-          "Factor performance data",
-          "Market regime indicators"
+          "Market regime indicators",
+          "Alpha factors"
         ],
-        "test_plan": "Implement the QuantaAlpha framework on historical data from CSI 300 and S&P 500, evaluate the Information Coefficient (IC) and Annualized Rate of Return (ARR) over multiple market conditions.",
+        "test_plan": "Backtest on historical data across different market conditions to evaluate robustness and adaptability.",
         "confidence": 0.85
       },
       {
-        "agent_name": "Microcap Insider Momentum Detector",
-        "strategy_class": "Machine Learning-Based Signal Detection",
-        "edge_hypothesis": "Insider purchase signals in microcap equities can predict abnormal returns, especially when disclosed after significant price appreciation.",
+        "agent_name": "Insider Signal Detector",
+        "strategy_class": "Machine Learning Classifier",
+        "edge_hypothesis": "Insider purchase signals, especially in microcap equities, can predict abnormal returns when combined with market condition data.",
         "markets": [
           "U.S. Microcap Stocks"
         ],
         "horizon": "Short to Medium-term",
         "data_required": [
           "SEC Form 4 filings",
-          "Historical price data",
-          "Insider transaction history"
+          "Market conditions",
+          "Historical price data"
         ],
-        "test_plan": "Train a gradient boosting classifier on historical insider purchase data, validate the model on out-of-sample data, and assess the precision and recall of predicted abnormal returns.",
+        "test_plan": "Train and validate the model on historical insider trading data to assess predictive accuracy and robustness.",
         "confidence": 0.8
       },
       {
-        "agent_name": "Market Stress Probability Monitor",
-        "strategy_class": "Risk Management",
-        "edge_hypothesis": "Using cross-sectional fragility signals, the agent can estimate the probability of market stress, aiding in proactive risk management.",
+        "agent_name": "Market Stress Predictor",
+        "strategy_class": "Machine Learning Index",
+        "edge_hypothesis": "A machine learning-based index can provide early warnings of market stress, allowing for proactive risk management.",
         "markets": [
           "U.S. Equity Market"
         ],
@@ -66,20 +66,20 @@
           "CRSP daily data",
           "Cross-sectional fragility signals"
         ],
-        "test_plan": "Develop the MSPI using historical CRSP data, backtest its predictive accuracy during known stress periods, and compare against traditional volatility measures.",
+        "test_plan": "Evaluate the index's predictive power during historical stress episodes and compare against traditional benchmarks.",
         "confidence": 0.75
       }
     ],
     "new_data_sources": [
       {
-        "name": "CRSP Daily Data",
-        "url": "https://www.crsp.org/",
-        "use_case": "Used for constructing the Market Stress Probability Index (MSPI) to estimate market stress probabilities."
-      },
-      {
         "name": "SEC Form 4 Filings",
         "url": "https://www.sec.gov/edgar/searchedgar/companysearch.html",
-        "use_case": "Provides insider transaction data for predicting abnormal returns in microcap equities."
+        "use_case": "To identify insider trading patterns that can predict abnormal returns in microcap equities."
+      },
+      {
+        "name": "CRSP Daily Data",
+        "url": "https://www.crsp.org/products/research-products/crsp-us-stock-databases",
+        "use_case": "To construct a Market Stress Probability Index for predicting equity market stress."
       }
     ]
   }
