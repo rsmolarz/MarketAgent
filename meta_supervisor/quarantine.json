@@ -3,17 +3,17 @@
     "ArbitrageFinderAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.946 <= limit -10.0",
-      "since": "2026-02-11T00:54:48.118773+00:00"
+      "since": "2026-02-11T01:24:47.994445+00:00"
     },
     "CryptoFundingRateAgent": {
-      "active": false,
-      "reason": "Auto-quarantine: drawdown -10.865 <= limit -10.0",
-      "since": "2026-02-11T00:12:20.101601+00:00"
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -12.123 <= limit -10.0",
+      "since": "2026-02-11T01:24:47.991097+00:00"
     },
     "IntradayVolumeSpikeAgent": {
-      "active": false,
-      "reason": "Auto-quarantine: drawdown -10.910 <= limit -10.0",
-      "since": "2026-02-11T00:12:20.124182+00:00"
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -10.131 <= limit -10.0",
+      "since": "2026-02-11T01:24:47.995513+00:00"
     },
     "UnusualOptionsVolumeAgent": {
       "active": false,
@@ -21,9 +21,9 @@
       "since": "2026-02-11T00:12:20.183860+00:00"
     },
     "CryptoPredictionAgent": {
-      "active": false,
-      "reason": "Auto-quarantine: drawdown -10.125 <= limit -10.0",
-      "since": "2026-02-10T23:57:20.121321+00:00"
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -11.456 <= limit -10.0",
+      "since": "2026-02-11T01:24:47.994955+00:00"
     },
     "InsiderTradingSignalAgent": {
       "active": false,
@@ -36,14 +36,14 @@
       "since": "2026-02-11T00:12:19.969151+00:00"
     },
     "MarketCorrectionAgent": {
-      "active": true,
+      "active": false,
       "reason": "Auto-quarantine: drawdown -10.524 <= limit -10.0",
-      "since": "2026-02-11T00:54:47.857100+00:00"
+      "since": "2026-02-11T01:14:47.916798+00:00"
     },
     "EquityMomentumAgent": {
-      "active": true,
+      "active": false,
       "reason": "Auto-quarantine: drawdown -10.870 <= limit -10.0",
-      "since": "2026-02-11T00:54:47.960567+00:00"
+      "since": "2026-02-11T01:14:48.041022+00:00"
     },
     "HeartbeatAgent": {
       "active": false,
@@ -56,5 +56,5 @@
       "since": "2026-02-10T23:09:00.468929+00:00"
     }
   },
-  "updated_at": "2026-02-11T00:54:48.118932+00:00"
+  "updated_at": "2026-02-11T01:24:47.995538+00:00"
 }
