@@ -519,22 +519,37 @@ def _handle_google_callback(code):
     cfg = PROVIDERS['google']
     redirect_uri = _get_redirect_uri('google')
     client_id = _get_client_id('google')
-    client_secret = _get_client_secret('google')
 
-    logger.info(f"Google token exchange: client_id={client_id[:20]}... redirect_uri={redirect_uri}")
-    logger.info(f"Google client_secret present: {bool(client_secret)}, length={len(client_secret) if client_secret else 0}")
+    bare_secret = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', '').strip()
+    pfx_secret = os.getenv(f'{APP_PREFIX}_GOOGLE_OAUTH_CLIENT_SECRET', '').strip()
+    secrets_to_try = []
+    if bare_secret:
+        secrets_to_try.append(('bare', bare_secret))
+    if pfx_secret and pfx_secret != bare_secret:
+        secrets_to_try.append(('prefixed', pfx_secret))
+    if not secrets_to_try:
+        raise ValueError("No Google OAuth client secret configured")
 
-    resp = requests.post(cfg['token_url'], data={
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'code': code,
-        'redirect_uri': redirect_uri,
-        'grant_type': 'authorization_code',
-    }, timeout=15)
+    logger.info(f"Google token exchange: client_id={client_id[:20]}... redirect_uri={redirect_uri}, secrets_to_try={len(secrets_to_try)}")
+
+    resp = None
+    for label, secret in secrets_to_try:
+        logger.info(f"Google: trying {label} secret (len={len(secret)})")
+        resp = requests.post(cfg['token_url'], data={
+            'client_id': client_id,
+            'client_secret': secret,
+            'code': code,
+            'redirect_uri': redirect_uri,
+            'grant_type': 'authorization_code',
+        }, timeout=15)
+        if resp.status_code == 200:
+            logger.info(f"Google: {label} secret worked")
+            break
+        logger.warning(f"Google: {label} secret failed: {resp.status_code} {resp.text[:300]}")
 
     if resp.status_code != 200:
-        logger.error(f"Google token exchange failed: {resp.status_code} {resp.text[:500]}")
-    resp.raise_for_status()
+        logger.error(f"Google token exchange failed with all secrets: {resp.status_code} {resp.text[:500]}")
+        resp.raise_for_status()
     tokens = resp.json()
 
     access_token = tokens.get('access_token')
