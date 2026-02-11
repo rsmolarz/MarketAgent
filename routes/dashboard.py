@@ -20,45 +20,7 @@ def health_check():
 
 @dashboard_bp.route('/')
 def index():
-    """Main dashboard page - ULTRA FAST health checks for deployment systems"""
-    import os
-    
-    # PRIORITY 1: Check if this is a health check probe FIRST before ANY other processing
-    # Replit/Cloud deployment health checks - respond IMMEDIATELY
-    user_agent = request.headers.get('User-Agent', '') or ''
-    user_agent_lower = user_agent.lower()
-    
-    # Fast path for health checks - NO authentication, NO database, NO templates
-    is_health_check = (
-        not user_agent or  # Empty user agent (load balancers)
-        len(user_agent) < 20 or  # Very short user agents (probes)
-        'replit' in user_agent_lower or  # Replit health checks
-        'curl' in user_agent_lower or
-        'wget' in user_agent_lower or
-        'python' in user_agent_lower or  # Python requests (health probes)
-        'go-http' in user_agent_lower or  # Go HTTP client
-        'googlehc' in user_agent_lower or
-        'health' in user_agent_lower or
-        'probe' in user_agent_lower or
-        'check' in user_agent_lower or
-        'monitor' in user_agent_lower or
-        'kube' in user_agent_lower or  # Kubernetes probes
-        'docker' in user_agent_lower or  # Docker health checks
-        request.args.get('health') is not None or
-        request.args.get('healthz') is not None
-    )
-    
-    if is_health_check:
-        return 'OK', 200
-    
-    # Check Accept header for non-browser requests
-    accept_header = request.headers.get('Accept', '').lower()
-    is_browser = any(b in user_agent_lower for b in ['mozilla', 'chrome', 'safari', 'firefox', 'edge', 'opera'])
-    
-    if not is_browser and accept_header in ['*/*', '', 'text/plain']:
-        return 'OK', 200
-    
-    # Normal web browser request - check authentication
+    """Main dashboard / landing page"""
     try:
         if current_user.is_authenticated and is_user_whitelisted(current_user.email):
             return render_template('dashboard.html', user=current_user)
