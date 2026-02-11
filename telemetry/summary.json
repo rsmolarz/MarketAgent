@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-02-11T12:25:17.239774Z",
+  "generated_at": "2026-02-11T12:30:15.047811Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 16590,
-      "avg_latency_ms": 1129.87,
+      "count": 16612,
+      "avg_latency_ms": 1136.94,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0214,
+      "avg_reward": -0.0215,
       "error_rate": 0.0
     },
     "WhaleWalletWatcherAgent": {
