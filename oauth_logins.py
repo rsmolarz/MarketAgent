@@ -613,7 +613,17 @@ def _handle_apple_callback(code, redirect_uri_from_state=None):
 
     redirect_uri = redirect_uri_from_state or _get_redirect_uri('apple')
 
-    logger.info(f"APPLE CALLBACK: client_id={apple_client_id}, team_id={apple_team_id}, key_id={apple_key_id}, redirect_uri={redirect_uri}")
+    import base64 as b64mod
+    try:
+        jwt_parts = client_secret.split('.')
+        jwt_header = json.loads(b64mod.urlsafe_b64decode(jwt_parts[0] + '=='))
+        jwt_payload = json.loads(b64mod.urlsafe_b64decode(jwt_parts[1] + '=='))
+        logger.info(f"APPLE CALLBACK JWT header: {jwt_header}")
+        logger.info(f"APPLE CALLBACK JWT payload: sub={jwt_payload.get('sub')}, iss={jwt_payload.get('iss')}, aud={jwt_payload.get('aud')}")
+    except Exception as je:
+        logger.error(f"APPLE CALLBACK JWT decode error: {je}")
+
+    logger.info(f"APPLE CALLBACK: client_id={apple_client_id}, redirect_uri={redirect_uri}, redirect_uri_from_state={redirect_uri_from_state}, code_len={len(code) if code else 0}")
 
     token_data = {
         'client_id': apple_client_id,
@@ -626,8 +636,9 @@ def _handle_apple_callback(code, redirect_uri_from_state=None):
     token_response = requests.post('https://appleid.apple.com/auth/token', data=token_data, timeout=15)
 
     if not token_response.ok:
-        logger.error(f"Apple token exchange failed: status={token_response.status_code} body={token_response.text[:500]}")
-        logger.error(f"Apple token request details: client_id={apple_client_id}, team_id={apple_team_id}, key_id={apple_key_id}, redirect_uri={redirect_uri}")
+        logger.error(f"Apple token exchange FAILED: status={token_response.status_code} body={token_response.text[:500]}")
+        logger.error(f"Apple token request sent: client_id={apple_client_id}, team_id={apple_team_id}, key_id={apple_key_id}, redirect_uri={redirect_uri}, code_len={len(code) if code else 0}")
+        logger.error(f"Apple JWT sub={jwt_payload.get('sub') if 'jwt_payload' in dir() else 'unknown'}")
         try:
             err_json = token_response.json()
             apple_error = err_json.get('error', 'unknown')
