@@ -11,6 +11,8 @@ EXEMPT_AGENTS = {
     'CodeGuardianAgent', 'HealthCheckAgent', 'MetaSupervisorAgent',
 }
 
+MIN_SAMPLES = 20
+
 
 def compute_drawdown(rewards):
     equity = 0.0
@@ -53,10 +55,21 @@ def run(window=500, last_n=5000, dd_limit=-10.0, sharpe_floor=-0.05):
             continue
 
         rs = list(dq)
-        dd = compute_drawdown(rs)
 
-        if dd <= dd_limit:
-            quarantine(agent, f"Auto-quarantine: drawdown {dd:.3f} <= limit {dd_limit}")
+        if len(rs) < MIN_SAMPLES:
+            if agent in q_before:
+                clear_quarantine(agent)
+            continue
+
+        dd = compute_drawdown(rs)
+        avg_reward = sum(rs) / len(rs) if rs else 0.0
+
+        should_quarantine = (
+            dd <= dd_limit and avg_reward < -0.15
+        )
+
+        if should_quarantine:
+            quarantine(agent, f"Auto-quarantine: drawdown {dd:.3f} <= limit {dd_limit}, avg_reward {avg_reward:.3f}")
             q_now.add(agent)
         else:
             if agent in q_before:
