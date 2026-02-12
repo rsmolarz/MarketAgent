@@ -3,27 +3,27 @@
     "TechnicalAnalysisAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.199 <= limit -10.0",
-      "since": "2026-02-12T13:46:24.652634+00:00"
+      "since": "2026-02-12T13:51:55.801319+00:00"
     },
     "SentimentDivergenceAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.698 <= limit -10.0",
-      "since": "2026-02-12T13:46:24.740956+00:00"
+      "since": "2026-02-12T13:51:55.863521+00:00"
     },
     "ArbitrageFinderAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -11.547 <= limit -10.0",
-      "since": "2026-02-12T13:46:24.349983+00:00"
+      "since": "2026-02-12T13:51:55.691538+00:00"
     },
     "EquityMomentumAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.469 <= limit -10.0",
-      "since": "2026-02-12T13:46:24.723162+00:00"
+      "since": "2026-02-12T13:51:55.802100+00:00"
     },
     "CryptoFundingRateAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -12.151 <= limit -10.0",
-      "since": "2026-02-12T13:46:24.455138+00:00"
+      "since": "2026-02-12T13:51:55.720792+00:00"
     },
     "CryptoPredictionAgent": {
       "active": false,
@@ -46,14 +46,14 @@
       "since": "2026-02-12T09:10:45.986260+00:00"
     },
     "IntradayVolumeSpikeAgent": {
-      "active": false,
-      "reason": "Auto-quarantine: drawdown -11.842 <= limit -10.0",
-      "since": "2026-02-12T13:26:24.473076+00:00"
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -10.794 <= limit -10.0",
+      "since": "2026-02-12T13:51:55.873801+00:00"
     },
     "IntradayVolatilitySpikeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.235 <= limit -10.0",
-      "since": "2026-02-12T13:46:24.790456+00:00"
+      "since": "2026-02-12T13:51:55.906694+00:00"
     },
     "MarketCorrectionAgent": {
       "active": false,
@@ -66,5 +66,5 @@
       "since": "2026-02-12T12:20:17.702362+00:00"
     }
   },
-  "updated_at": "2026-02-12T13:46:24.790548+00:00"
+  "updated_at": "2026-02-12T13:51:55.906750+00:00"
 }
