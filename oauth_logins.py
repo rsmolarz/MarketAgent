@@ -70,8 +70,7 @@ PROVIDERS = {
         'scopes': 'email public_profile',
     },
     'apple': {
-        'client_id_key': 'APPLE_CLIENT_ID',
-        'client_id_fallback': 'MARKETAGENT_APPLE_CLIENT_ID',
+        'client_id_key': 'MARKETAGENT_APPLE_CLIENT_ID',
         'auth_url': 'https://appleid.apple.com/auth/authorize',
         'token_url': 'https://appleid.apple.com/auth/token',
         'scopes': 'name email',
