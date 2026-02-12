@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-02-12T02:19:45.771776Z",
+  "generated_at": "2026-02-12T03:08:20.900360Z",
   "agents": {
     "ArbitrageFinderAgent": {
-      "count": 19061,
-      "avg_latency_ms": 1221.72,
+      "count": 19069,
+      "avg_latency_ms": 1221.22,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0229,
       "error_rate": 0.0
     },
     "WhaleWalletWatcherAgent": {
-      "count": 8097,
-      "avg_latency_ms": 714.25,
+      "count": 8100,
+      "avg_latency_ms": 720.28,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0198,
+      "avg_reward": -0.0199,
       "error_rate": 0.0
     },
     "CryptoFundingRateAgent": {
@@ -93,10 +93,10 @@
       "error_rate": 0.0
     },
     "HeartbeatAgent": {
-      "count": 6468,
-      "avg_latency_ms": 4328.19,
+      "count": 6476,
+      "avg_latency_ms": 4347.76,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0294,
+      "avg_reward": -0.0296,
       "error_rate": 0.0
     },
     "IntradayOrderBookImbalanceAgent": {
@@ -149,10 +149,10 @@
       "error_rate": 0.0
     },
     "MarketCorrectionAgent": {
-      "count": 2721,
-      "avg_latency_ms": 23931.45,
+      "count": 2729,
+      "avg_latency_ms": 23926.22,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0967,
+      "avg_reward": -0.097,
       "error_rate": 0.0
     },
     "CTAFlowsAgent": {
@@ -184,10 +184,10 @@
       "error_rate": 0.0
     },
     "CryptoStablecoinPremiumAgent": {
-      "count": 3152,
-      "avg_latency_ms": 5210.55,
+      "count": 3160,
+      "avg_latency_ms": 5249.73,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0354,
+      "avg_reward": -0.0358,
       "error_rate": 0.0
     },
     "StablecoinFlowAgent": {
@@ -408,10 +408,10 @@
       "error_rate": 0.0
     },
     "InsiderTradingSignalAgent": {
-      "count": 2200,
-      "avg_latency_ms": 21093.05,
+      "count": 2209,
+      "avg_latency_ms": 21075.47,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.112,
+      "avg_reward": -0.1123,
       "error_rate": 0.0
     },
     "GeopoliticalRiskAgent": {
@@ -562,10 +562,10 @@
       "error_rate": 0.0
     },
     "UnusualOptionsVolumeAgent": {
-      "count": 2182,
-      "avg_latency_ms": 68168.76,
+      "count": 2185,
+      "avg_latency_ms": 68095.51,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.1191,
+      "avg_reward": -0.1193,
       "error_rate": 0.0
     },
     "NFTMarketAgent": {
@@ -618,10 +618,10 @@
       "error_rate": 0.0
     },
     "DistressedMacroGateAgent": {
-      "count": 1389,
-      "avg_latency_ms": 6949.94,
+      "count": 1397,
+      "avg_latency_ms": 7028.54,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.0626,
+      "avg_reward": -0.0633,
       "error_rate": 0.0
     },
     "CodeQualityGuardianAgent": {
@@ -639,10 +639,10 @@
       "error_rate": 0.0
     },
     "DailyPredictionAgent": {
-      "count": 1377,
-      "avg_latency_ms": 4327.6,
+      "count": 1389,
+      "avg_latency_ms": 4339.04,
       "total_cost_usd": 0.0,
-      "avg_reward": -0.1044,
+      "avg_reward": -0.1047,
       "error_rate": 0.3333
     },
     "EarningsWhisperSurpriseAgent": {
@@ -1073,15 +1073,15 @@
       "error_rate": 0.0
     },
     "AISemiconductorAgent": {
-      "count": 902,
-      "avg_latency_ms": 35.66,
+      "count": 904,
+      "avg_latency_ms": 35.58,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0021,
       "error_rate": 0.0
     },
     "GeopoliticalRiskAgent_P3": {
-      "count": 902,
-      "avg_latency_ms": 48.25,
+      "count": 904,
+      "avg_latency_ms": 48.16,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0029,
       "error_rate": 0.0
