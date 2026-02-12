@@ -1,85 +1,88 @@
 {
-  "generated_at": "2026-02-11T08:25:16.506532Z",
+  "generated_at": "2026-02-12T08:25:18.193713Z",
   "items_count": 16,
   "insights": {
     "high_signal_items": [
       {
-        "title": "QuantaAlpha: An Evolutionary Framework for LLM-Driven Alpha Mining",
-        "url": "https://arxiv.org/abs/2602.07085v1",
-        "why_it_matters": "QuantaAlpha demonstrates a robust framework for alpha mining that adapts to market regime shifts and noise, showing significant gains in Information Coefficient and Annualized Rate of Return. This indicates potential for developing adaptive trading strategies that can perform well across different market conditions."
+        "title": "Integrating granular data into a multilayer network: an interbank model of the euro area for systemic risk assessment",
+        "url": "https://arxiv.org/abs/2602.10960v1",
+        "why_it_matters": "This research provides a comprehensive framework for assessing systemic risk in the euro area banking sector by integrating multiple layers of financial exposure data. It highlights the importance of considering cross-layer heterogeneity in connectivity and centrality, which can reveal systemic vulnerabilities that are not apparent in aggregated models."
       },
       {
-        "title": "Insider Purchase Signals in Microcap Equities: Gradient Boosting Detection of Abnormal Returns",
-        "url": "https://arxiv.org/abs/2602.06198v1",
-        "why_it_matters": "The study highlights the predictive power of insider purchase signals in microcap stocks, using gradient boosting to achieve a high AUC. This suggests a potential strategy for exploiting insider trading patterns to predict abnormal returns."
+        "title": "Trading in CEXs and DEXs with Priority Fees and Stochastic Delays",
+        "url": "https://arxiv.org/abs/2602.10798v1",
+        "why_it_matters": "The study introduces a novel mixed control framework for optimizing trading strategies across centralized and decentralized exchanges, considering the trade-off between execution delays, uncertainty, and costs. This approach could significantly enhance trading efficiency and profitability in volatile markets."
       },
       {
-        "title": "Algorithmic Monitoring: Measuring Market Stress with Machine Learning",
-        "url": "https://arxiv.org/abs/2602.07066v1",
-        "why_it_matters": "The development of a Market Stress Probability Index (MSPI) using machine learning provides a novel tool for predicting market stress, which can be crucial for risk management and strategic asset allocation."
+        "title": "A novel approach to trading strategy parameter optimization using double out-of-sample data and walk-forward techniques",
+        "url": "https://arxiv.org/abs/2602.10785v1",
+        "why_it_matters": "This research presents a robust method for optimizing trading strategies using walk-forward techniques, which could lead to more reliable and profitable trading strategies by reducing overfitting and improving out-of-sample performance."
       }
     ],
     "new_agent_ideas": [
       {
-        "agent_name": "Adaptive Alpha Miner",
-        "strategy_class": "Evolutionary Algorithm",
-        "edge_hypothesis": "By using trajectory-level mutation and crossover operations, the agent can adapt to market regime shifts and noise, improving alpha mining efficiency.",
+        "agent_name": "Multilayer Network Risk Assessor",
+        "strategy_class": "Systemic Risk Assessment",
+        "edge_hypothesis": "By integrating multiple layers of financial exposure data, the agent can identify systemic vulnerabilities in the banking sector that are not apparent in aggregated models.",
         "markets": [
-          "CSI 300",
-          "CSI 500",
-          "S&P 500"
+          "Euro Area Banking Sector"
         ],
-        "horizon": "Medium to Long-term",
+        "horizon": "Medium to Long Term",
         "data_required": [
-          "Historical price data",
-          "Market regime indicators",
-          "Alpha factors"
+          "Supervisory and statistical datasets",
+          "Exposure matrices"
         ],
-        "test_plan": "Backtest on historical data across different market conditions to evaluate robustness and adaptability.",
-        "confidence": 0.85
-      },
-      {
-        "agent_name": "Insider Signal Detector",
-        "strategy_class": "Machine Learning Classifier",
-        "edge_hypothesis": "Insider purchase signals, especially in microcap equities, can predict abnormal returns when combined with market condition data.",
-        "markets": [
-          "U.S. Microcap Stocks"
-        ],
-        "horizon": "Short to Medium-term",
-        "data_required": [
-          "SEC Form 4 filings",
-          "Market conditions",
-          "Historical price data"
-        ],
-        "test_plan": "Train and validate the model on historical insider trading data to assess predictive accuracy and robustness.",
+        "test_plan": "Implement the multilayer network model on historical data to validate its ability to predict past systemic events.",
         "confidence": 0.8
       },
       {
-        "agent_name": "Market Stress Predictor",
-        "strategy_class": "Machine Learning Index",
-        "edge_hypothesis": "A machine learning-based index can provide early warnings of market stress, allowing for proactive risk management.",
+        "agent_name": "Priority Fee Optimizer",
+        "strategy_class": "Optimal Trading Execution",
+        "edge_hypothesis": "By optimizing priority fees in decentralized exchanges, the agent can minimize execution delays and costs, improving trading efficiency.",
         "markets": [
-          "U.S. Equity Market"
+          "Cryptocurrency Exchanges"
         ],
-        "horizon": "Short-term",
+        "horizon": "Short to Medium Term",
         "data_required": [
-          "CRSP daily data",
-          "Cross-sectional fragility signals"
+          "Trading signals",
+          "Execution delay data",
+          "Priority fee structures"
         ],
-        "test_plan": "Evaluate the index's predictive power during historical stress episodes and compare against traditional benchmarks.",
+        "test_plan": "Simulate trading strategies with varying priority fees and measure performance against benchmarks.",
+        "confidence": 0.7
+      },
+      {
+        "agent_name": "Walk-Forward Strategy Optimizer",
+        "strategy_class": "Trading Strategy Optimization",
+        "edge_hypothesis": "Using walk-forward optimization with double out-of-sample data can enhance strategy robustness and profitability by reducing overfitting.",
+        "markets": [
+          "Cryptocurrency",
+          "Equities"
+        ],
+        "horizon": "Short to Medium Term",
+        "data_required": [
+          "Intraday price data",
+          "Technical indicators"
+        ],
+        "test_plan": "Apply the optimization framework to historical data and compare performance with traditional strategies.",
         "confidence": 0.75
       }
     ],
     "new_data_sources": [
       {
-        "name": "SEC Form 4 Filings",
-        "url": "https://www.sec.gov/edgar/searchedgar/companysearch.html",
-        "use_case": "To identify insider trading patterns that can predict abnormal returns in microcap equities."
+        "name": "Euro Area Banking Exposure Data",
+        "url": "https://arxiv.org/abs/2602.10960v1",
+        "use_case": "To assess systemic risk in the euro area banking sector by analyzing multilayer network data."
       },
       {
-        "name": "CRSP Daily Data",
-        "url": "https://www.crsp.org/products/research-products/crsp-us-stock-databases",
-        "use_case": "To construct a Market Stress Probability Index for predicting equity market stress."
+        "name": "Cryptocurrency Exchange Priority Fee Data",
+        "url": "https://arxiv.org/abs/2602.10798v1",
+        "use_case": "To optimize trading execution by analyzing the trade-off between priority fees and execution delays."
+      },
+      {
+        "name": "Intraday Cryptocurrency Price Data",
+        "url": "https://arxiv.org/abs/2602.10785v1",
+        "use_case": "For optimizing trading strategies using walk-forward techniques to improve out-of-sample performance."
       }
     ]
   }
