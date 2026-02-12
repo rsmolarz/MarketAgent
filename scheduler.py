@@ -335,13 +335,16 @@ class AgentScheduler:
                 
             except Exception as e:
                 logger.error(f"Error running agent {agent_name}: {e}")
+                db.session.rollback()
                 
-                # Update error status
-                status = AgentStatus.query.filter_by(agent_name=agent_name).first()
-                if status:
-                    status.error_count += 1
-                    status.last_error = str(e)
-                    db.session.commit()
+                try:
+                    status = AgentStatus.query.filter_by(agent_name=agent_name).first()
+                    if status:
+                        status.error_count += 1
+                        status.last_error = str(e)[:500]
+                        db.session.commit()
+                except Exception:
+                    db.session.rollback()
                 
                 _decay.update(agent_name, reward=-1, uncertainty=(_uncertainty_state or {}).get("score", 0.0))
                 

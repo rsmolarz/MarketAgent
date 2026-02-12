@@ -81,7 +81,6 @@
   "DividendCaptureAgent": {"interval": 60, "enabled": true, "weight": 1.0, "reason": "income"},
   "ConvertibleArbAgent": {"interval": 60, "enabled": true, "weight": 1.0, "reason": "arb"},
   "CarryEverywhereAgent": {"interval": 60, "enabled": true, "weight": 1.0, "reason": "carry"},
-  "FundingCarryAgent": {"interval": 30, "enabled": true, "weight": 1.0, "reason": "carry"},
   "CalendarAnomalyAgent": {"interval": 60, "enabled": true, "weight": 1.0, "reason": "calendar"},
   "SeasonalPatternAgent": {"interval": 60, "enabled": true, "weight": 1.0, "reason": "seasonal"},
   "SupplyChainAgent": {"interval": 60, "enabled": true, "weight": 1.0, "reason": "alt_data"},

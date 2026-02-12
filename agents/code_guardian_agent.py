@@ -96,6 +96,10 @@ class CodeGuardianAgent(BaseAgent):
             if runtime_findings:
                 findings.extend(runtime_findings)
 
+            quarantine_findings = self._check_quarantined_agents()
+            if quarantine_findings:
+                findings.extend(quarantine_findings)
+
             logger.info(f"Code Guardian: {len(findings)} issues found")
             return findings
 
@@ -629,6 +633,34 @@ class CodeGuardianAgent(BaseAgent):
         except Exception as e:
             logger.debug(f"Could not check scheduler health: {e}")
 
+        return findings
+
+    def _check_quarantined_agents(self) -> List[Dict[str, Any]]:
+        """Detect agents blocked by quarantine system."""
+        findings = []
+        try:
+            import json
+            from pathlib import Path
+            q_path = Path("meta_supervisor/quarantine.json")
+            if q_path.exists():
+                q_data = json.loads(q_path.read_text())
+                quarantined = {k: v for k, v in q_data.get("agents", {}).items() if v.get("active")}
+                for agent_name, info in quarantined.items():
+                    reason = info.get("reason", "unknown")
+                    since = info.get("since", "unknown")[:19]
+                    findings.append({
+                        "title": f"AGENT_QUARANTINED: {agent_name}",
+                        "description": (
+                            f"Agent '{agent_name}' is quarantined since {since}. "
+                            f"Reason: {reason}. Agent will NOT run until cleared."
+                        ),
+                        "severity": "critical",
+                        "confidence": 1.0,
+                        "symbol": agent_name,
+                        "market_type": "system"
+                    })
+        except Exception as e:
+            logger.debug(f"Could not check quarantined agents: {e}")
         return findings
 
     def _check_runtime_errors(self) -> List[Dict[str, Any]]:
