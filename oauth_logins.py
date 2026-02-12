@@ -800,6 +800,77 @@ def email_register():
     return redirect(next_url or url_for('dashboard.index'))
 
 
+@oauth_bp.route('/callback/schwab')
+def schwab_callback():
+    """Handle Schwab/Thinkorswim OAuth callback for market data API access."""
+    from flask_login import current_user
+    if not current_user.is_authenticated:
+        flash('You must be logged in to connect Schwab.', 'warning')
+        return redirect(url_for('oauth.login_page'))
+
+    state = request.args.get('state')
+    expected_state = session.pop('schwab_oauth_state', None)
+    if not state or state != expected_state:
+        logger.warning(f"Schwab OAuth state mismatch: received={state}, expected={expected_state}")
+        flash('Schwab authorization failed: invalid state. Please try again.', 'danger')
+        return redirect(url_for('dashboard.index'))
+
+    code = request.args.get('code')
+    if not code:
+        error = request.args.get('error', 'unknown')
+        flash(f'Schwab authorization failed: {error}', 'danger')
+        return redirect(url_for('dashboard.index'))
+
+    try:
+        from data_sources.schwab_client import get_schwab_client
+        client = get_schwab_client()
+        if client.exchange_code(code):
+            flash('Schwab API connected successfully! Market data is now available.', 'success')
+        else:
+            flash('Failed to connect Schwab API. Please try again.', 'danger')
+    except Exception as e:
+        logger.error(f"Schwab callback error: {e}", exc_info=True)
+        flash(f'Schwab connection error: {str(e)}', 'danger')
+
+    return redirect(url_for('dashboard.index'))
+
+
+@oauth_bp.route('/schwab/authorize')
+def schwab_authorize():
+    """Redirect to Schwab authorization page for market data API access."""
+    from flask_login import current_user
+    if not current_user.is_authenticated:
+        flash('You must be logged in to connect Schwab.', 'warning')
+        return redirect(url_for('oauth.login_page'))
+
+    try:
+        from data_sources.schwab_client import get_schwab_client
+        client = get_schwab_client()
+        if not client.is_configured:
+            flash('Schwab API credentials are not configured.', 'danger')
+            return redirect(url_for('dashboard.index'))
+        state = os.urandom(16).hex()
+        session['schwab_oauth_state'] = state
+        auth_url = client.get_authorization_url(state=state)
+        return redirect(auth_url)
+    except Exception as e:
+        logger.error(f"Schwab authorize error: {e}", exc_info=True)
+        flash(f'Schwab authorization error: {str(e)}', 'danger')
+        return redirect(url_for('dashboard.index'))
+
+
+@oauth_bp.route('/schwab/status')
+def schwab_status():
+    """Return Schwab API connection status as JSON."""
+    from flask import jsonify
+    try:
+        from data_sources.schwab_client import get_schwab_client
+        client = get_schwab_client()
+        return jsonify(client.status())
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @oauth_bp.route('/facebook/deauthorize', methods=['GET', 'POST'])
 def facebook_deauthorize():
     from flask import jsonify

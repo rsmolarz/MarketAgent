@@ -9,10 +9,13 @@ from .coinbase_client import CoinbaseClient
 from .etherscan_client import EtherscanClient
 from .github_client import GitHubClient
 from .yahoo_finance_client import YahooFinanceClient
+from .schwab_client import SchwabClient, get_schwab_client
 
 __all__ = [
     'CoinbaseClient',
     'EtherscanClient', 
     'GitHubClient',
-    'YahooFinanceClient'
+    'YahooFinanceClient',
+    'SchwabClient',
+    'get_schwab_client',
 ]

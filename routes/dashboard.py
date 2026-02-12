@@ -920,6 +920,19 @@ def api_ta_overlay():
         return jsonify({"ok": False, "reason": str(e)}), 500
 
 
+@dashboard_bp.route('/api/schwab_status')
+@require_login
+def api_schwab_status():
+    """Schwab/Thinkorswim API connection status"""
+    try:
+        from data_sources.schwab_client import get_schwab_client
+        client = get_schwab_client()
+        return jsonify(client.status())
+    except Exception as e:
+        logger.error(f"Schwab status error: {e}")
+        return jsonify({"configured": False, "error": str(e)})
+
+
 @dashboard_bp.route('/api/ta_regime')
 @require_login
 def api_ta_regime():

@@ -108,9 +108,38 @@ def load_symbol_frame(
     return df
 
 
+def _try_schwab_history(symbol: str, start: str = "2007-01-01") -> pd.DataFrame:
+    """Attempt to load price history from Schwab API as fallback."""
+    try:
+        from data_sources.schwab_client import get_schwab_client
+        client = get_schwab_client()
+        if not client._ensure_token():
+            return pd.DataFrame()
+        start_dt = datetime.strptime(start, "%Y-%m-%d")
+        days_back = max(30, (datetime.now() - start_dt).days)
+        data = client.get_daily_history(symbol, days=days_back)
+        if not data:
+            return pd.DataFrame()
+        candles = data.get("candles", [])
+        if not candles:
+            return pd.DataFrame()
+        rows = []
+        for c in candles:
+            dt = datetime.fromtimestamp(c["datetime"] / 1000) if c.get("datetime") else None
+            if dt and c.get("close"):
+                rows.append({"Date": dt, "Close": float(c["close"])})
+        if rows:
+            logger.info(f"Schwab fallback loaded {len(rows)} rows for {symbol}")
+            return pd.DataFrame(rows)
+    except Exception as e:
+        logger.debug(f"Schwab fallback for {symbol}: {e}")
+    return pd.DataFrame()
+
+
 def load_symbol(symbol: str, start: str = "2007-01-01", use_cache: bool = True) -> pd.DataFrame:
     """
     Load any symbol's price data with caching.
+    Falls back to Schwab API if Yahoo Finance fails.
     """
     cache_file = CACHE_DIR / f"{symbol.replace('^', '_').lower()}_daily.parquet"
     
@@ -125,9 +154,7 @@ def load_symbol(symbol: str, start: str = "2007-01-01", use_cache: bool = True) 
     try:
         df = yf.download(symbol, start=start, progress=False)
         if df.empty:
-            if cache_file.exists():
-                return pd.read_parquet(cache_file)
-            return pd.DataFrame(columns=["Date", "Close"])
+            raise ValueError(f"Empty yfinance result for {symbol}")
         
         df = df.reset_index()
         
@@ -143,7 +170,11 @@ def load_symbol(symbol: str, start: str = "2007-01-01", use_cache: bool = True) 
         return result
         
     except Exception as e:
-        logger.error(f"Error loading {symbol}: {e}")
+        logger.warning(f"Yahoo Finance failed for {symbol}: {e}, trying Schwab fallback")
+        schwab_df = _try_schwab_history(symbol, start=start)
+        if not schwab_df.empty:
+            schwab_df.to_parquet(cache_file, index=False)
+            return schwab_df
         if cache_file.exists():
             return pd.read_parquet(cache_file)
         return pd.DataFrame(columns=["Date", "Close"])

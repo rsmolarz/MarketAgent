@@ -10,6 +10,9 @@ class Config:
     GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
     NEWS_API_KEY = os.getenv("NEWS_API_KEY", "")
     ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
+    SCHWAB_API_KEY = os.getenv("SCHWAB_API_KEY", "")
+    SCHWAB_SECRET = os.getenv("SCHWAB_SECRET", "")
+    SCHWAB_REDIRECT_URI = os.getenv("SCHWAB_REDIRECT_URI", "https://marketinefficiencyagents.com/oauth/callback/schwab")
     TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
     

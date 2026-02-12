@@ -71,6 +71,7 @@ Preferred communication style: Simple, everyday language.
 ### Financial Data APIs
 - **Coinbase API**: Cryptocurrency prices and data.
 - **Yahoo Finance**: Stock prices, indices, bonds, and economic indicators via `yfinance` library.
+- **Schwab/Thinkorswim API**: Real-time quotes, price history, options chains, movers, market hours via OAuth 2.0 (`data_sources/schwab_client.py`). 30-min access token auto-refresh, 7-day refresh token requires re-auth. OAuth routes at `/oauth/schwab/authorize` and `/oauth/callback/schwab`. Falls back as secondary data source in `price_loader.py` when Yahoo Finance fails. Status endpoint at `/api/schwab_status`.
 - **Etherscan API**: Ethereum blockchain data.
 
 ### Alternative Data Sources
