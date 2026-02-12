@@ -12,8 +12,8 @@
     },
     "ArbitrageFinderAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -13.281 <= limit -10.0",
-      "since": "2026-02-12T15:26:37.970141+00:00"
+      "reason": "Auto-quarantine: drawdown -13.766 <= limit -10.0",
+      "since": "2026-02-12T15:37:48.489450+00:00"
     },
     "EquityMomentumAgent": {
       "active": false,
@@ -48,7 +48,7 @@
     "IntradayVolumeSpikeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -11.238 <= limit -10.0",
-      "since": "2026-02-12T15:26:38.028317+00:00"
+      "since": "2026-02-12T15:37:48.510282+00:00"
     },
     "IntradayVolatilitySpikeAgent": {
       "active": false,
@@ -66,5 +66,5 @@
       "since": "2026-02-12T15:21:36.183049+00:00"
     }
   },
-  "updated_at": "2026-02-12T15:26:38.028380+00:00"
+  "updated_at": "2026-02-12T15:37:48.516075+00:00"
 }
