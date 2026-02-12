@@ -65,16 +65,14 @@ class IntradayVolumeSpikeAgent(BaseAgent):
         
         for symbol in WATCHLIST_SYMBOLS:
             try:
-                # Get price data with volume (need daily data for 20-day average)
                 price_data = self.yahoo_client.get_price_data(symbol, period='1mo')
                 ticker_info = self.yahoo_client.get_ticker_info(symbol)
                 
                 if price_data is None or len(price_data) < 10:
                     continue
                 
-                # Analyze volume patterns
                 symbol_findings = self._analyze_volume_patterns(
-                    symbol, price_data, ticker_info
+                    symbol, price_data, ticker_info or {}
                 )
                 findings.extend(symbol_findings)
                 

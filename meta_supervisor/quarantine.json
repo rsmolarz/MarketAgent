@@ -12,8 +12,8 @@
     },
     "ArbitrageFinderAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -12.116 <= limit -10.0",
-      "since": "2026-02-12T15:49:22.014747+00:00"
+      "reason": "Auto-quarantine: drawdown -11.782 <= limit -10.0",
+      "since": "2026-02-12T15:52:49.006609+00:00"
     },
     "EquityMomentumAgent": {
       "active": false,
@@ -66,5 +66,5 @@
       "since": "2026-02-12T15:21:36.183049+00:00"
     }
   },
-  "updated_at": "2026-02-12T15:49:22.014821+00:00"
+  "updated_at": "2026-02-12T15:52:49.006666+00:00"
 }
