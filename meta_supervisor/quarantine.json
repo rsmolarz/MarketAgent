@@ -3,27 +3,27 @@
     "TechnicalAnalysisAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.199 <= limit -10.0",
-      "since": "2026-02-12T13:51:55.801319+00:00"
+      "since": "2026-02-12T13:56:56.169126+00:00"
     },
     "SentimentDivergenceAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.698 <= limit -10.0",
-      "since": "2026-02-12T13:51:55.863521+00:00"
+      "since": "2026-02-12T13:56:56.345324+00:00"
     },
     "ArbitrageFinderAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -11.547 <= limit -10.0",
-      "since": "2026-02-12T13:51:55.691538+00:00"
+      "reason": "Auto-quarantine: drawdown -12.082 <= limit -10.0",
+      "since": "2026-02-12T13:56:55.972969+00:00"
     },
     "EquityMomentumAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.469 <= limit -10.0",
-      "since": "2026-02-12T13:51:55.802100+00:00"
+      "since": "2026-02-12T13:56:56.307254+00:00"
     },
     "CryptoFundingRateAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -12.151 <= limit -10.0",
-      "since": "2026-02-12T13:51:55.720792+00:00"
+      "since": "2026-02-12T13:56:56.034599+00:00"
     },
     "CryptoPredictionAgent": {
       "active": false,
@@ -48,12 +48,12 @@
     "IntradayVolumeSpikeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.794 <= limit -10.0",
-      "since": "2026-02-12T13:51:55.873801+00:00"
+      "since": "2026-02-12T13:56:56.418640+00:00"
     },
     "IntradayVolatilitySpikeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.235 <= limit -10.0",
-      "since": "2026-02-12T13:51:55.906694+00:00"
+      "since": "2026-02-12T13:56:56.461406+00:00"
     },
     "MarketCorrectionAgent": {
       "active": false,
@@ -66,5 +66,5 @@
       "since": "2026-02-12T12:20:17.702362+00:00"
     }
   },
-  "updated_at": "2026-02-12T13:51:55.906750+00:00"
+  "updated_at": "2026-02-12T13:56:56.461495+00:00"
 }
