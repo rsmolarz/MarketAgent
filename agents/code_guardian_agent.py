@@ -92,6 +92,10 @@ class CodeGuardianAgent(BaseAgent):
             if scheduler_findings:
                 findings.extend(scheduler_findings)
 
+            runtime_findings = self._check_runtime_errors()
+            if runtime_findings:
+                findings.extend(runtime_findings)
+
             logger.info(f"Code Guardian: {len(findings)} issues found")
             return findings
 
@@ -624,5 +628,66 @@ class CodeGuardianAgent(BaseAgent):
 
         except Exception as e:
             logger.debug(f"Could not check scheduler health: {e}")
+
+        return findings
+
+    def _check_runtime_errors(self) -> List[Dict[str, Any]]:
+        """Check agent_status table for agents with runtime errors."""
+        findings = []
+        try:
+            from models import AgentStatus as AgentStatusModel
+
+            error_agents = AgentStatusModel.query.filter(
+                AgentStatusModel.error_count > 0,
+                AgentStatusModel.last_error.isnot(None),
+                AgentStatusModel.last_error != ''
+            ).order_by(AgentStatusModel.error_count.desc()).all()
+
+            error_categories = {}
+            for agent in error_agents:
+                error_msg = agent.last_error or ''
+                if 'stored_findings' in error_msg:
+                    cat = 'stored_findings_scope'
+                elif 'abstract' in error_msg.lower():
+                    cat = 'abstract_method_missing'
+                elif 'import' in error_msg.lower() or 'module' in error_msg.lower():
+                    cat = 'import_error'
+                elif 'connection' in error_msg.lower() or 'timeout' in error_msg.lower():
+                    cat = 'network_error'
+                elif 'type' in error_msg.lower() or 'attribute' in error_msg.lower():
+                    cat = 'type_error'
+                else:
+                    cat = 'other'
+
+                if cat not in error_categories:
+                    error_categories[cat] = []
+                error_categories[cat].append({
+                    'name': agent.agent_name,
+                    'count': agent.error_count,
+                    'error': error_msg[:200]
+                })
+
+            for cat, agents in error_categories.items():
+                total_errors = sum(a['count'] for a in agents)
+                agent_names = [a['name'] for a in agents[:5]]
+                sample_error = agents[0]['error'] if agents else 'Unknown'
+
+                severity = 'critical' if total_errors > 100 else 'high' if total_errors > 10 else 'medium'
+
+                findings.append({
+                    "title": f"RUNTIME_ERRORS ({cat}): {len(agents)} agents, {total_errors} total errors",
+                    "description": (
+                        f"Error pattern '{cat}' affecting {len(agents)} agents "
+                        f"({', '.join(agent_names)}{'...' if len(agents) > 5 else ''}). "
+                        f"Sample error: {sample_error}"
+                    ),
+                    "severity": severity,
+                    "confidence": 1.0,
+                    "symbol": "RUNTIME",
+                    "market_type": "system"
+                })
+
+        except Exception as e:
+            logger.debug(f"Could not check runtime errors: {e}")
 
         return findings

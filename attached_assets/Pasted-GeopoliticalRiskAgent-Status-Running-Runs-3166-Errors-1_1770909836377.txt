@@ -1,0 +1,360 @@
+GeopoliticalRiskAgent
+Status
+Running
+Runs
+3166
+Errors
+10
+Last Run
+Just now
+IndustrialDistressScannerAgent
+Status
+Running
+Runs
+39
+Errors
+0
+Last Run
+2/2/2026
+LiquidityAgent
+Status
+Running
+Runs
+27
+Errors
+0
+Last Run
+2/2/2026
+RealRatesAgent
+Status
+Running
+Runs
+34
+Errors
+0
+Last Run
+2/2/2026
+ForexInefficiencyAgent
+Status
+Running
+Runs
+12
+Errors
+0
+Last Run
+2/2/2026
+HeartbeatAgent
+Status
+Running
+Runs
+27704
+Errors
+0
+Last Run
+Just now
+GreatestTradeAgent
+Status
+Running
+Runs
+961
+Errors
+0
+Last Run
+11h ago
+EventArbitrageAgent
+Status
+Running
+Runs
+33
+Errors
+0
+Last Run
+2/2/2026
+MergerArbitrageAgent
+Status
+Running
+Runs
+12
+Errors
+0
+Last Run
+2/2/2026
+OptionsFlowAgent
+Status
+Running
+Runs
+19
+Errors
+0
+Last Run
+2/2/2026
+ShortInterestAgent
+Status
+Running
+Runs
+11
+Errors
+0
+Last Run
+2/2/2026
+EarningsRevisionAgent
+Status
+Running
+Runs
+19
+Errors
+0
+Last Run
+2/2/2026
+CodeGuardianAgent
+Status
+Running
+Runs
+20
+Errors
+0
+Last Run
+Just now
+SystemUpgradeAdvisorAgent
+Status
+Running
+Runs
+7
+Errors
+0
+Last Run
+2/1/2026
+InsiderActivityAgent
+Status
+Running
+Runs
+22
+Errors
+0
+Last Run
+2/2/2026
+EarningsSurpriseDriftAgent
+Status
+Running
+Runs
+26
+Errors
+0
+Last Run
+15h ago
+CryptoFundingRateAgent
+Status
+Running
+Runs
+281
+Errors
+25
+Last Run
+Just now
+SentimentDivergenceAgent
+Status
+Running
+Runs
+222
+Errors
+3
+Last Run
+1h ago
+SpreadScannerAgent
+Status
+Running
+Runs
+14
+Errors
+0
+Last Run
+2/2/2026
+VolControlFlowsAgent
+Status
+Running
+Runs
+20
+Errors
+0
+Last Run
+2/2/2026
+InsiderEarningsAgent
+Status
+Running
+Runs
+12
+Errors
+0
+Last Run
+2/2/2026
+TechnicalRegimeAgent
+Status
+Running
+Runs
+56
+Errors
+0
+Last Run
+2/2/2026
+CrossAssetLeadLagAgent
+Status
+Running
+Runs
+24
+Errors
+0
+Last Run
+2/2/2026
+ETFFlowAgent
+Status
+Running
+Runs
+34
+Errors
+0
+Last Run
+2/2/2026
+InflationExpectationsAgent
+Status
+Running
+Runs
+34
+Errors
+0
+Last Run
+2/2/2026
+ZillowDistressAgent
+Status
+Running
+Runs
+50
+Errors
+8
+Last Run
+2/2/2026
+FactorTimingAgent
+Status
+Running
+Runs
+33
+Errors
+0
+Last Run
+2/2/2026
+WeatherImpactAgent
+Status
+Running
+Runs
+20
+Errors
+0
+Last Run
+2/2/2026
+TechnicalConsensusAgent
+Status
+Running
+Runs
+18
+Errors
+0
+Last Run
+2/2/2026
+DailyPredictionAgent
+Status
+Running
+Runs
+18
+Errors
+0
+Last Run
+2/2/2026
+UnusualOptionsVolumeAgent
+Status
+Running
+Runs
+43
+Errors
+0
+Last Run
+Just now
+SatelliteDataAgent
+Status
+Running
+Runs
+22
+Errors
+0
+Last Run
+2/2/2026
+InsiderTradingSignalAgent
+Status
+Running
+Runs
+38
+Errors
+0
+Last Run
+Just now
+PrivateEquityDistressedAssetFinder
+Status
+Running
+Runs
+12
+Errors
+0
+Last Run
+2/2/2026
+CryptoCorrelationAgent
+Status
+Running
+Runs
+33
+Errors
+0
+Last Run
+2/2/2026
+TechnicalAnalysisAgent
+Status
+Running
+Runs
+37
+Errors
+0
+Last Run
+1h ago
+ArbitrageFinderAgent
+Status
+Running
+Runs
+1373
+Errors
+103
+Last Run
+Just now
+IntradayVolatilitySpikeAgent
+Status
+Running
+Runs
+83
+Errors
+10
+Last Run
+Just now
+CryptoPredictionAgent
+Status
+Running
+Runs
+15
+Errors
+0
+Last Run
+2/2/2026
+AltDataSignalAgent
+Status
+Running
+Runs
+165
+Errors
+22
+Last Run
+Just now

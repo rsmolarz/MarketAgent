@@ -325,6 +325,21 @@ class ZillowDistressAgent(BaseAgent):
     def name(self) -> str:
         return "ZillowDistressAgent"
 
+    def analyze(self) -> List[Dict]:
+        """Required abstract method implementation - delegates to run()."""
+        findings = self.run()
+        result = []
+        for f in findings:
+            result.append({
+                "title": f.title,
+                "description": f.description,
+                "severity": f.severity,
+                "confidence": f.confidence,
+                "symbol": f.symbol,
+                "market_type": f.market_type,
+            })
+        return result
+
     def run(self) -> List[Finding]:
         cfg = self.config
         data_dir = cfg.data_dir

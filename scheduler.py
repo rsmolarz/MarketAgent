@@ -285,8 +285,8 @@ class AgentScheduler:
                     status.last_error = None
                 
                 # Store findings
+                stored_findings = []
                 if findings:
-                    stored_findings = []
                     for finding_data in findings:
                         finding = Finding()
                         finding.agent_name = agent_name
