@@ -3,32 +3,32 @@
     "TechnicalAnalysisAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.247 <= limit -10.0",
-      "since": "2026-02-12T13:03:13.391794+00:00"
+      "since": "2026-02-12T13:23:13.227225+00:00"
     },
     "SentimentDivergenceAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.762 <= limit -10.0",
-      "since": "2026-02-12T13:03:13.370944+00:00"
+      "since": "2026-02-12T13:23:13.188823+00:00"
     },
     "ArbitrageFinderAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -10.128 <= limit -10.0",
-      "since": "2026-02-12T13:03:13.161790+00:00"
+      "reason": "Auto-quarantine: drawdown -10.689 <= limit -10.0",
+      "since": "2026-02-12T13:23:13.126002+00:00"
     },
     "EquityMomentumAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.858 <= limit -10.0",
-      "since": "2026-02-12T13:03:13.425818+00:00"
+      "since": "2026-02-12T13:23:13.283744+00:00"
     },
     "CryptoFundingRateAgent": {
       "active": true,
-      "reason": "Auto-quarantine: drawdown -12.261 <= limit -10.0",
-      "since": "2026-02-12T13:03:13.262104+00:00"
+      "reason": "Auto-quarantine: drawdown -12.260 <= limit -10.0",
+      "since": "2026-02-12T13:23:13.157796+00:00"
     },
     "CryptoPredictionAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.855 <= limit -10.0",
-      "since": "2026-02-12T13:03:13.514791+00:00"
+      "since": "2026-02-12T13:23:13.297568+00:00"
     },
     "InsiderTradingSignalAgent": {
       "active": false,
@@ -46,9 +46,9 @@
       "since": "2026-02-12T09:10:45.986260+00:00"
     },
     "IntradayVolumeSpikeAgent": {
-      "active": false,
-      "reason": "Auto-quarantine: drawdown -10.931 <= limit -10.0",
-      "since": "2026-02-12T12:53:22.752960+00:00"
+      "active": true,
+      "reason": "Auto-quarantine: drawdown -11.842 <= limit -10.0",
+      "since": "2026-02-12T13:23:13.071646+00:00"
     },
     "IntradayVolatilitySpikeAgent": {
       "active": false,
@@ -58,7 +58,7 @@
     "MarketCorrectionAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.131 <= limit -10.0",
-      "since": "2026-02-12T13:03:13.406856+00:00"
+      "since": "2026-02-12T13:23:13.256297+00:00"
     },
     "GeopoliticalRiskAgent": {
       "active": false,
@@ -66,5 +66,5 @@
       "since": "2026-02-12T12:20:17.702362+00:00"
     }
   },
-  "updated_at": "2026-02-12T13:03:13.514849+00:00"
+  "updated_at": "2026-02-12T13:23:13.297614+00:00"
 }
