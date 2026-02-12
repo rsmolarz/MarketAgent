@@ -54,8 +54,10 @@ PROVIDERS = {
         'scopes': 'openid email profile',
     },
     'github': {
-        'client_id_key': 'GITHUB_OAUTH_CLIENT_ID',
-        'client_secret_key': 'GITHUB_OAUTH_CLIENT_SECRET',
+        'client_id_key': 'MARKETAGENT_GITHUB_OAUTH_CLIENT_ID',
+        'client_secret_key': 'MARKETAGENT_GITHUB_OAUTH_CLIENT_SECRET',
+        'client_id_fallback': 'GITHUB_OAUTH_CLIENT_ID',
+        'client_secret_fallback': 'GITHUB_OAUTH_CLIENT_SECRET',
         'auth_url': 'https://github.com/login/oauth/authorize',
         'token_url': 'https://github.com/login/oauth/access_token',
         'userinfo_url': 'https://api.github.com/user',
@@ -91,9 +93,13 @@ def _get_client_id(provider):
 def _get_client_secret(provider):
     cfg = PROVIDERS.get(provider, {})
     key = cfg.get('client_secret_key', '')
+    fallback = cfg.get('client_secret_fallback', '')
     if not key:
         return ''
-    return _env(key) or _env(key.replace('OAUTH_', ''))
+    val = _env(key) or _env(key.replace('OAUTH_', ''))
+    if not val and fallback:
+        val = _env(fallback) or _env(fallback.replace('OAUTH_', ''))
+    return val
 
 
 def _get_redirect_uri(provider):
