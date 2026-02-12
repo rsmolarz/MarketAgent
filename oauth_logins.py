@@ -112,14 +112,14 @@ def _get_redirect_uri(provider):
 
 
 def _get_apple_credentials():
-    cid_apple = os.environ.get('APPLE_CLIENT_ID', '').strip()
     cid_market = os.environ.get('MARKETAGENT_APPLE_CLIENT_ID', '').strip()
-    client_id = cid_apple or cid_market
+    cid_apple = os.environ.get('APPLE_CLIENT_ID', '').strip()
+    client_id = cid_market or cid_apple
     if cid_apple and cid_market and cid_apple != cid_market:
-        logger.warning(f"Apple client_id mismatch: APPLE_CLIENT_ID={cid_apple} vs MARKETAGENT_APPLE_CLIENT_ID={cid_market}. Using APPLE_CLIENT_ID={cid_apple}")
-    team_id = (os.environ.get('APPLE_TEAM_ID', '') or os.environ.get('MARKETAGENT_APPLE_TEAM_ID', '')).strip()
-    key_id = (os.environ.get('APPLE_KEY_ID', '') or os.environ.get('MARKETAGENT_APPLE_KEY_ID', '')).strip()
-    private_key = (os.environ.get('APPLE_PRIVATE_KEY', '') or os.environ.get('MARKETAGENT_APPLE_PRIVATE_KEY', '')).strip()
+        logger.warning(f"Apple client_id mismatch: MARKETAGENT={cid_market} vs APPLE={cid_apple}. Using MARKETAGENT={cid_market}")
+    team_id = (os.environ.get('MARKETAGENT_APPLE_TEAM_ID', '') or os.environ.get('APPLE_TEAM_ID', '')).strip()
+    key_id = (os.environ.get('MARKETAGENT_APPLE_KEY_ID', '') or os.environ.get('APPLE_KEY_ID', '')).strip()
+    private_key = (os.environ.get('MARKETAGENT_APPLE_PRIVATE_KEY', '') or os.environ.get('APPLE_PRIVATE_KEY', '')).strip()
     if private_key:
         private_key = private_key.replace('\\n', '\n')
     logger.info(f"Apple credentials resolved: client_id={client_id}, team_id={team_id}, key_id={key_id}, pk_len={len(private_key)}")
