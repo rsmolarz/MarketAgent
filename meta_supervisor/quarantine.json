@@ -3,32 +3,32 @@
     "TechnicalAnalysisAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.247 <= limit -10.0",
-      "since": "2026-02-12T13:23:13.227225+00:00"
+      "since": "2026-02-12T13:26:24.852447+00:00"
     },
     "SentimentDivergenceAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.762 <= limit -10.0",
-      "since": "2026-02-12T13:23:13.188823+00:00"
+      "since": "2026-02-12T13:26:24.799741+00:00"
     },
     "ArbitrageFinderAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.689 <= limit -10.0",
-      "since": "2026-02-12T13:23:13.126002+00:00"
+      "since": "2026-02-12T13:26:24.514862+00:00"
     },
     "EquityMomentumAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.858 <= limit -10.0",
-      "since": "2026-02-12T13:23:13.283744+00:00"
+      "since": "2026-02-12T13:26:24.966253+00:00"
     },
     "CryptoFundingRateAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -12.260 <= limit -10.0",
-      "since": "2026-02-12T13:23:13.157796+00:00"
+      "since": "2026-02-12T13:26:24.642641+00:00"
     },
     "CryptoPredictionAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.855 <= limit -10.0",
-      "since": "2026-02-12T13:23:13.297568+00:00"
+      "since": "2026-02-12T13:26:24.993028+00:00"
     },
     "InsiderTradingSignalAgent": {
       "active": false,
@@ -48,7 +48,7 @@
     "IntradayVolumeSpikeAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -11.842 <= limit -10.0",
-      "since": "2026-02-12T13:23:13.071646+00:00"
+      "since": "2026-02-12T13:26:24.473076+00:00"
     },
     "IntradayVolatilitySpikeAgent": {
       "active": false,
@@ -58,7 +58,7 @@
     "MarketCorrectionAgent": {
       "active": true,
       "reason": "Auto-quarantine: drawdown -10.131 <= limit -10.0",
-      "since": "2026-02-12T13:23:13.256297+00:00"
+      "since": "2026-02-12T13:26:24.907828+00:00"
     },
     "GeopoliticalRiskAgent": {
       "active": false,
@@ -66,5 +66,5 @@
       "since": "2026-02-12T12:20:17.702362+00:00"
     }
   },
-  "updated_at": "2026-02-12T13:23:13.297614+00:00"
+  "updated_at": "2026-02-12T13:26:24.993078+00:00"
 }
