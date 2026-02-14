@@ -495,7 +495,27 @@ class CommodityTrendAgent(BaseAgent):
                                                                     'timestamp': trend_analysis['timestamp']
                                         })
 except Exception as e:
-            self.logger.error(f"Error analyzing commodit")
+            self.logger.error(f"Error analyzing commodity trends: {e}")
+
+        return findings
+
+    def _analyze_trend(self, commodity_name: str, ticker: str) -> Dict[str, Any]:
+                """Analyze trend for a specific commodity"""""
+        try:
+                        # Placeholder for actual price data fetching
+                        prices = self._get_commodity_prices(ticker)
+
+            if not prices or len(prices) < 2:
+                                return None
+
+            # Calculate trend
+            trend_strength = (prices[-1] - prices[0]) / prices[0] if prices[0] != 0 else 0
+            momentum = (prices[-1] - prices[-2]) / prices[-2] if prices[-2] != 0 else 0
+
+            return {
+                                'commodity': commodity_name,
+                              
+            }
                                         })
         }
                                                     })

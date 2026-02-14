@@ -7,6 +7,13 @@ from functools import wraps
 import yfinance as yf
 from services.startup_failure_tracker import get_startup_failures, clear_startup_failures
 
+# Rate Limiting and Caching Imports (Option B & C Implementation)
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from functools import wraps
+from datetime import datetime, timedelta
+import json
+
 logger = logging.getLogger(__name__)
 api_bp = Blueprint('api', __name__)
 
@@ -20,26 +27,31 @@ SEVERITY_COLOR = {
 
 def api_login_required(f):
     """Decorator to require login for API endpoints"""
+
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated:
             return jsonify({'error': 'Authentication required'}), 401
         return f(*args, **kwargs)
+
     return decorated_function
+
 
 @api_bp.route('/health')
 def api_health():
     """Lightweight JSON health check endpoint for deployment systems"""
     return jsonify({
-        'status': 'healthy', 
+        'status': 'healthy',
         'timestamp': datetime.utcnow().isoformat(),
         'service': 'Market Inefficiency Detection Platform API'
     }), 200
 
-@api_bp.route('/healthz')  
+
+@api_bp.route('/healthz')
 def api_healthz():
     """Alternative health check endpoint"""
     return jsonify({'status': 'ok'}), 200
+
 
 @api_bp.route('/findings', methods=['GET', 'POST'])
 @api_login_required
@@ -54,41 +66,40 @@ def findings():
             market_type = request.args.get('market_type')
             hours = request.args.get('hours', 24, type=int)
             limit = request.args.get('limit', 100, type=int)
-            
+
             # Build query
             query = Finding.query
-            
+
             if agent_name:
                 query = query.filter_by(agent_name=agent_name)
-            
+
             if symbol:
                 query = query.filter_by(symbol=symbol)
-            
+
             if severity:
                 query = query.filter_by(severity=severity)
-            
+
             if market_type:
                 query = query.filter_by(market_type=market_type)
-            
+
             # Filter by time
             if hours:
                 start_time = datetime.utcnow() - timedelta(hours=hours)
                 query = query.filter(Finding.timestamp >= start_time)
-            
+
             findings = query.order_by(
-                Finding.timestamp.desc()
-            ).limit(limit).all()
-            
+                Finding.timestamp.desc()).limit(limit).all()
+
             return jsonify([finding.to_dict() for finding in findings])
-            
+
         except Exception as e:
             logger.error(f"Error getting findings: {e}")
             return jsonify({'error': str(e)}), 500
-    
+
     elif request.method == 'POST':
         try:
             data = request.get_json()
-            
+
             finding = Finding()
             finding.agent_name = data.get('agent_name')
             finding.title = data.get('title')
@@ -98,19 +109,20 @@ def findings():
             finding.finding_metadata = data.get('metadata', {})
             finding.symbol = data.get('symbol')
             finding.market_type = data.get('market_type')
-            
+
             db.session.add(finding)
             db.session.commit()
-            
+
             return jsonify(finding.to_dict()), 201
-            
+
         except Exception as e:
             db.session.rollback()
             logger.error(f"Error creating finding: {e}")
             return jsonify({'error': str(e)}), 500
-    
+
     # Default return for unexpected method
     return jsonify({'error': 'Method not allowed'}), 405
+
 
 @api_bp.route('/agents', methods=['GET'])
 @api_login_required
@@ -119,10 +131,11 @@ def get_agents():
     try:
         statuses = AgentStatus.query.all()
         return jsonify([status.to_dict() for status in statuses])
-        
+
     except Exception as e:
         logger.error(f"Error getting agents: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 @api_bp.route('/agents/<agent_name>/start', methods=['POST'])
 @api_login_required
@@ -136,11 +149,13 @@ def start_agent(agent_name):
         if success:
             return jsonify({'message': f'Agent {agent_name} started'})
         else:
-            return jsonify({'error': f'Failed to start agent {agent_name}'}), 400
-            
+            return jsonify({'error':
+                            f'Failed to start agent {agent_name}'}), 400
+
     except Exception as e:
         logger.error(f"Error starting agent {agent_name}: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 @api_bp.route('/agents/<agent_name>/stop', methods=['POST'])
 @api_login_required
@@ -154,11 +169,13 @@ def stop_agent(agent_name):
         if success:
             return jsonify({'message': f'Agent {agent_name} stopped'})
         else:
-            return jsonify({'error': f'Failed to stop agent {agent_name}'}), 400
-            
+            return jsonify({'error':
+                            f'Failed to stop agent {agent_name}'}), 400
+
     except Exception as e:
         logger.error(f"Error stopping agent {agent_name}: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 @api_bp.route('/agents/<agent_name>/force-start', methods=['POST'])
 @api_login_required
@@ -170,13 +187,18 @@ def force_start_agent(agent_name):
             return jsonify({'error': 'Scheduler not available'}), 503
         success = scheduler.start_agent(agent_name, force=True)
         if success:
-            return jsonify({'message': f'Agent {agent_name} force-started (bypassing restrictions)'})
+            return jsonify({
+                'message':
+                f'Agent {agent_name} force-started (bypassing restrictions)'
+            })
         else:
-            return jsonify({'error': f'Failed to force-start agent {agent_name}'}), 400
-            
+            return jsonify(
+                {'error': f'Failed to force-start agent {agent_name}'}), 400
+
     except Exception as e:
         logger.error(f"Error force-starting agent {agent_name}: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 @api_bp.route('/agents/force-start-all', methods=['POST'])
 @api_login_required
@@ -186,11 +208,11 @@ def force_start_all_agents():
         scheduler = current_app.extensions.get('scheduler')
         if not scheduler:
             return jsonify({'error': 'Scheduler not available'}), 503
-        
+
         statuses = AgentStatus.query.filter_by(is_active=False).all()
         started = []
         failed = []
-        
+
         for status in statuses:
             try:
                 success = scheduler.start_agent(status.agent_name, force=True)
@@ -201,16 +223,17 @@ def force_start_all_agents():
             except Exception as e:
                 logger.error(f"Error force-starting {status.agent_name}: {e}")
                 failed.append(status.agent_name)
-        
+
         return jsonify({
             'message': f'Force-started {len(started)} agents',
             'started': started,
             'failed': failed
         })
-            
+
     except Exception as e:
         logger.error(f"Error force-starting all agents: {e}")
         return jsonify({'error': str(e)}), 500
+
 
 @api_bp.route('/governance/reset-drawdown', methods=['POST'])
 @api_login_required
@@ -224,6 +247,7 @@ def reset_drawdown():
         logger.error(f"Error resetting drawdown: {e}")
         return jsonify({'error': str(e)}), 500
 
+
 @api_bp.route('/agents/<agent_name>/interval', methods=['PUT'])
 @api_login_required
 def update_agent_interval(agent_name):
@@ -231,24 +255,30 @@ def update_agent_interval(agent_name):
     try:
         data = request.get_json()
         interval = data.get('interval')
-        
+
         if not interval or interval < 1:
             return jsonify({'error': 'Invalid interval'}), 400
-        
+
         scheduler = current_app.extensions.get('scheduler')
         if not scheduler:
             return jsonify({'error': 'Scheduler not available'}), 503
         success = scheduler.update_agent_interval(agent_name, interval)
         if success:
-            return jsonify({'message': f'Agent {agent_name} interval updated to {interval} minutes'})
+            return jsonify({
+                'message':
+                f'Agent {agent_name} interval updated to {interval} minutes'
+            })
         else:
-            return jsonify({'error': f'Failed to update agent {agent_name}'}), 400
-            
+            return jsonify({'error':
+                            f'Failed to update agent {agent_name}'}), 400
+
     except Exception as e:
         logger.error(f"Error updating agent interval: {e}")
         return jsonify({'error': str(e)}), 500
 
+
 # Removed duplicate endpoints - these are now in dashboard.py only
+
 
 @api_bp.route('/market_data', methods=['POST'])
 @api_login_required
@@ -256,7 +286,7 @@ def store_market_data():
     """Store market data (POST endpoint)"""
     try:
         data = request.get_json()
-        
+
         market_data = MarketData()
         market_data.symbol = data.get('symbol')
         market_data.price = data.get('price')
@@ -264,16 +294,15 @@ def store_market_data():
         market_data.market_cap = data.get('market_cap')
         market_data.data_source = data.get('data_source')
         market_data.raw_data = data.get('raw_data', {})
-        
+
         db.session.add(market_data)
         db.session.commit()
-        
+
         return jsonify(market_data.to_dict()), 201
-        
+
     except Exception as e:
         logger.error(f"Error storing market data: {e}")
         return jsonify({'error': str(e)}), 500
-
 
 
 @api_bp.route('/agents/<agent_name>/run', methods=['POST'])
@@ -284,14 +313,15 @@ def run_agent_now(agent_name):
         scheduler = current_app.extensions.get('scheduler')
         if not scheduler:
             return jsonify({'error': 'Scheduler not available'}), 503
-        
+
         # Run the agent immediately
         success = scheduler.run_agent_immediately(agent_name)
         if success:
-            return jsonify({'message': f'Agent {agent_name} executed successfully'})
+            return jsonify(
+                {'message': f'Agent {agent_name} executed successfully'})
         else:
             return jsonify({'error': f'Failed to run agent {agent_name}'}), 400
-            
+
     except Exception as e:
         return jsonify({'error': f'Server error: {str(e)}'}), 500
 
@@ -318,15 +348,17 @@ def spy_series():
             if hasattr(d, "to_pydatetime"):
                 d = d.to_pydatetime()
             elif hasattr(d, 'iloc'):
-                d = d.iloc[0].to_pydatetime() if hasattr(d.iloc[0], 'to_pydatetime') else d.iloc[0]
-            
+                d = d.iloc[0].to_pydatetime() if hasattr(
+                    d.iloc[0], 'to_pydatetime') else d.iloc[0]
+
             close_val = row["Close"]
             if hasattr(close_val, 'iloc'):
                 close_val = close_val.iloc[0]
             if hasattr(close_val, 'item'):
                 close_val = close_val.item()
-            
-            date_str = d.strftime("%Y-%m-%d") if hasattr(d, 'strftime') else str(d)[:10]
+
+            date_str = d.strftime("%Y-%m-%d") if hasattr(
+                d, 'strftime') else str(d)[:10]
             points.append({
                 "t": date_str,
                 "close": float(close_val),
@@ -350,13 +382,8 @@ def signals():
     limit = int(request.args.get("limit", "200"))
 
     try:
-        rows = (
-            Finding.query
-            .filter(Finding.symbol == symbol)
-            .order_by(Finding.timestamp.desc())
-            .limit(limit)
-            .all()
-        )
+        rows = (Finding.query.filter(Finding.symbol == symbol).order_by(
+            Finding.timestamp.desc()).limit(limit).all())
 
         out = []
         for f in rows:
@@ -385,38 +412,45 @@ def dashboard_signals():
     Includes agent enabled status and weight for opacity rendering.
     """
     from backtests.registry import load_schedule
-    
+
     try:
         schedule = load_schedule()
-        
-        rows = (
-            Finding.query
-            .order_by(Finding.timestamp.desc())
-            .limit(1000)
-            .all()
-        )
-        
+
+        rows = (Finding.query.order_by(
+            Finding.timestamp.desc()).limit(1000).all())
+
         out = []
         for f in rows:
             agent_cfg = schedule.get(f.agent_name, {})
             enabled = agent_cfg.get("enabled", True)
             weight = agent_cfg.get("weight", 1.0)
             rank = agent_cfg.get("rank")
-            
+
             out.append({
-                "timestamp": f.timestamp.isoformat() if f.timestamp else None,
-                "t": f.timestamp.strftime("%Y-%m-%d") if f.timestamp else None,
-                "agent": f.agent_name,
-                "severity": f.severity,
-                "symbol": f.symbol,
-                "title": f.title,
-                "confidence": float(f.confidence or 0.0),
-                "color": SEVERITY_COLOR.get(f.severity, "#64748b"),
-                "enabled": enabled,
-                "weight": weight,
-                "rank": rank,
+                "timestamp":
+                f.timestamp.isoformat() if f.timestamp else None,
+                "t":
+                f.timestamp.strftime("%Y-%m-%d") if f.timestamp else None,
+                "agent":
+                f.agent_name,
+                "severity":
+                f.severity,
+                "symbol":
+                f.symbol,
+                "title":
+                f.title,
+                "confidence":
+                float(f.confidence or 0.0),
+                "color":
+                SEVERITY_COLOR.get(f.severity, "#64748b"),
+                "enabled":
+                enabled,
+                "weight":
+                weight,
+                "rank":
+                rank,
             })
-        
+
         return jsonify({"signals": out, "schedule": schedule})
     except Exception as e:
         logger.error(f"Error fetching dashboard signals: {e}")
@@ -432,26 +466,21 @@ def eval_heatmap():
     import pandas as pd
     from data_sources.price_loader import load_spy
     from meta.agent_scorer import label_forward_returns
-    
+
     try:
         spy = load_spy(start="2020-01-01", use_cache=True)
-        
+
         cutoff = datetime.utcnow() - timedelta(days=365)
-        findings = (
-            Finding.query
-            .filter(Finding.timestamp >= cutoff)
-            .order_by(Finding.timestamp.asc())
-            .limit(5000)
-            .all()
-        )
-        
+        findings = (Finding.query.filter(Finding.timestamp >= cutoff).order_by(
+            Finding.timestamp.asc()).limit(5000).all())
+
         if not findings:
             return jsonify({
                 "agents": [],
                 "columns": ["fwd_ret_1d", "fwd_ret_5d", "fwd_ret_20d"],
                 "values": []
             })
-        
+
         rows = [{
             "timestamp": f.timestamp,
             "agent_name": f.agent_name,
@@ -459,23 +488,22 @@ def eval_heatmap():
             "symbol": f.symbol,
             "title": f.title,
         } for f in findings]
-        
+
         events = pd.DataFrame(rows)
         labeled = label_forward_returns(events, spy, horizons=[1, 5, 20])
-        
+
         if labeled.empty:
             return jsonify({
                 "agents": [],
                 "columns": ["fwd_ret_1d", "fwd_ret_5d", "fwd_ret_20d"],
                 "values": []
             })
-        
+
         pivot = labeled.pivot_table(
             index="agent_name",
             values=["fwd_ret_1d", "fwd_ret_5d", "fwd_ret_20d"],
-            aggfunc="mean"
-        ).fillna(0.0)
-        
+            aggfunc="mean").fillna(0.0)
+
         return jsonify({
             "agents": pivot.index.tolist(),
             "columns": pivot.columns.tolist(),
@@ -483,7 +511,12 @@ def eval_heatmap():
         })
     except Exception as e:
         logger.error(f"Error computing heatmap: {e}")
-        return jsonify({"error": str(e), "agents": [], "columns": [], "values": []})
+        return jsonify({
+            "error": str(e),
+            "agents": [],
+            "columns": [],
+            "values": []
+        })
 
 
 @api_bp.route('/eval/regimes')
@@ -492,13 +525,13 @@ def eval_regimes():
     Return daily regime classifications (risk_on, risk_off, transition).
     """
     from meta.regime import load_regime_data
-    
+
     try:
         df = load_regime_data(start="2007-01-01")
-        
+
         if df.empty:
             return jsonify([])
-        
+
         result = []
         for _, r in df.iterrows():
             result.append({
@@ -508,7 +541,7 @@ def eval_regimes():
                 "close": float(r["Close"]),
                 "ma200": float(r["ma200"]) if r["ma200"] else None
             })
-        
+
         return jsonify(result)
     except Exception as e:
         logger.error(f"Error computing regimes: {e}")
@@ -525,42 +558,37 @@ def regime_heatmap():
     from meta.regime_classifier import attach_regimes, RegimeClassifier
     from data_sources.price_loader import load_spy
     from meta.agent_scorer import label_forward_returns
-    
+
     try:
         cutoff = datetime.utcnow() - timedelta(days=365 * 2)
-        findings = (
-            Finding.query
-            .filter(Finding.timestamp >= cutoff)
-            .order_by(Finding.timestamp.asc())
-            .limit(5000)
-            .all()
-        )
-        
+        findings = (Finding.query.filter(Finding.timestamp >= cutoff).order_by(
+            Finding.timestamp.asc()).limit(5000).all())
+
         if not findings:
             return jsonify([])
-        
+
         spy = load_spy(start="2020-01-01", use_cache=True)
-        
+
         rows = [{
             "timestamp": f.timestamp,
             "agent_name": f.agent_name,
             "severity": f.severity,
             "symbol": f.symbol,
         } for f in findings]
-        
+
         import pandas as pd
         events = pd.DataFrame(rows)
         labeled = label_forward_returns(events, spy, horizons=[20])
-        
+
         if labeled.empty:
             return jsonify([])
-        
+
         from meta.regime import load_regime_data
         regime_df = load_regime_data(start="2020-01-01")
         regime_map = {}
         for _, r in regime_df.iterrows():
             regime_map[r["Date"].date()] = r["regime"]
-        
+
         records = []
         for _, row in labeled.iterrows():
             ts = row.get("timestamp")
@@ -568,10 +596,10 @@ def regime_heatmap():
                 date_key = ts.date()
             else:
                 date_key = pd.to_datetime(ts).date()
-            
+
             regime = regime_map.get(date_key, "unknown")
             fwd_ret = row.get("fwd_ret_20d", 0.0)
-            
+
             if fwd_ret is not None and not np.isnan(fwd_ret):
                 records.append({
                     "date": str(date_key),
@@ -579,12 +607,12 @@ def regime_heatmap():
                     "regime": regime,
                     "forward_return_20d": float(fwd_ret)
                 })
-        
+
         bucket = defaultdict(list)
         for r in records:
             key = (r["regime"], r["date"])
             bucket[key].append(r["forward_return_20d"])
-        
+
         heatmap = []
         for (regime, date), vals in bucket.items():
             arr = np.array(vals)
@@ -595,9 +623,9 @@ def regime_heatmap():
                 "hit_rate": float((arr > 0).mean()),
                 "count": len(vals)
             })
-        
+
         heatmap.sort(key=lambda x: x["date"])
-        
+
         return jsonify(heatmap)
     except Exception as e:
         logger.error(f"Error computing regime heatmap: {e}")
@@ -614,48 +642,54 @@ def regime_state():
     from regime.confidence import get_cached_regime, cache_regime
     from data_sources.price_loader import load_spy
     import yfinance as yf
-    
+
     try:
         spy = load_spy(start="2020-01-01", use_cache=True)
-        
+
         try:
             vix = yf.download("^VIX", period="3mo", progress=False)
         except Exception:
             vix = spy.copy()
             vix["Close"] = 20.0
-        
+
         try:
             tnx = yf.download("^TNX", period="3mo", progress=False)
         except Exception:
             tnx = spy.copy()
             tnx["Close"] = 4.0
-        
+
         try:
             gld = yf.download("GLD", period="3mo", progress=False)
         except Exception:
             gld = None
-        
+
         if len(spy) < 20 or len(vix) < 20 or len(tnx) < 20:
-            return jsonify({"error": "Insufficient market data", "active_regime": "unknown", "confidence": 0.0})
-        
+            return jsonify({
+                "error": "Insufficient market data",
+                "active_regime": "unknown",
+                "confidence": 0.0
+            })
+
         features = extract_features(spy, vix, tnx, gld)
         scores = score_regimes(features)
-        
-        state = regime_confidence(
-            features,
-            scores,
-            prev_regime=get_cached_regime()
-        )
-        
+
+        state = regime_confidence(features,
+                                  scores,
+                                  prev_regime=get_cached_regime())
+
         cache_regime(state["active_regime"])
-        
+
         state["features"] = features
         state["scores"] = scores
-        
+
         return jsonify(state)
     except Exception as e:
         logger.error(f"Error computing regime state: {e}")
-        return jsonify({"error": str(e), "active_regime": "unknown", "confidence": 0.0})
+        return jsonify({
+            "error": str(e),
+            "active_regime": "unknown",
+            "confidence": 0.0
+        })
 
 
 @api_bp.route('/regime_report')
@@ -666,11 +700,11 @@ def regime_report():
     from meta.regime_report import generate_rotation_report, load_regime_stats
     from portfolio.agent_decay import AgentDecayModel
     import json
-    
+
     try:
         with open("agent_schedule.json", "r") as f:
             schedule = json.load(f)
-        
+
         agents = list(schedule.keys())
         base_weights = {}
         for agent, cfg in schedule.items():
@@ -678,7 +712,7 @@ def regime_report():
                 base_weights[agent] = cfg.get("weight", 1.0)
             else:
                 base_weights[agent] = 1.0
-        
+
         decay_model = AgentDecayModel()
         decay_factors = {}
         for agent, cfg in schedule.items():
@@ -688,19 +722,19 @@ def regime_report():
                 decay_factors[agent] = decay_model.decay_factor(score, days)
             else:
                 decay_factors[agent] = 1.0
-        
+
         from regime.confidence import get_cached_regime
         regime = get_cached_regime() or "risk_on"
-        
+
         from routes.api import regime_state as get_state
         state_resp = get_state()
-        state_data = state_resp.get_json() if hasattr(state_resp, 'get_json') else {}
+        state_data = state_resp.get_json() if hasattr(state_resp,
+                                                      'get_json') else {}
         confidence = state_data.get("confidence", 0.5)
-        
-        report = generate_rotation_report(
-            agents, regime, confidence, base_weights, decay_factors
-        )
-        
+
+        report = generate_rotation_report(agents, regime, confidence,
+                                          base_weights, decay_factors)
+
         return jsonify(report)
     except Exception as e:
         logger.error(f"Error generating regime report: {e}")
@@ -715,13 +749,13 @@ def ensemble_signal():
     from meta.ensemble_agent import run_ensemble
     from portfolio.agent_decay import AgentDecayModel
     import json
-    
+
     try:
         from regime.confidence import get_cached_regime
-        
+
         with open("agent_schedule.json", "r") as f:
             schedule = json.load(f)
-        
+
         decay_model = AgentDecayModel()
         decay_factors = {}
         for agent, cfg in schedule.items():
@@ -731,30 +765,33 @@ def ensemble_signal():
                 decay_factors[agent] = decay_model.decay_factor(score, days)
             else:
                 decay_factors[agent] = 1.0
-        
-        findings = [
-            {
-                "agent": f.agent_name,
-                "title": f.title,
-                "description": f.description,
-                "severity": f.severity,
-            }
-            for f in Finding.query.order_by(Finding.timestamp.desc()).limit(200).all()
-        ]
-        
+
+        findings = [{
+            "agent": f.agent_name,
+            "title": f.title,
+            "description": f.description,
+            "severity": f.severity,
+        } for f in Finding.query.order_by(Finding.timestamp.desc()).limit(
+            200).all()]
+
         regime = get_cached_regime() or "risk_on"
-        
+
         from routes.api import regime_state as get_state
         state_resp = get_state()
-        state_data = state_resp.get_json() if hasattr(state_resp, 'get_json') else {}
+        state_data = state_resp.get_json() if hasattr(state_resp,
+                                                      'get_json') else {}
         confidence = state_data.get("confidence", 0.5)
-        
+
         result = run_ensemble(findings, regime, confidence, decay_factors)
-        
+
         return jsonify(result)
     except Exception as e:
         logger.error(f"Error computing ensemble signal: {e}")
-        return jsonify({"error": str(e), "ensemble_signal": "NEUTRAL", "score": 0.0})
+        return jsonify({
+            "error": str(e),
+            "ensemble_signal": "NEUTRAL",
+            "score": 0.0
+        })
 
 
 @api_bp.route('/regime_council')
@@ -765,18 +802,16 @@ def regime_council():
     """
     from meta.regime_council import RegimeCouncil, build_signals_from_findings
     from datetime import datetime
-    
+
     try:
-        findings = [
-            {
-                "agent": f.agent_name,
-                "title": f.title,
-                "description": f.description,
-                "severity": f.severity,
-            }
-            for f in Finding.query.order_by(Finding.timestamp.desc()).limit(50).all()
-        ]
-        
+        findings = [{
+            "agent": f.agent_name,
+            "title": f.title,
+            "description": f.description,
+            "severity": f.severity,
+        } for f in Finding.query.order_by(Finding.timestamp.desc()).limit(
+            50).all()]
+
         import yfinance as yf
         market_data = {}
         try:
@@ -785,20 +820,21 @@ def regime_council():
                 market_data["vix"] = float(vix["Close"].iloc[-1])
             spy = yf.download("SPY", period="5d", progress=False)
             if len(spy) >= 2:
-                market_data["spy_return"] = float((spy["Close"].iloc[-1] / spy["Close"].iloc[-2]) - 1)
+                market_data["spy_return"] = float((spy["Close"].iloc[-1] /
+                                                   spy["Close"].iloc[-2]) - 1)
             tnx = yf.download("^TNX", period="5d", progress=False)
             if len(tnx) > 0:
                 market_data["rates_10y"] = float(tnx["Close"].iloc[-1]) / 100
         except Exception:
             pass
-        
+
         signals = build_signals_from_findings(findings, market_data)
-        
+
         council = RegimeCouncil()
         asof = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
-        
+
         result = council.run(asof_utc=asof, signals=signals)
-        
+
         from meta.uncertainty_state import UncertaintyState
         if result.get("ok"):
             disagreement = result.get("disagreement", {})
@@ -807,10 +843,9 @@ def regime_council():
                 entropy=result.get("ensemble", {}).get("entropy", 0.0),
                 prob_var=disagreement.get("prob_var", 0.0),
                 vote_split=disagreement.get("vote_split", 0),
-                source="regime_council"
-            )
+                source="regime_council")
             result["uncertainty_state"] = UncertaintyState.to_dict()
-        
+
         return jsonify(result)
     except Exception as e:
         logger.error(f"Error running regime council: {e}")
@@ -825,33 +860,35 @@ def substitution_report():
     from meta.agent_substitution import get_substitution_report, load_clusters
     from meta.regime_rotation import apply_regime_rotation
     import json
-    
+
     try:
         with open("agent_schedule.json", "r") as f:
             schedule = json.load(f)
-        
+
         base_weights = {}
         for agent, cfg in schedule.items():
             if isinstance(cfg, dict):
-                base_weights[agent] = cfg.get("weight", 1.0) if cfg.get("enabled", True) else 0.0
+                base_weights[agent] = cfg.get("weight", 1.0) if cfg.get(
+                    "enabled", True) else 0.0
             else:
                 base_weights[agent] = 1.0
-        
+
         from regime.confidence import get_cached_regime
         regime = get_cached_regime() or "risk_on"
-        
+
         from routes.api import regime_state as get_state
         state_resp = get_state()
-        state_data = state_resp.get_json() if hasattr(state_resp, 'get_json') else {}
+        state_data = state_resp.get_json() if hasattr(state_resp,
+                                                      'get_json') else {}
         confidence = state_data.get("confidence", 0.5)
-        
+
         rotated = apply_regime_rotation(base_weights, regime, confidence)
-        
+
         report = get_substitution_report(rotated, regime)
         report["base_weights"] = base_weights
         report["rotated_weights"] = rotated
         report["confidence"] = confidence
-        
+
         return jsonify(report)
     except Exception as e:
         logger.error(f"Error computing substitution report: {e}")
@@ -867,11 +904,13 @@ def uncertainty_status():
     from meta.uncertainty_decay import get_decay_status
     from models import UncertaintyEvent
     from datetime import datetime
-    
+
     try:
-        latest = UncertaintyEvent.query.order_by(UncertaintyEvent.timestamp.desc()).first()
-        recent = UncertaintyEvent.query.order_by(UncertaintyEvent.timestamp.desc()).limit(10).all()
-        
+        latest = UncertaintyEvent.query.order_by(
+            UncertaintyEvent.timestamp.desc()).first()
+        recent = UncertaintyEvent.query.order_by(
+            UncertaintyEvent.timestamp.desc()).limit(10).all()
+
         return jsonify({
             "state": UncertaintyState.to_dict(),
             "decay": get_decay_status(datetime.utcnow()),
@@ -889,7 +928,7 @@ def early_warnings():
     Get early regime transition warnings based on agent failures.
     """
     from meta.uncertainty_failure import get_early_warnings, get_failure_summary
-    
+
     try:
         return jsonify({
             "warnings": get_early_warnings(),
@@ -907,12 +946,13 @@ def decay_view():
     """
     from meta.decay import _decay
     from models import UncertaintyEvent
-    
+
     try:
-        latest_unc = UncertaintyEvent.query.order_by(UncertaintyEvent.timestamp.desc()).first()
+        latest_unc = UncertaintyEvent.query.order_by(
+            UncertaintyEvent.timestamp.desc()).first()
         uncertainty_score = latest_unc.score if latest_unc else 0.0
         uncertainty_spike = latest_unc.spike if latest_unc else False
-        
+
         return jsonify({
             "agents": _decay.all_series(last_n=50),
             "uncertainty_score": uncertainty_score,
@@ -929,7 +969,7 @@ def agent_heatmap():
     Get agent failure heatmap data showing performance across regimes.
     """
     from meta.heatmap import _failure_heatmap
-    
+
     try:
         return jsonify(_failure_heatmap.get_heatmap_data())
     except Exception as e:
@@ -944,10 +984,11 @@ def uncertainty_latest():
     Returns level, label, and whether signals should be marked provisional.
     """
     from models import UncertaintyEvent
-    
+
     try:
-        ev = UncertaintyEvent.query.order_by(UncertaintyEvent.timestamp.desc()).first()
-        
+        ev = UncertaintyEvent.query.order_by(
+            UncertaintyEvent.timestamp.desc()).first()
+
         if not ev:
             return jsonify({
                 "level": 0.0,
@@ -957,26 +998,40 @@ def uncertainty_latest():
                 "disagreement": 0.0,
                 "regime": "unknown"
             })
-        
+
         level = float(ev.score or 0.0)
         label = ev.label or "normal"
-        
+
         provisional = level >= 0.7 or label not in ("normal", "calm")
-        
+
         return jsonify({
-            "level": round(level, 3),
-            "label": label,
-            "provisional": provisional,
-            "created_at": ev.timestamp.isoformat() if ev.timestamp else None,
-            "disagreement": round(float(ev.disagreement or 0.0), 3),
-            "regime": ev.active_regime or "unknown",
-            "spike": ev.spike,
-            "cadence_multiplier": ev.cadence_multiplier,
-            "decay_multiplier": ev.decay_multiplier
+            "level":
+            round(level, 3),
+            "label":
+            label,
+            "provisional":
+            provisional,
+            "created_at":
+            ev.timestamp.isoformat() if ev.timestamp else None,
+            "disagreement":
+            round(float(ev.disagreement or 0.0), 3),
+            "regime":
+            ev.active_regime or "unknown",
+            "spike":
+            ev.spike,
+            "cadence_multiplier":
+            ev.cadence_multiplier,
+            "decay_multiplier":
+            ev.decay_multiplier
         })
     except Exception as e:
         logger.error(f"Error getting latest uncertainty: {e}")
-        return jsonify({"error": str(e), "level": 0.0, "label": "error", "provisional": False}), 500
+        return jsonify({
+            "error": str(e),
+            "level": 0.0,
+            "label": "error",
+            "provisional": False
+        }), 500
 
 
 @api_bp.route('/uncertainty/transition')
@@ -1001,10 +1056,10 @@ def council_stats():
     try:
         from meta.council_learning import fail_first_ranking
         from regime.confidence import get_cached_regime
-        
+
         regime = get_cached_regime() or "unknown"
         ranking = fail_first_ranking(min_n=5, regime=regime)
-        
+
         return jsonify({
             "regime": regime,
             "ranking": ranking,
@@ -1024,28 +1079,33 @@ def spy_uncertainty():
         from telemetry.uncertainty_events import load_recent_uncertainty
         import yfinance as yf
         from datetime import datetime, timedelta
-        
+
         end = datetime.now()
         start = end - timedelta(days=180)
-        
-        spy = yf.download("SPY", start=start.strftime("%Y-%m-%d"), 
-                          end=end.strftime("%Y-%m-%d"), progress=False)
-        
+
+        spy = yf.download("SPY",
+                          start=start.strftime("%Y-%m-%d"),
+                          end=end.strftime("%Y-%m-%d"),
+                          progress=False)
+
         if spy.empty:
             return jsonify({"error": "No SPY data available"}), 404
-        
+
         uncertainty = load_recent_uncertainty()
         max_u = max(uncertainty.values()) if uncertainty else 0.0
-        
+
         dates = spy.index.strftime("%Y-%m-%d").tolist()
         prices = spy["Close"].tolist()
-        
+
         band_width = [max_u * 0.03 * p for p in prices]
-        
+
         return jsonify({
-            "dates": dates,
-            "price": prices,
-            "uncertainty": max_u,
+            "dates":
+            dates,
+            "price":
+            prices,
+            "uncertainty":
+            max_u,
             "band_upper": [p + b for p, b in zip(prices, band_width)],
             "band_lower": [p - b for p, b in zip(prices, band_width)]
         })
@@ -1062,26 +1122,24 @@ def agents_decay():
     try:
         from telemetry.uncertainty_events import load_recent_uncertainty
         from regime.confidence import get_cached_regime
-        
+
         regime = get_cached_regime() or "unknown"
         uncertainty = load_recent_uncertainty()
-        
-        agents = [
-            {
-                "agent": agent,
-                "uncertainty": round(u, 3),
-                "decay": round(1 - u, 3),
-                "status": "stable" if u < 0.3 else ("degrading" if u < 0.7 else "decayed")
-            }
-            for agent, u in uncertainty.items()
-        ]
-        
+
+        agents = [{
+            "agent":
+            agent,
+            "uncertainty":
+            round(u, 3),
+            "decay":
+            round(1 - u, 3),
+            "status":
+            "stable" if u < 0.3 else ("degrading" if u < 0.7 else "decayed")
+        } for agent, u in uncertainty.items()]
+
         agents.sort(key=lambda x: x["decay"])
-        
-        return jsonify({
-            "regime": regime,
-            "agents": agents
-        })
+
+        return jsonify({"regime": regime, "agents": agents})
     except Exception as e:
         logger.error(f"Error getting agent decay data: {e}")
         return jsonify({"error": str(e)}), 500
@@ -1095,13 +1153,13 @@ def substitution_status():
     try:
         from telemetry.uncertainty_events import load_recent_uncertainty
         from meta.substitution import get_substitution_status, load_substitution_map
-        
+
         uncertainty = load_recent_uncertainty()
         substitution_map = load_substitution_map()
-        
+
         from scheduler import _regime_weights
         status = get_substitution_status(uncertainty, _regime_weights or {})
-        
+
         return jsonify({
             "substitution_map": substitution_map,
             "agents": status
@@ -1121,10 +1179,10 @@ def agent_explain(agent_name):
     try:
         from backtests.regime_report import build_regime_report
         from regime.confidence import get_cached_regime
-        
+
         regime = get_cached_regime() or "unknown"
         report = build_regime_report(agent_name, regime)
-        
+
         return jsonify(report)
     except Exception as e:
         logger.error(f"Error getting agent explanation for {agent_name}: {e}")
@@ -1139,14 +1197,11 @@ def inactive_agents_explain():
     try:
         from backtests.regime_report import get_inactive_agents_explanation
         from regime.confidence import get_cached_regime
-        
+
         regime = get_cached_regime() or "unknown"
         explanations = get_inactive_agents_explanation(regime)
-        
-        return jsonify({
-            "regime": regime,
-            "inactive_agents": explanations
-        })
+
+        return jsonify({"regime": regime, "inactive_agents": explanations})
     except Exception as e:
         logger.error(f"Error getting inactive agents explanation: {e}")
         return jsonify({"error": str(e)}), 500
@@ -1171,17 +1226,17 @@ def analyze_finding():
     """
     from services.auto_triage import auto_analyze_and_alert
     from models import Finding, LLMCouncilResult, db
-    
+
     try:
         data = request.get_json() or {}
         finding_id = data.get("finding_id")
         force = data.get("force", False)
-        
+
         if not finding_id:
             return jsonify({"error": "finding_id required"}), 400
-        
+
         result = auto_analyze_and_alert(finding_id, force=force)
-        
+
         if result.get("ok"):
             f = Finding.query.get(finding_id)
             if f:
@@ -1197,7 +1252,7 @@ def analyze_finding():
                 )
                 db.session.add(council_result)
                 db.session.commit()
-        
+
         return jsonify(result)
     except Exception as e:
         logger.error(f"Error analyzing finding: {e}")
@@ -1215,17 +1270,17 @@ def analyze_batch():
         force: bool - Re-analyze (optional)
     """
     from services.auto_triage import auto_analyze_and_alert
-    
+
     try:
         data = request.get_json() or {}
         finding_ids = data.get("finding_ids", [])
         force = data.get("force", False)
-        
+
         results = []
         for fid in finding_ids[:50]:
             result = auto_analyze_and_alert(fid, force=force)
             results.append({"finding_id": fid, **result})
-        
+
         return jsonify({"results": results, "count": len(results)})
     except Exception as e:
         logger.error(f"Error batch analyzing: {e}")
@@ -1239,7 +1294,7 @@ def triage_summary():
     Get summary of auto-triage results.
     """
     from services.auto_triage import get_triage_summary
-    
+
     try:
         limit = request.args.get("limit", 50, type=int)
         summary = get_triage_summary(limit)
@@ -1269,59 +1324,55 @@ def action_required_findings():
     """
     try:
         from sqlalchemy import or_, and_, not_
-        
+
         limit = request.args.get("limit", 50, type=int)
         hours = request.args.get("hours", 168, type=int)
         cutoff = datetime.utcnow() - timedelta(hours=hours)
-        
-        blocking_regimes = ['risk_off', 'crisis', 'bearish', 'recession', 'panic']
-        
-        real_estate_types = ['real_estate', 'private_equity', 'distressed', 'distressed_debt', 'private_company']
-        
+
+        blocking_regimes = [
+            'risk_off', 'crisis', 'bearish', 'recession', 'panic'
+        ]
+
+        real_estate_types = [
+            'real_estate', 'private_equity', 'distressed', 'distressed_debt',
+            'private_company'
+        ]
+
         excluded_types = ['internal', 'governance']
-        
-        trading_types = ['equity', 'crypto', 'macro', 'bonds', 'volatility', 'technical',
-                         'credit', 'structured_credit', 'geopolitical', 'commodities']
-        
+
+        trading_types = [
+            'equity', 'crypto', 'macro', 'bonds', 'volatility', 'technical',
+            'credit', 'structured_credit', 'geopolitical', 'commodities'
+        ]
+
         high_severities = ['high', 'critical']
-        
+
         findings = Finding.query.filter(
             Finding.timestamp >= cutoff,
-            or_(Finding.market_type.is_(None), not_(Finding.market_type.in_(excluded_types))),
+            or_(Finding.market_type.is_(None),
+                not_(Finding.market_type.in_(excluded_types))),
             or_(
                 and_(
-                    Finding.ta_council == 'act',
-                    Finding.fund_council == 'act',
-                    or_(
-                        Finding.ta_regime.is_(None),
-                        not_(Finding.ta_regime.in_(blocking_regimes))
-                    )
-                ),
-                and_(
-                    Finding.market_type.in_(real_estate_types),
-                    Finding.real_estate_council == 'act'
-                ),
+                    Finding.ta_council == 'act', Finding.fund_council == 'act',
+                    or_(Finding.ta_regime.is_(None),
+                        not_(Finding.ta_regime.in_(blocking_regimes)))),
+                and_(Finding.market_type.in_(real_estate_types),
+                     Finding.real_estate_council == 'act'),
                 and_(
                     Finding.market_type.in_(trading_types),
-                    Finding.severity.in_(high_severities),
-                    Finding.confidence >= 0.7,
-                    or_(
-                        Finding.ta_regime.is_(None),
-                        not_(Finding.ta_regime.in_(blocking_regimes))
-                    )
-                ),
-                and_(
-                    Finding.agent_name == 'CodeGuardianAgent',
-                    Finding.severity.in_(high_severities)
-                )
-            )
-        ).order_by(Finding.timestamp.desc()).limit(limit).all()
-        
+                    Finding.severity.in_(high_severities), Finding.confidence
+                    >= 0.7,
+                    or_(Finding.ta_regime.is_(None),
+                        not_(Finding.ta_regime.in_(blocking_regimes)))),
+                and_(Finding.agent_name == 'CodeGuardianAgent',
+                     Finding.severity.in_(high_severities)))).order_by(
+                         Finding.timestamp.desc()).limit(limit).all()
+
         return jsonify({
             "count": len(findings),
             "findings": [f.to_dict() for f in findings]
         })
-        
+
     except Exception as e:
         logger.error(f"Error getting action-required findings: {e}")
         return jsonify({"error": str(e)}), 500
@@ -1336,43 +1387,42 @@ def backfill_trade_council():
     """
     import os
     from openai import OpenAI
-    
+
     try:
         limit = request.args.get("limit", 100, type=int)
-        
-        api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY")
+
+        api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get(
+            "AI_INTEGRATIONS_OPENAI_API_KEY")
         base_url = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
-        
+
         if not api_key:
             return jsonify({"error": "OpenAI API key not configured"}), 500
-        
-        client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI(api_key=api_key)
-        
+
+        client = OpenAI(api_key=api_key,
+                        base_url=base_url) if base_url else OpenAI(
+                            api_key=api_key)
+
         from sqlalchemy import or_
-        
+
         findings = Finding.query.filter(
             or_(
-                and_(
-                    Finding.ta_council.is_(None),
-                    Finding.fund_council.is_(None)
-                ),
+                and_(Finding.ta_council.is_(None),
+                     Finding.fund_council.is_(None)),
                 and_(
                     Finding.market_type.in_(['real_estate', 'private_equity']),
-                    Finding.real_estate_council.is_(None)
-                )
-            )
-        ).order_by(Finding.timestamp.desc()).limit(limit).all()
-        
+                    Finding.real_estate_council.is_(None)))).order_by(
+                        Finding.timestamp.desc()).limit(limit).all()
+
         processed = 0
         act_count = 0
         results = []
-        
+
         for finding in findings:
             try:
                 asset_type = 'crypto' if any(c in (finding.symbol or '').upper() for c in ['BTC', 'ETH', 'SOL', 'USDT', 'USDC']) else \
                              'real_estate' if 'property' in (finding.agent_name or '').lower() or 'distress' in (finding.agent_name or '').lower() else \
                              'equity'
-                
+
                 prompt = f"""Analyze this market finding and provide trade verdicts:
 Agent: {finding.agent_name}, Symbol: {finding.symbol}, Severity: {finding.severity}, Confidence: {finding.confidence}
 Title: {finding.title}
@@ -1383,15 +1433,18 @@ ta_council=ACT|WATCH|HOLD
 fund_council=ACT|WATCH|HOLD
 real_estate_council=ACT|WATCH|HOLD|N/A"""
 
-                response = client.chat.completions.create(
-                    model='gpt-4o-mini',
-                    messages=[{'role': 'user', 'content': prompt}],
-                    max_tokens=80,
-                    temperature=0.2
-                )
-                
+                response = client.chat.completions.create(model='gpt-4o-mini',
+                                                          messages=[{
+                                                              'role':
+                                                              'user',
+                                                              'content':
+                                                              prompt
+                                                          }],
+                                                          max_tokens=80,
+                                                          temperature=0.2)
+
                 text = response.choices[0].message.content or ''
-                
+
                 for line in text.strip().split('\n'):
                     if '=' in line:
                         key, val = line.split('=', 1)
@@ -1404,14 +1457,14 @@ real_estate_council=ACT|WATCH|HOLD|N/A"""
                                 finding.fund_council = val
                             elif 'real' in key:
                                 finding.real_estate_council = val
-                
+
                 is_action_required = False
                 if finding.market_type in ['real_estate', 'private_equity']:
                     if finding.real_estate_council == 'act':
                         is_action_required = True
                 elif finding.ta_council == 'act' and finding.fund_council == 'act':
                     is_action_required = True
-                    
+
                 if is_action_required:
                     act_count += 1
                     results.append({
@@ -1421,24 +1474,24 @@ real_estate_council=ACT|WATCH|HOLD|N/A"""
                         "market_type": finding.market_type,
                         "action_required": True
                     })
-                
+
                 processed += 1
-                
+
                 if processed % 10 == 0:
                     db.session.commit()
-                    
+
             except Exception as e:
                 logger.warning(f"Error processing finding {finding.id}: {e}")
                 continue
-        
+
         db.session.commit()
-        
+
         return jsonify({
             "processed": processed,
             "action_required_count": act_count,
             "action_items": results
         })
-        
+
     except Exception as e:
         logger.error(f"Error in backfill: {e}")
         return jsonify({"error": str(e)}), 500
@@ -1467,21 +1520,34 @@ def get_agents_status():
         scheduler = current_app.extensions.get("scheduler")
         if scheduler and hasattr(scheduler, 'scheduler'):
             active_jobs = scheduler.scheduler.get_jobs()
-            running_agents = [job.name for job in active_jobs if job.name and 'Agent' in job.name]
+            running_agents = [
+                job.name for job in active_jobs
+                if job.name and 'Agent' in job.name
+            ]
         else:
             running_agents = []
 
         return jsonify({
-            "timestamp": datetime.utcnow().isoformat(),
-            "total_agents": 159,
-            "running_count": len(running_agents),
-            "running_agents": running_agents,
-            "health_status": "healthy" if len(running_agents) > 150 else "warning" if len(running_agents) > 120 else "critical",
-            "uptime_percent": round((len(running_agents) / 159) * 100, 1)
+            "timestamp":
+            datetime.utcnow().isoformat(),
+            "total_agents":
+            159,
+            "running_count":
+            len(running_agents),
+            "running_agents":
+            running_agents,
+            "health_status":
+            "healthy" if len(running_agents) > 150 else
+            "warning" if len(running_agents) > 120 else "critical",
+            "uptime_percent":
+            round((len(running_agents) / 159) * 100, 1)
         }), 200
     except Exception as e:
         logger.error(f"Error getting agents status: {e}")
-        return jsonify({"error": str(e), "timestamp": datetime.utcnow().isoformat()}), 500
+        return jsonify({
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }), 500
 
 
 @api_bp.route('/monitoring/startup-failures', methods=['GET'])
@@ -1508,3 +1574,135 @@ def clear_agent_failures(agent_name):
         return jsonify({"message": f"Cleared failures for {agent_name}"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
+# ============== OPTION B & C: RATE LIMITING, CACHING & ALERTING ==============
+
+# Initialize Rate Limiter
+limiter = Limiter(
+        key_func=get_remote_address,
+        default_limits=["200 per day", "50 per hour"]
+)
+
+# Response Cache with TTL
+response_cache = {}
+CACHE_TTL_SECONDS = 60
+
+def cached_endpoint(ttl_seconds=CACHE_TTL_SECONDS):
+        """Decorator for caching endpoint responses"""""
+        def decorator(f):
+                    @wraps(f)
+                    def decorated_function(*args, **kwargs):
+                                    cache_key = f"endpoint_{f.__name__}_{str(request.args)}"
+
+            # Check if cached response exists and is still valid
+            if cache_key in response_cache:
+                                cached_data, timestamp = response_cache[cache_key]
+                                if (datetime.now() - timestamp).total_seconds() < ttl_seconds:
+                                                        logger.info(f"Cache hit for {f.__name__}")
+                                                        return cached_data
+
+            # Call the actual endpoint
+            result = f(*args, **kwargs)
+
+            # Cache the response
+            response_cache[cache_key] = (result, datetime.now())
+            logger.info(f"Cached response for {f.__name__} (TTL: {ttl_seconds}s)")
+
+            return result
+        return decorated_function
+    return decorator
+
+# Alert System for Agent Failures
+class AlertSystem:
+        """Handles alerts for critical system events"""""
+    def __init__(self):
+                self.alerts = []
+                self.alert_threshold = 3  # Alert if 3+ agents fail
+
+    def check_agent_health(self, agent_count, running_count):
+                """Monitor agent health and trigger alerts"""""
+                if running_count < (agent_count * 0.85):  # Alert if < 85% running
+                                alert = {
+                                                    'timestamp': datetime.now().isoformat(),
+                                                    'type': 'AGENT_FAILURE',
+                                                    'severity': 'critical',
+                                                    'message': f'Only {running_count}/{agent_count} agents running',
+                                                    'status': 'ACTIVE'
+                                }
+                                self.alerts.append(alert)
+                                logger.error(f"⚠️ ALERT: {alert['message']}")
+                                return alert
+                            return None
+
+    def check_endpoint_latency(self, endpoint, latency_ms):
+                """Monitor endpoint latency"""""
+        if latency_ms > 500:  # Alert if > 500ms
+                        alert = {
+                                            'timestamp': datetime.now().isoformat(),
+                                            'type': 'HIGH_LATENCY',
+                                            'severity': 'warning',
+                                            'message': f'Endpoint {endpoint} latency: {latency_ms}ms',
+                                            'status': 'ACTIVE'
+                        }
+                        self.alerts.append(alert)
+                        return alert
+                    return None
+
+    def get_active_alerts(self):
+                """Return all active alerts"""""
+        return [a for a in self.alerts if a['status'] == 'ACTIVE']
+
+# Initialize Alert System
+alert_system = AlertSystem()
+
+# Enhanced Error Handler Wrapper
+def handle_endpoint_errors(f):
+        """Decorator for comprehensive error handling"""""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+                try:
+                    start_time = datetime.now()
+                                result = f(*args, **kwargs)
+            latency = (datetime.now() - start_time).total_seconds() * 1000
+
+            # Check latency and alert if needed
+            if latency > 500:
+                                alert_system.check_endpoint_latency(f.__name__, latency)
+
+            return result
+except KeyError as e:
+            logger.error(f"Missing required key in {f.__name__}: {str(e)}")
+            return jsonify({'error': f'Missing data: {str(e)}'}), 400
+        except ValueError as e:
+            logger.error(f"Invalid value in {f.__name__}: {str(e)}")
+            return jsonify({'error': f'Invalid input: {str(e)}'}), 422
+except Exception as e:
+            logger.error(f"Unexpected error in {f.__name__}: {str(e)}")
+            return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
+    return decorated_function
+
+# New Alerting Endpoint
+@api_bp.route('/alerts', methods=['GET'])
+@api_login_required
+def get_alerts():
+        """Get all active system alerts"""""
+    try:
+                alerts = alert_system.get_active_alerts()
+        return jsonify({
+                        'alerts': alerts,
+                        'count': len(alerts),
+                        'timestamp': datetime.now().isoformat()
+        }), 200
+except Exception as e:
+        logger.error(f"Error fetching alerts: {e}")
+        return jsonify({'error': str(e)}), 500
+
+# System Health Endpoint with Rate Limiting
+@api_bp.route('/system/health', methods=['GET'])
+@l
+        })
+                        }
+                                }
+)
