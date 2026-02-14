@@ -22,8 +22,8 @@ def reward(event: Dict[str, Any], output: Any) -> float:
     cost = float(event.get("cost_usd") or 0.0)
     lat_ms = float(event.get("latency_ms") or 0.0)
 
-    cost_penalty = math.log1p(cost * 200.0)
-    lat_penalty = math.log1p(lat_ms / 5000.0)
+    cost_penalty = math.log1p(cost * 50.0)
+    lat_penalty = math.log1p(lat_ms / 10000.0)
 
-    raw = sig - 0.25 * cost_penalty - 0.05 * lat_penalty
+    raw = sig - 0.25 * cost_penalty - 0.10 * lat_penalty
     return max(raw, -1.0)
