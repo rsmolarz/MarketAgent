@@ -1,4 +1,4 @@
-please """
+"""
 Technical Analysis API endpoints for dashboard overlays.
 """
 from flask import Blueprint, jsonify, request

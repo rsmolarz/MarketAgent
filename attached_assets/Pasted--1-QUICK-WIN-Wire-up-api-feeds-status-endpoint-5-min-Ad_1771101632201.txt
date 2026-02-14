@@ -1,0 +1,337 @@
+
+1️⃣ QUICK WIN: Wire up /api/feeds/status endpoint (5 min)
+Add to: routes/api.py (or create new if needed)
+pythonfrom flask import jsonify
+from data_feeds.feed_manager import FeedManager
+
+# Add this route to routes/api.py
+@app.route('/api/feeds/status', methods=['GET'])
+def get_feeds_status():
+    """Get status of all data feeds."""
+    try:
+        from data_feeds.feed_manager import create_feed_manager
+        feed_manager = create_feed_manager()
+        status = feed_manager.get_status()
+        return jsonify(status), 200
+    except Exception as e:
+        logger.error(f"Error getting feeds status: {e}")
+        return jsonify({
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }), 500
+
+2️⃣ ADD: /api/agents/status endpoint (10 min)
+Add to: routes/api.py
+python@app.route('/api/agents/status', methods=['GET'])
+def get_agents_status():
+    """Get real-time agent health status."""
+    try:
+        from scheduler import agent_scheduler
+        
+        active_jobs = agent_scheduler.scheduler.get_jobs()
+        running_agents = [job.name for job in active_jobs if job.name and 'Agent' in job.name]
+        
+        return jsonify({
+            "timestamp": datetime.utcnow().isoformat(),
+            "total_agents": 159,
+            "running_count": len(running_agents),
+            "running_agents": running_agents,
+            "health_status": "healthy" if len(running_agents) > 150 else "warning" if len(running_agents) > 120 else "critical",
+            "uptime_percent": (len(running_agents) / 159) * 100
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting agents status: {e}")
+        return jsonify({"error": str(e), "timestamp": datetime.utcnow().isoformat()}), 500
+
+3️⃣ ENHANCE: Code Guardian with Startup Alerts (30 min)
+Create new file: services/startup_failure_tracker.py
+pythonimport json
+import os
+from datetime import datetime
+from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
+
+FAILURES_FILE = Path("meta_supervisor/startup_failures.json")
+
+def track_startup_failure(agent_name: str, error_message: str, error_details: str = ""):
+    """Track agent startup failures for monitoring."""
+    try:
+        # Load existing failures
+        failures = []
+        if FAILURES_FILE.exists():
+            try:
+                failures = json.loads(FAILURES_FILE.read_text())
+            except:
+                failures = []
+        
+        # Add new failure
+        failure_record = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "agent_name": agent_name,
+            "error_message": error_message,
+            "error_details": error_details,
+            "retry_count": 0,
+            "last_seen": datetime.utcnow().isoformat()
+        }
+        
+        # Check if agent already in failures
+        existing = next((f for f in failures if f["agent_name"] == agent_name), None)
+        if existing:
+            existing["retry_count"] += 1
+            existing["last_seen"] = failure_record["timestamp"]
+            existing["error_message"] = error_message
+        else:
+            failures.append(failure_record)
+        
+        # Keep only recent failures (last 100)
+        failures = sorted(failures, key=lambda x: x["timestamp"], reverse=True)[:100]
+        
+        # Save to file
+        FAILURES_FILE.parent.mkdir(parents=True, exist_ok=True)
+        FAILURES_FILE.write_text(json.dumps(failures, indent=2))
+        
+        logger.warning(f"[StartupTracker] Recorded failure for {agent_name}: {error_message}")
+    except Exception as e:
+        logger.error(f"Failed to track startup failure: {e}")
+
+def get_startup_failures():
+    """Get all tracked startup failures."""
+    try:
+        if FAILURES_FILE.exists():
+            return json.loads(FAILURES_FILE.read_text())
+        return []
+    except Exception as e:
+        logger.error(f"Error reading startup failures: {e}")
+        return []
+
+def clear_startup_failures(agent_name: str = None):
+    """Clear startup failures for a specific agent or all."""
+    try:
+        if not FAILURES_FILE.exists():
+            return
+        
+        failures = json.loads(FAILURES_FILE.read_text())
+        
+        if agent_name:
+            failures = [f for f in failures if f["agent_name"] != agent_name]
+        else:
+            failures = []
+        
+        FAILURES_FILE.write_text(json.dumps(failures, indent=2))
+    except Exception as e:
+        logger.error(f"Error clearing startup failures: {e}")
+Add to: scheduler.py (in the exception handler)
+python# In the start_agent() method exception handler, add:
+from services.startup_failure_tracker import track_startup_failure
+
+except Exception as e:
+    logger.error(f"Error starting agent {agent_name}: {e}")
+    logger.warning(f"[CodeGuardian] Agent {agent_name} startup failed")
+    track_startup_failure(agent_name, str(e), str(type(e).__name__))
+    return False
+Add endpoint: routes/api.py
+pythonfrom services.startup_failure_tracker import get_startup_failures, clear_startup_failures
+
+@app.route('/api/monitoring/startup-failures', methods=['GET'])
+def get_startup_failures_endpoint():
+    """Get list of agent startup failures."""
+    try:
+        failures = get_startup_failures()
+        return jsonify({
+            "timestamp": datetime.utcnow().isoformat(),
+            "total_failures": len(failures),
+            "failures": failures
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting startup failures: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/monitoring/startup-failures/<agent_name>', methods=['DELETE'])
+def clear_agent_failures(agent_name):
+    """Clear startup failures for an agent."""
+    try:
+        clear_startup_failures(agent_name)
+        return jsonify({"message": f"Cleared failures for {agent_name}"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+4️⃣ CREATE: Simple Monitoring Dashboard (30 min)
+Create new file: routes/dashboard_routes.py
+pythonfrom flask import render_template_string, jsonify
+from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
+
+def init_dashboard_routes(app):
+    """Initialize dashboard routes."""
+    
+    @app.route('/dashboard/monitoring')
+    def monitoring_dashboard():
+        """Render monitoring dashboard."""
+        html = '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>MarketAgent Monitoring Dashboard</title>
+            <style>
+                * { margin: 0; padding: 0; box-sizing: border-box; }
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto; background: #0f1419; color: #e0e0e0; }
+                .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+                header { margin-bottom: 30px; border-bottom: 2px solid #1e293b; padding-bottom: 20px; }
+                h1 { font-size: 28px; margin-bottom: 10px; color: #fff; }
+                .timestamp { font-size: 12px; color: #64748b; }
+                .dashboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
+                .widget { background: #1e293b; border-radius: 8px; padding: 20px; border: 1px solid #334155; }
+                .widget-title { font-size: 18px; font-weight: 600; margin-bottom: 15px; color: #f1f5f9; border-bottom: 1px solid #334155; padding-bottom: 10px; }
+                .stat { margin: 15px 0; display: flex; justify-content: space-between; align-items: center; }
+                .stat-label { color: #94a3b8; }
+                .stat-value { font-size: 24px; font-weight: 700; color: #0ea5e9; }
+                .status-good { color: #10b981; }
+                .status-warning { color: #f59e0b; }
+                .status-critical { color: #ef4444; }
+                .list { max-height: 300px; overflow-y: auto; }
+                .list-item { padding: 10px; background: #0f1419; margin: 5px 0; border-radius: 4px; border-left: 3px solid #ef4444; font-size: 12px; }
+                .list-item .agent { font-weight: 600; }
+                .list-item .error { color: #fca5a5; margin-top: 3px; }
+                .refresh-btn { padding: 8px 16px; background: #0ea5e9; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; }
+                .refresh-btn:hover { background: #0284c7; }
+                .loading { color: #94a3b8; text-align: center; padding: 20px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <header>
+                    <h1>🎯 MarketAgent Monitoring Dashboard</h1>
+                    <div class="timestamp">Last updated: <span id="last-update">-</span></div>
+                    <button class="refresh-btn" onclick="refreshDashboard()">🔄 Refresh</button>
+                </header>
+                
+                <div class="dashboard">
+                    <!-- Widget 1: Feed Status -->
+                    <div class="widget">
+                        <div class="widget-title">📊 Feed Status Overview</div>
+                        <div id="feed-status" class="loading">Loading feeds...</div>
+                    </div>
+                    
+                    <!-- Widget 2: Agent Health -->
+                    <div class="widget">
+                        <div class="widget-title">🤖 Agent Health</div>
+                        <div id="agent-health" class="loading">Loading agents...</div>
+                    </div>
+                    
+                    <!-- Widget 3: Startup Failures -->
+                    <div class="widget">
+                        <div class="widget-title">⚠️ Recent Startup Failures</div>
+                        <div id="startup-failures" class="loading">Loading failures...</div>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+                async function refreshDashboard() {
+                    document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+                    await loadFeedsStatus();
+                    await loadAgentsStatus();
+                    await loadStartupFailures();
+                }
+
+                async function loadFeedsStatus() {
+                    try {
+                        const response = await fetch('/api/feeds/status');
+                        const data = await response.json();
+                        const totalFeeds = data.total_feeds || 0;
+                        const healthyFeeds = Object.values(data.feeds || {})
+                            .filter(f => f.status === 'healthy').length;
+                        
+                        document.getElementById('feed-status').innerHTML = `
+                            <div class="stat">
+                                <span class="stat-label">Total Feeds</span>
+                                <span class="stat-value">${totalFeeds}</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">Healthy Feeds</span>
+                                <span class="stat-value status-good">${healthyFeeds}</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">Issues</span>
+                                <span class="stat-value ${totalFeeds - healthyFeeds > 0 ? 'status-warning' : 'status-good'}">${totalFeeds - healthyFeeds}</span>
+                            </div>
+                        `;
+                    } catch (e) {
+                        document.getElementById('feed-status').innerHTML = `<div style="color: #ef4444;">Error loading feeds: ${e.message}</div>`;
+                    }
+                }
+
+                async function loadAgentsStatus() {
+                    try {
+                        const response = await fetch('/api/agents/status');
+                        const data = await response.json();
+                        const healthClass = data.health_status === 'healthy' ? 'status-good' : 
+                                          data.health_status === 'warning' ? 'status-warning' : 'status-critical';
+                        
+                        document.getElementById('agent-health').innerHTML = `
+                            <div class="stat">
+                                <span class="stat-label">Total Agents</span>
+                                <span class="stat-value">${data.total_agents}</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">Running</span>
+                                <span class="stat-value status-good">${data.running_count}</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">Uptime</span>
+                                <span class="stat-value">${data.uptime_percent.toFixed(1)}%</span>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-label">Health Status</span>
+                                <span class="stat-value ${healthClass}">${data.health_status.toUpperCase()}</span>
+                            </div>
+                        `;
+                    } catch (e) {
+                        document.getElementById('agent-health').innerHTML = `<div style="color: #ef4444;">Error loading agents: ${e.message}</div>`;
+                    }
+                }
+
+                async function loadStartupFailures() {
+                    try {
+                        const response = await fetch('/api/monitoring/startup-failures');
+                        const data = await response.json();
+                        const failures = data.failures || [];
+                        
+                        if (failures.length === 0) {
+                            document.getElementById('startup-failures').innerHTML = '<div style="color: #10b981; padding: 20px; text-align: center;">✓ No startup failures!</div>';
+                        } else {
+                            const html = failures.slice(0, 10).map(f => `
+                                <div class="list-item">
+                                    <div class="agent">${f.agent_name}</div>
+                                    <div class="error">${f.error_message}</div>
+                                    <div style="color: #64748b; font-size: 10px;">${new Date(f.timestamp).toLocaleString()} (${f.retry_count} retries)</div>
+                                </div>
+                            `).join('');
+                            document.getElementById('startup-failures').innerHTML = html;
+                        }
+                    } catch (e) {
+                        document.getElementById('startup-failures').innerHTML = `<div style="color: #ef4444;">Error loading failures: ${e.message}</div>`;
+                    }
+                }
+
+                // Auto-refresh every 30 seconds
+                refreshDashboard();
+                setInterval(refreshDashboard, 30000);
+            </script>
+        </body>
+        </html>
+        '''
+        return render_template_string(html)
+Add to: app.py (after creating the Flask app)
+pythonfrom routes.dashboard_routes import init_dashboard_routes
+
+# After creating app:
+app = create_app()
+init_dashboard_routes(app)
+```
+
+---

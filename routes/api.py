@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import logging
 from functools import wraps
 import yfinance as yf
+from services.startup_failure_tracker import get_startup_failures, clear_startup_failures
 
 logger = logging.getLogger(__name__)
 api_bp = Blueprint('api', __name__)
@@ -1440,4 +1441,70 @@ real_estate_council=ACT|WATCH|HOLD|N/A"""
         
     except Exception as e:
         logger.error(f"Error in backfill: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/feeds/status', methods=['GET'])
+def get_feeds_status():
+    """Get status of all data feeds."""
+    try:
+        from data_feeds.feed_manager import create_feed_manager
+        feed_manager = create_feed_manager()
+        status = feed_manager.get_status()
+        return jsonify(status), 200
+    except Exception as e:
+        logger.error(f"Error getting feeds status: {e}")
+        return jsonify({
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }), 500
+
+
+@api_bp.route('/agents/status', methods=['GET'])
+def get_agents_status():
+    """Get real-time agent health status."""
+    try:
+        scheduler = current_app.extensions.get("scheduler")
+        if scheduler and hasattr(scheduler, 'scheduler'):
+            active_jobs = scheduler.scheduler.get_jobs()
+            running_agents = [job.name for job in active_jobs if job.name and 'Agent' in job.name]
+        else:
+            running_agents = []
+
+        return jsonify({
+            "timestamp": datetime.utcnow().isoformat(),
+            "total_agents": 159,
+            "running_count": len(running_agents),
+            "running_agents": running_agents,
+            "health_status": "healthy" if len(running_agents) > 150 else "warning" if len(running_agents) > 120 else "critical",
+            "uptime_percent": round((len(running_agents) / 159) * 100, 1)
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting agents status: {e}")
+        return jsonify({"error": str(e), "timestamp": datetime.utcnow().isoformat()}), 500
+
+
+@api_bp.route('/monitoring/startup-failures', methods=['GET'])
+def get_startup_failures_endpoint():
+    """Get list of agent startup failures."""
+    try:
+        failures = get_startup_failures()
+        return jsonify({
+            "timestamp": datetime.utcnow().isoformat(),
+            "total_failures": len(failures),
+            "failures": failures
+        }), 200
+    except Exception as e:
+        logger.error(f"Error getting startup failures: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route('/monitoring/startup-failures/<agent_name>', methods=['DELETE'])
+@api_login_required
+def clear_agent_failures(agent_name):
+    """Clear startup failures for an agent."""
+    try:
+        clear_startup_failures(agent_name)
+        return jsonify({"message": f"Cleared failures for {agent_name}"}), 200
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
