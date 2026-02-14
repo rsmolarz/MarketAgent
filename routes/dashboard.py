@@ -28,7 +28,10 @@ def index():
             return render_template('landing.html')
     except Exception as e:
         logger.error(f"Dashboard rendering failed: {e}")
-        return render_template('landing.html')
+        try:
+            return render_template('landing.html')
+        except Exception:
+            return "OK", 200
 
 @dashboard_bp.route('/agents')
 @require_login
