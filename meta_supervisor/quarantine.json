@@ -41,15 +41,15 @@
       "since": "2026-02-12T18:38:14.378136+00:00"
     },
     "IntradayVolumeSpikeAgent": {
-      "active": true,
-      "reason": "Auto-quarantine: drawdown -12.313 <= limit -10.0, avg_reward -0.162",
-      "since": "2026-02-12T19:34:49.690705+00:00"
+      "active": false,
+      "reason": "Auto-quarantine: drawdown -12.313 <= limit -10.0, avg_reward -0.158",
+      "since": "2026-02-12T19:38:11.483566+00:00"
     },
     "TechnicalAnalysisAgent": {
-      "active": true,
-      "reason": "Auto-quarantine: drawdown -11.242 <= limit -10.0, avg_reward -0.201",
-      "since": "2026-02-12T19:34:49.703034+00:00"
+      "active": false,
+      "reason": "Auto-quarantine: drawdown -11.188 <= limit -10.0, avg_reward -0.203",
+      "since": "2026-02-12T19:49:49.678335+00:00"
     }
   },
-  "updated_at": "2026-02-12T19:34:49.703087+00:00"
+  "updated_at": "2026-02-12T19:58:10.954580+00:00"
 }
