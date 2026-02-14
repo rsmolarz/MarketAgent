@@ -185,6 +185,7 @@ class AgentScheduler:
                 
         except Exception as e:
             logger.error(f"Error starting agent {agent_name}: {e}")
+            
             return False
     
     def stop_agent(self, agent_name: str) -> bool:
