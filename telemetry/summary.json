@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-14T20:39:19.918685Z",
+  "generated_at": "2026-02-14T20:57:15.203706Z",
   "agents": {
     "TechnicalRegimeAgent": {
       "count": 153,
@@ -37,8 +37,8 @@
       "error_rate": 0.0
     },
     "ArbitrageFinderAgent": {
-      "count": 6541,
-      "avg_latency_ms": 7194.88,
+      "count": 6550,
+      "avg_latency_ms": 7194.92,
       "total_cost_usd": 0.0,
       "avg_reward": -0.0,
       "error_rate": 0.0
