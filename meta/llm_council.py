@@ -93,7 +93,11 @@ Respond in format: uncertainty=X.XX|label=LABEL|confidence=X.XX"""
 def _call_anthropic(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         import anthropic
-        client = anthropic.Anthropic()
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            logger.warning("ANTHROPIC_API_KEY not set, skipping Anthropic council call")
+            return None
+        client = anthropic.Anthropic(api_key=api_key)
         
         prompt = f"""Analyze market uncertainty based on this data:
 Regime: {payload.get('regime_state', 'unknown')}
@@ -127,14 +131,13 @@ Respond in format: uncertainty=X.XX|label=LABEL|confidence=X.XX"""
 
 def _call_gemini(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
-        import google.generativeai as genai
+        from google import genai
         
         api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not api_key:
             return None
             
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash")
+        client = genai.Client(api_key=api_key)
         
         prompt = f"""Analyze market uncertainty based on this data:
 Regime: {payload.get('regime_state', 'unknown')}
@@ -146,7 +149,10 @@ Confidence in your assessment: 0-1.
 
 Respond in format: uncertainty=X.XX|label=LABEL|confidence=X.XX"""
         
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
+        )
         text = response.text or ""
         parts = dict(p.split("=") for p in text.strip().split("|") if "=" in p)
         

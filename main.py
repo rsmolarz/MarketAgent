@@ -7,7 +7,10 @@ import os
 import logging
 
 # Set production mode if running via gunicorn (deployed) - BEFORE app creation
-if 'gunicorn' in os.environ.get('SERVER_SOFTWARE', ''):
+# Detection: gunicorn sets SERVER_SOFTWARE at worker level, also check REPL_SLUG for Replit deployments
+if ('gunicorn' in os.environ.get('SERVER_SOFTWARE', '') or 
+    os.environ.get('REPLIT_DEPLOYMENT') == '1' or
+    'gunicorn' in ' '.join(os.environ.get('_', '').split('/'))):
     os.environ['DEPLOYMENT_ENV'] = 'production'
 
 # Configure logging early

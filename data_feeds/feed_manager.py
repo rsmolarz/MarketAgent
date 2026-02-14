@@ -839,35 +839,32 @@ class FeedManager:
         return result
 
     def get_status(self) -> Dict[str, Any]:
-                """Get status of all registered data feeds."""""
-                status = {
-                                "timestamp": datetime.utcnow().isoformat(),
-                                "total_feeds": len(self.feeds),
-                                "feeds": {}
+        """Get status of all registered data feeds."""
+        status = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "total_feeds": len(self.feeds),
+            "feeds": {}
+        }
+
+        for name, feed in self.feeds.items():
+            try:
+                feed_status = {
+                    "name": feed.config.name,
+                    "enabled": feed.config.enabled,
+                    "source_type": feed.config.source_type.value,
+                    "status": "healthy" if feed.config.enabled else "disabled",
+                    "last_request": feed.last_request_time,
+                }
+                status["feeds"][name] = feed_status
+            except Exception as e:
+                logger.error(f"[FeedManager] Error getting status for {name}: {e}")
+                status["feeds"][name] = {
+                    "name": name,
+                    "status": "error",
+                    "error": str(e)
                 }
 
-                for name, feed in self.feeds.items():
-                                try:
-                                                    feed_status = {
-                                                                            "name": feed.config.name,
-                                                                            "enabled": feed.config.enabled,
-                                                                            "source_type": feed.config.source_type.value,
-                                                                            "status": "healthy" if feed.config.enabled else "disabled",
-                                                                            "last_request": feed.last_request_time,
-                                                    }
-                                                    status["feeds"][name] = feed_status
-                                except Exception as e:
-                                                    logger.error(f"[FeedManager] Error getting status for {name}: {e}")
-                                                    status["feeds"][name] = {
-                                                                            "name": name,
-                                                                            "status": "error",
-                                                                            "error": str(e)
-                                                    }
-
-                                            return status
-                                                    }
-                                                    }
-                }
+        return status
 
 
 # Convenience function
