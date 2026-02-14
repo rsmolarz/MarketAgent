@@ -266,3 +266,239 @@ app = create_app()
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
+
+
+
+# Create the three new agent files (WeatherImpactAgent, NewsAnalysisAgent, CommodityTrendAgent)
+import os
+# Define the three agent files with their complete code
+agent_files = {
+        'agents/weather_impact_agent.py': '''"""
+        Weather Impact Agent
+        
+        Analyzes weather data impacts on commodity and financial markets.
+        Detects weather patterns that influence trading prices.
+        """
+        
+        import requests
+        from typing import List, Dict, Any
+        from base_agent import BaseAgent
+        from config import Config
+        
+        
+        class WeatherImpactAgent(BaseAgent):
+            """
+                Weather Impact Agent
+                    
+                        Monitors weather events and their market impacts on commodities and financials.
+                            """
+                            
+                                def __init__(self):
+                                        super().__init__()
+                                                self.api_key = Config.get("weather_api_key", "")
+                                                        self.weather_symbols = ["CORN", "SOYBEANS", "CRUDE", "NATGAS"]
+                                                                self.min_impact_threshold = Config.get("min_weather_impact", 0.05)
+                                                                
+                                                                    def analyze(self) -> List[Dict[str, Any]]:
+                                                                            """
+                                                                                    Analyze weather impacts on commodity prices.
+                                                                                            """
+                                                                                                    findings = []
+                                                                                                            
+                                                                                                                    try:
+                                                                                                                                # Get weather data
+                                                                                                                                            weather_data = self._fetch_weather_data()
+                                                                                                                                                        
+                                                                                                                                                                    if not weather_data:
+                                                                                                                                                                                    return findings
+                                                                                                                                                                                                
+                                                                                                                                                                                                            # Analyze impact on each commodity
+                                                                                                                                                                                                                        for symbol in self.weather_symbols:
+                                                                                                                                                                                                                                        impact = self._analyze_symbol_impact(symbol, weather_data)
+                                                                                                                                                                                                                                                        
+                                                                                                                                                                                                                                                                        if impact and abs(impact['''confidence']) >= self.min_impact_threshold:
+                        findings.append({
+                                                    'type': 'Weather Impact Signal',
+                                                    'symbol': symbol,
+                                                    'description': f"Weather pattern detected: {impact['pattern']}",
+                                                    'confidence': impact['confidence'],
+                                                    'impact': impact['price_impact'],
+                                                    'timestamp': impact['timestamp']
+                        })
+    except Exception as e:
+            self.logger.error(f"Error analyzing weather impacts: {e}")
+
+        return findings
+
+    def _fetch_weather_data(self) -> Dict[str, Any]:
+                """Fetch current weather data from API"""""
+                try:
+                                # Placeholder for actual weather API call
+                                return {'temperature': 0, 'pressure': 0, 'humidity': 0}
+                except Exception as e:
+                                self.logger.error(f"Error fetching weather data: {e}")
+                                return None
+
+            def _analyze_symbol_impact(self, symbol: str, weather_data: Dict) -> Dict[str, Any]:
+                        """Analyze specific symbol impact from weather patterns"""""
+                        # Simplified impact calculation
+                        confidence = min(0.8, max(-0.8, weather_data.get('temperature', 0) / 100))
+
+                        return {
+                                        'symbol': symbol,
+                                        'pattern': 'Temperature variation',
+                                        'confidence': confidence,
+                                        'price_impact': confidence * 2.5,
+                                        'timestamp': str(__import__('datetime').datetime.now())
+                        }
+                ''',
+                    
+                        '''agents/news_analysis_agent.py': '''"""
+                        News Analysis Agent
+                        
+                        Analyzes financial news sentiment and market impact.
+                        Detects trading opportunities from news events.
+                        """""
+
+import re
+from typing import List, Dict, Any
+from base_agent import BaseAgent
+from config import Config
+
+
+class NewsAnalysisAgent(BaseAgent):
+        """
+            News Analysis Agent
+                
+                    Processes financial news sources and identifies market-moving events.
+                        """""
+
+        def __init__(self):
+                    super().__init__()
+                    self.news_sources = ["reuters", "bloomberg", "cnbc", "ft"]
+                    self.sentiment_threshold = Config.get("news_sentiment_threshold", 0.6)
+                    self.tracked_tickers = ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA"]
+
+                def analyze(self) -> List[Dict[str, Any]]:
+                            """
+                                    Analyze news sentiment and market impact.
+                                            """""
+                            findings = []
+
+        try:
+                        # Fetch news articles
+                        articles = self._fetch_news_articles()
+
+                        if not articles:
+                                            return findings
+
+                        # Analyze sentiment for each article
+                        for article in articles:
+                                            sentiment_score = self._analyze_sentiment(article['text'])
+
+                            if abs(sentiment_score) >= self.sentiment_threshold:
+                                                    findings.append({
+                                                                                'type': 'News Sentiment Signal',
+                                                                                'source': article['source'],
+                                                                                'headline': article.get('headline', 'N/A'),
+                                                                                'sentiment': 'Positive' if sentiment_score > 0 else 'Negative',
+                                                                                'confidence': abs(sentiment_score),
+                                                                                'impact_tickers': self._extract_tickers(article['text']),
+                                                                                'timestamp': article.get('timestamp', '')
+                                                    })
+except Exception as e:
+            self.logger.error(f"Error analyzing news: {e}")
+
+        return findings
+
+    def _fetch_news_articles(self) -> List[Dict[str, Any]]:
+                """Fetch news articles from sources"""""
+        # Placeholder for actual news API calls
+        return []
+
+    def _analyze_sentiment(self, text: str) -> float:
+                """Simple sentiment analysis (placeholder)"""""
+        positive_words = ['gain', 'surge', 'rally', 'bull', 'profit', 'growth']
+        negative_words = ['loss', 'crash', 'bear', 'decline', 'fall', 'slump']
+
+        score = 0
+        for word in positive_words:
+                        score += len(re.findall(r'\b' + word + r'\b', text.lower(), re.IGNORECASE))
+        for word in negative_words:
+                    score -= len(re.findall(r'\b' + word + r'\b', text.lower(), re.IGNORECASE))
+
+        return min(1.0, max(-1.0, score / 10))
+
+    def _extract_tickers(self, text: str) -> List[str]:
+                """Extract stock tickers from text"""""
+                tickers = []
+                for ticker in self.tracked_tickers:
+                                if ticker.upper() in text.upper():
+                                                    tickers.append(ticker)
+                                                            return list(set(tickers))
+                                    ''',
+                                        
+                                            '''agents/commodity_trend_agent.py': '''"""
+                                            Commodity Trend Agent
+                                            
+                                            Analyzes commodity market trends and identifies trading opportunities.
+                                            Tracks energy, metals, and agricultural commodity patterns.
+                                            """""
+
+from typing import List, Dict, Any
+from base_agent import BaseAgent
+from config import Config
+import statistics
+
+
+class CommodityTrendAgent(BaseAgent):
+        """
+            Commodity Trend Agent
+                
+                    Monitors commodity prices for trend changes and patterns.
+                        Identifies momentum shifts in oil, metals, and agricultural markets.
+                            """""
+
+    def __init__(self):
+                super().__init__()
+        self.commodities = {
+                        'oil': 'WTI',
+                        'gold': 'GC',
+                        'copper': 'HG',
+                        'natural_gas': 'NG',
+                        'corn': 'ZC',
+                        'wheat': 'ZW'
+                    }
+                            self.trend_window = Config.get("trend_analysis_window", 20)
+        self.trend_threshold = Config.get("trend_threshold", 0.02)
+
+    def analyze(self) -> List[Dict[str, Any]]:
+                """
+                        Analyze commodity trends and identify opportunities.
+                                """""
+        findings = []
+
+        try:
+                        for commodity_name, ticker in self.commodities.items():
+                                            trend_analysis = self._analyze_trend(commodity_name, ticker)
+
+                if trend_analysis and abs(trend_analysis['trend_strength']) >= self.trend_threshold:
+                                        findings.append({
+                                                                    'type': 'Commodity Trend Signal',
+                                                                    'commodity': commodity_name,
+                                                                    'ticker': ticker,
+                                                                    'trend': 'Uptrend' if trend_analysis['trend_strength'] > 0 else 'Downtrend',
+                                                                    'strength': abs(trend_analysis['trend_strength']),
+                                                                    'momentum': trend_analysis['momentum'],
+                                                                    'support_level': trend_analysis.get('support', 0),
+                                                                    'resistance_level': trend_analysis.get('resistance', 0),
+                                                                    'timestamp': trend_analysis['timestamp']
+                                        })
+except Exception as e:
+            self.logger.error(f"Error analyzing commodit")
+                                        })
+        }
+                                                    })
+                        }
+                        })
+}
