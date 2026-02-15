@@ -61,7 +61,7 @@ externalPort = 8000
 integrations = ["styling_replit:1.0.0", "github:1.0.0", "python_openai_ai_integrations:1.0.0"]
 
 [deployment]
-deploymentTarget = "cloudrun"
+deploymentTarget = "gce"
 run = ["sh", "-c", "gunicorn --bind 0.0.0.0:5000 --reuse-port --reload main:app"]
 
 [userenv]
