@@ -103,12 +103,15 @@ def _get_client_secret(provider):
 
 
 def _get_redirect_uri(provider):
-    fb_override = os.getenv('FACEBOOK_REDIRECT_DOMAIN', '').strip()
-    if provider == 'facebook' and fb_override:
-        return 'https://' + fb_override.rstrip('/') + url_for('oauth.callback', provider=provider)
-    apple_override = os.getenv('APPLE_REDIRECT_DOMAIN', '').strip()
-    if provider == 'apple' and apple_override:
-        return 'https://' + apple_override.rstrip('/') + url_for('oauth.callback', provider=provider)
+    global_override = os.getenv('OAUTH_REDIRECT_DOMAIN', '').strip()
+    provider_override = os.getenv(f'{provider.upper()}_REDIRECT_DOMAIN', '').strip()
+    if provider == 'facebook':
+        provider_override = provider_override or os.getenv('FACEBOOK_REDIRECT_DOMAIN', '').strip()
+    if provider == 'apple':
+        provider_override = provider_override or os.getenv('APPLE_REDIRECT_DOMAIN', '').strip()
+    domain = provider_override or global_override
+    if domain:
+        return 'https://' + domain.rstrip('/') + url_for('oauth.callback', provider=provider)
     base = request.host_url.rstrip('/')
     if base.startswith('http://') and request.headers.get('X-Forwarded-Proto') == 'https':
         base = 'https://' + base[7:]
