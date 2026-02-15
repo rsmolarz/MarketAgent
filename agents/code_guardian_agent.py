@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from .base_agent import BaseAgent
+from services.startup_failure_tracker import clear_startup_failures
 
 
 logger = logging.getLogger(__name__)
