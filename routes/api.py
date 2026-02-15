@@ -1574,3 +1574,35 @@ def clear_agent_failures(agent_name):
         return jsonify({"message": f"Cleared failures for {agent_name}"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+# ============================================================================
+# PHASE 1 FIX: System Ready Endpoint
+# ============================================================================
+@app.route('/api/system/ready', methods=['GET'])
+def system_ready():
+    """Check if system is ready for agent queries
+    
+    Returns:
+        dict: System readiness status with scheduler state and agent count
+    """
+    try:
+        from scheduler import agent_scheduler, scheduler
+        
+        scheduler_running = hasattr(scheduler, 'running') and scheduler.running
+        agents_loaded = len(agent_scheduler.agents) > 0 if agent_scheduler else False
+        
+        return jsonify({
+            'ready': scheduler_running and agents_loaded,
+            'scheduler_running': scheduler_running,
+            'agents_loaded': agents_loaded,
+            'agent_count': len(agent_scheduler.agents) if agent_scheduler else 0,
+            'timestamp': datetime.now().isoformat(),
+            'version': '1.0',
+            'status': 'READY' if (scheduler_running and agents_loaded) else 'INITIALIZING'
+        }), 200
+    except Exception as e:
+        logger.error(f"Error checking system ready: {e}")
+        return jsonify({
+            'ready': False,
+            'error': str(e),
+            'status': 'ERROR'
+        }), 503
