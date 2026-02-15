@@ -1,0 +1,761 @@
+{% extends "base.html" %}
+
+{% block title %}Antifragile Board - Market Inefficiency Platform{% endblock %}
+
+{% block extra_head %}
+<style>
+    .advisor-card {
+        border: 1px solid var(--bs-border-color);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+        transition: border-color 0.2s;
+    }
+    .advisor-card:hover {
+        border-color: var(--bs-primary);
+    }
+    .advisor-card.active {
+        border-color: var(--bs-primary);
+        box-shadow: 0 0 0 1px var(--bs-primary);
+    }
+    .advisor-badge {
+        font-size: 0.7rem;
+        padding: 3px 8px;
+        border-radius: 4px;
+    }
+    .badge-taleb { background: #dc3545; color: white; }
+    .badge-spitznagel { background: #fd7e14; color: white; }
+    .badge-simons { background: #0d6efd; color: white; }
+    .badge-asness { background: #198754; color: white; }
+    .badge-chairman { background: #6f42c1; color: white; }
+    .phase-indicator {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 20px;
+    }
+    .phase-step {
+        flex: 1;
+        text-align: center;
+        padding: 8px;
+        border-radius: 6px;
+        background: var(--bs-dark);
+        border: 1px solid var(--bs-border-color);
+        font-size: 0.8rem;
+    }
+    .phase-step.active {
+        background: var(--bs-primary);
+        border-color: var(--bs-primary);
+        color: white;
+    }
+    .phase-step.completed {
+        background: var(--bs-success);
+        border-color: var(--bs-success);
+        color: white;
+    }
+    .phase-arrow {
+        color: var(--bs-secondary);
+    }
+    .analysis-output {
+        background: var(--bs-dark);
+        border: 1px solid var(--bs-border-color);
+        border-radius: 8px;
+        padding: 16px;
+        margin-top: 12px;
+        white-space: pre-wrap;
+        font-family: monospace;
+        font-size: 0.85rem;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    .finding-card {
+        border-left: 4px solid var(--bs-secondary);
+        padding: 12px 16px;
+        margin-bottom: 8px;
+        background: var(--bs-dark);
+        border-radius: 0 6px 6px 0;
+    }
+    .finding-card.severity-critical { border-left-color: #dc3545; }
+    .finding-card.severity-high { border-left-color: #fd7e14; }
+    .finding-card.severity-medium { border-left-color: #ffc107; }
+    .finding-card.severity-low { border-left-color: #198754; }
+    .tool-panel {
+        background: var(--bs-dark);
+        border: 1px solid var(--bs-border-color);
+        border-radius: 8px;
+        padding: 16px;
+    }
+    #deliberation-spinner {
+        display: none;
+    }
+    .scan-results {
+        max-height: 600px;
+        overflow-y: auto;
+    }
+    .tab-content { padding-top: 16px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2><i data-feather="shield" class="me-2"></i>Antifragile Board of Advisors</h2>
+        <p class="text-muted mb-0">Multi-agent risk management & alpha extraction framework</p>
+    </div>
+    <div>
+        <button class="btn btn-outline-primary me-2" onclick="runScan()">
+            <i data-feather="radar" class="me-1"></i>Run Agent Scan
+        </button>
+    </div>
+</div>
+
+<!-- Advisor Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="advisor-card" id="card-taleb">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h6 class="mb-1">Nassim Taleb</h6>
+                    <small class="text-muted">Epistemologist of Risk</small>
+                </div>
+                <span class="advisor-badge badge-taleb">FRAGILITY</span>
+            </div>
+            <small class="d-block mt-2 text-muted">Black Swans, Lindy Effect, Skin in the Game, Via Negativa</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="advisor-card" id="card-spitznagel">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h6 class="mb-1">Mark Spitznagel</h6>
+                    <small class="text-muted">Safe Haven Practitioner</small>
+                </div>
+                <span class="advisor-badge badge-spitznagel">CONVEXITY</span>
+            </div>
+            <small class="d-block mt-2 text-muted">Bernoulli Falls, CAGR Protection, Barbell Strategy</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="advisor-card" id="card-simons">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h6 class="mb-1">Jim Simons</h6>
+                    <small class="text-muted">High-Frequency Quant</small>
+                </div>
+                <span class="advisor-badge badge-simons">PATTERNS</span>
+            </div>
+            <small class="d-block mt-2 text-muted">Statistical Anomalies, Mean Reversion, Market Neutrality</small>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="advisor-card" id="card-asness">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <h6 class="mb-1">Cliff Asness</h6>
+                    <small class="text-muted">Disciplined Contrarian</small>
+                </div>
+                <span class="advisor-badge badge-asness">FACTORS</span>
+            </div>
+            <small class="d-block mt-2 text-muted">Value/Momentum, Behavioral Biases, Systematic Rules</small>
+        </div>
+    </div>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs" id="boardTabs" role="tablist">
+    <li class="nav-item">
+        <button class="nav-link active" id="deliberate-tab" data-bs-toggle="tab" data-bs-target="#deliberate-panel">
+            <i data-feather="message-circle" class="me-1"></i>Council Deliberation
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" id="scan-tab" data-bs-toggle="tab" data-bs-target="#scan-panel">
+            <i data-feather="search" class="me-1"></i>Agent Scan Results
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" id="tools-tab" data-bs-toggle="tab" data-bs-target="#tools-panel">
+            <i data-feather="tool" class="me-1"></i>Analytical Tools
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content" id="boardTabContent">
+    <!-- Council Deliberation Tab -->
+    <div class="tab-pane fade show active" id="deliberate-panel">
+        <div class="row">
+            <div class="col-md-8">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Submit a thesis, business model, or strategic question for Board critique:</label>
+                    <textarea class="form-control" id="query-input" rows="4"
+                        placeholder="Example: We are considering a $50M investment in AI infrastructure for our manufacturing operations. The plan involves replacing 60% of our quality inspection workforce with computer vision systems over 18 months..."></textarea>
+                </div>
+                <div class="d-flex gap-2 mb-3">
+                    <button class="btn btn-primary" onclick="runDeliberation()" id="deliberate-btn">
+                        <i data-feather="play" class="me-1"></i>Convene the Board
+                    </button>
+                    <div class="form-check form-switch d-flex align-items-center ms-3">
+                        <input class="form-check-input" type="checkbox" id="peer-review-toggle">
+                        <label class="form-check-label ms-2" for="peer-review-toggle">Enable Peer Review (slower, more thorough)</label>
+                    </div>
+                </div>
+
+                <!-- Phase Indicator -->
+                <div class="phase-indicator" id="phase-indicator" style="display:none;">
+                    <div class="phase-step" id="phase-divergence">1. Divergence</div>
+                    <span class="phase-arrow">&rarr;</span>
+                    <div class="phase-step" id="phase-convergence">2. Convergence</div>
+                    <span class="phase-arrow">&rarr;</span>
+                    <div class="phase-step" id="phase-synthesis">3. Synthesis</div>
+                </div>
+
+                <!-- Spinner -->
+                <div id="deliberation-spinner" class="text-center my-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 text-muted" id="spinner-text">Board is deliberating...</p>
+                </div>
+
+                <!-- Results -->
+                <div id="deliberation-results" style="display:none;">
+                    <h5 class="mt-4">Chairman's Synthesis</h5>
+                    <div class="analysis-output" id="synthesis-output"></div>
+
+                    <h5 class="mt-4">Individual Advisor Opinions</h5>
+                    <div id="advisor-opinions"></div>
+
+                    <div id="critiques-section" style="display:none;">
+                        <h5 class="mt-4">Peer Review Critiques</h5>
+                        <div id="advisor-critiques"></div>
+                    </div>
+
+                    <div class="mt-3 text-muted">
+                        <small>Elapsed: <span id="elapsed-time"></span>s | Advisors: <span id="advisors-consulted"></span></small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="tool-panel">
+                    <h6>Select Advisors</h6>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input advisor-check" type="checkbox" id="check-taleb" value="taleb" checked>
+                        <label class="form-check-label" for="check-taleb">
+                            <span class="advisor-badge badge-taleb">Taleb</span> Risk Epistemology
+                        </label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input advisor-check" type="checkbox" id="check-spitznagel" value="spitznagel" checked>
+                        <label class="form-check-label" for="check-spitznagel">
+                            <span class="advisor-badge badge-spitznagel">Spitznagel</span> Safe Haven
+                        </label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input advisor-check" type="checkbox" id="check-simons" value="simons" checked>
+                        <label class="form-check-label" for="check-simons">
+                            <span class="advisor-badge badge-simons">Simons</span> Quant Patterns
+                        </label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input advisor-check" type="checkbox" id="check-asness" value="asness" checked>
+                        <label class="form-check-label" for="check-asness">
+                            <span class="advisor-badge badge-asness">Asness</span> Factor Discipline
+                        </label>
+                    </div>
+
+                    <hr>
+
+                    <h6>Council Protocol</h6>
+                    <small class="text-muted d-block mb-2">
+                        <strong>Divergence:</strong> Parallel independent analysis<br>
+                        <strong>Convergence:</strong> Anonymous peer review<br>
+                        <strong>Synthesis:</strong> Chairman aggregation
+                    </small>
+
+                    <hr>
+
+                    <h6>Quick Examples</h6>
+                    <button class="btn btn-sm btn-outline-secondary w-100 mb-2" onclick="setExample('crypto')">
+                        Evaluate crypto allocation
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary w-100 mb-2" onclick="setExample('sap')">
+                        SAP S/4HANA migration risk
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary w-100 mb-2" onclick="setExample('startup')">
+                        AI startup investment thesis
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary w-100" onclick="setExample('portfolio')">
+                        60/40 portfolio critique
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Agent Scan Tab -->
+    <div class="tab-pane fade" id="scan-panel">
+        <div id="scan-spinner" style="display:none;" class="text-center my-4">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Running specialist agent scans...</p>
+        </div>
+        <div id="scan-results" class="scan-results">
+            <p class="text-muted">Click "Run Agent Scan" to collect findings from all four specialist agents.</p>
+        </div>
+    </div>
+
+    <!-- Tools Tab -->
+    <div class="tab-pane fade" id="tools-panel">
+        <div class="row">
+            <!-- Fragility Scorer -->
+            <div class="col-md-6 mb-4">
+                <div class="tool-panel">
+                    <h6><span class="advisor-badge badge-taleb me-2">Taleb</span>Fragility Scorer</h6>
+                    <div class="row g-2 mt-2">
+                        <div class="col-6">
+                            <label class="form-label small">Leverage Ratio</label>
+                            <input type="number" class="form-control form-control-sm" id="frag-leverage" value="1.0" step="0.1">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Concentration %</label>
+                            <input type="number" class="form-control form-control-sm" id="frag-concentration" value="0.2" step="0.05" min="0" max="1">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Years Operating</label>
+                            <input type="number" class="form-control form-control-sm" id="frag-years" value="5" min="0">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Revenue Sources</label>
+                            <input type="number" class="form-control form-control-sm" id="frag-revenue" value="3" min="1">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Debt/Equity</label>
+                            <input type="number" class="form-control form-control-sm" id="frag-debt" value="0.5" step="0.1">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Tail Exposure</label>
+                            <select class="form-select form-select-sm" id="frag-tail">
+                                <option value="neutral">Neutral</option>
+                                <option value="long_tail">Long Tail (convex)</option>
+                                <option value="short_tail">Short Tail (concave)</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="frag-skin" checked>
+                                <label class="form-check-label small" for="frag-skin">Has Skin in the Game</label>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-danger w-100 mt-2" onclick="runFragility()">Score Fragility</button>
+                    <div id="fragility-result" class="mt-2"></div>
+                </div>
+            </div>
+
+            <!-- Bernoulli Falls Calculator -->
+            <div class="col-md-6 mb-4">
+                <div class="tool-panel">
+                    <h6><span class="advisor-badge badge-spitznagel me-2">Spitznagel</span>Bernoulli Falls Calculator</h6>
+                    <p class="small text-muted">See the disproportionate impact of drawdowns on wealth</p>
+                    <div class="input-group input-group-sm mb-2">
+                        <span class="input-group-text">Drawdown %</span>
+                        <input type="number" class="form-control" id="bernoulli-dd" value="50" min="1" max="99">
+                        <button class="btn btn-outline-warning" onclick="runBernoulli()">Calculate</button>
+                    </div>
+                    <div id="bernoulli-result" class="mt-2"></div>
+
+                    <hr>
+
+                    <h6><span class="advisor-badge badge-spitznagel me-2">Spitznagel</span>Safe Haven Simulator</h6>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label small">Portfolio Return %</label>
+                            <input type="number" class="form-control form-control-sm" id="haven-return" value="8" step="1">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Portfolio Vol %</label>
+                            <input type="number" class="form-control form-control-sm" id="haven-vol" value="16" step="1">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Haven Allocation %</label>
+                            <input type="number" class="form-control form-control-sm" id="haven-alloc" value="3" step="1" min="1" max="20">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Crash Probability %</label>
+                            <input type="number" class="form-control form-control-sm" id="haven-crash-prob" value="5" step="1" min="1" max="30">
+                        </div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-warning w-100 mt-2" onclick="runSafeHaven()">Simulate</button>
+                    <div id="haven-result" class="mt-2"></div>
+                </div>
+            </div>
+
+            <!-- Ambiguity Scorer -->
+            <div class="col-md-6 mb-4">
+                <div class="tool-panel">
+                    <h6><span class="advisor-badge badge-simons me-2">Cross-Agent</span>Strategic Ambiguity Scorer</h6>
+                    <p class="small text-muted">Detect deliberate vagueness in corporate communications</p>
+                    <textarea class="form-control form-control-sm" id="ambiguity-text" rows="4"
+                        placeholder="Paste an earnings call transcript, strategy doc, or press release..."></textarea>
+                    <button class="btn btn-sm btn-outline-info w-100 mt-2" onclick="runAmbiguity()">Score Ambiguity</button>
+                    <div id="ambiguity-result" class="mt-2"></div>
+                </div>
+            </div>
+
+            <!-- Lindy Check -->
+            <div class="col-md-6 mb-4">
+                <div class="tool-panel">
+                    <h6><span class="advisor-badge badge-taleb me-2">Taleb</span>Lindy Effect Check</h6>
+                    <p class="small text-muted">How long will this idea survive based on how long it has survived?</p>
+                    <div class="input-group input-group-sm mb-2">
+                        <input type="text" class="form-control" id="lindy-concept" placeholder="Concept (e.g., Value Investing)">
+                        <input type="number" class="form-control" id="lindy-years" placeholder="Years existed" min="0">
+                        <button class="btn btn-outline-danger" onclick="runLindy()">Check</button>
+                    </div>
+                    <div id="lindy-result" class="mt-2"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const EXAMPLES = {
+    crypto: "We are considering allocating 15% of our endowment portfolio to Bitcoin and Ethereum. The thesis is that crypto represents a new asset class with low correlation to traditional markets, and that early institutional adoption will drive significant appreciation over the next 5-10 years. Our current portfolio is 60% equities, 30% fixed income, 10% alternatives.",
+    sap: "Our $2B manufacturing company is planning an SAP S/4HANA migration over 24 months, with a budget of $150M. We plan to simultaneously implement AI-powered demand forecasting and automated procurement. The board has approved a 'big bang' go-live rather than a phased approach to minimize business disruption.",
+    startup: "We are evaluating an investment in an AI startup (Series B, $200M valuation) that uses large language models to automate legal contract review. They have $5M ARR growing 300% YoY, 12 months of runway, and their primary competitive moat is a proprietary training dataset. The founding team has no prior exits.",
+    portfolio: "Our family office manages $500M in a traditional 60/40 portfolio (60% US large-cap equities, 40% investment-grade bonds). We have been told by our wealth advisor that this allocation provides 'adequate diversification' and that we should stay the course despite recent market conditions. No alternative investments, no international exposure, no tail hedging."
+};
+
+function setExample(key) {
+    document.getElementById('query-input').value = EXAMPLES[key] || '';
+}
+
+function getSelectedAdvisors() {
+    return Array.from(document.querySelectorAll('.advisor-check:checked')).map(cb => cb.value);
+}
+
+async function runDeliberation() {
+    const query = document.getElementById('query-input').value.trim();
+    if (!query) { alert('Please enter a query.'); return; }
+
+    const advisors = getSelectedAdvisors();
+    if (advisors.length === 0) { alert('Select at least one advisor.'); return; }
+
+    const peerReview = document.getElementById('peer-review-toggle').checked;
+
+    // Show spinner, hide results
+    document.getElementById('deliberation-spinner').style.display = 'block';
+    document.getElementById('deliberation-results').style.display = 'none';
+    document.getElementById('deliberate-btn').disabled = true;
+    document.getElementById('spinner-text').textContent = 'Board is deliberating...';
+
+    // Show phase indicator
+    const phaseEl = document.getElementById('phase-indicator');
+    phaseEl.style.display = 'flex';
+    setPhase('divergence');
+
+    try {
+        const resp = await fetch('/api/antifragile/deliberate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query, advisors, peer_review: peerReview })
+        });
+        const data = await resp.json();
+
+        if (data.error) {
+            alert('Error: ' + data.error);
+            return;
+        }
+
+        // Display results
+        displayDeliberation(data, peerReview);
+        setPhase('synthesis', true);
+
+    } catch (err) {
+        alert('Request failed: ' + err.message);
+    } finally {
+        document.getElementById('deliberation-spinner').style.display = 'none';
+        document.getElementById('deliberate-btn').disabled = false;
+    }
+}
+
+function setPhase(phase, completed) {
+    ['divergence', 'convergence', 'synthesis'].forEach(p => {
+        const el = document.getElementById('phase-' + p);
+        el.classList.remove('active', 'completed');
+    });
+    if (completed) {
+        ['divergence', 'convergence', 'synthesis'].forEach(p => {
+            document.getElementById('phase-' + p).classList.add('completed');
+        });
+    } else {
+        document.getElementById('phase-' + phase).classList.add('active');
+    }
+}
+
+function displayDeliberation(data, peerReview) {
+    document.getElementById('deliberation-results').style.display = 'block';
+
+    // Synthesis
+    const synthesis = data.phases?.synthesis || data.final_recommendation || 'No synthesis available';
+    document.getElementById('synthesis-output').textContent = synthesis;
+
+    // Advisor opinions
+    const opinionsEl = document.getElementById('advisor-opinions');
+    opinionsEl.innerHTML = '';
+    const opinions = data.phases?.divergence || {};
+    for (const [id, opinion] of Object.entries(opinions)) {
+        const badgeClass = 'badge-' + id;
+        opinionsEl.innerHTML += `
+            <div class="mb-3">
+                <div class="d-flex align-items-center mb-1">
+                    <span class="advisor-badge ${badgeClass} me-2">${opinion.advisor}</span>
+                    <small class="text-muted">${opinion.title}</small>
+                </div>
+                <div class="analysis-output">${escapeHtml(opinion.analysis)}</div>
+            </div>
+        `;
+    }
+
+    // Critiques
+    const critiques = data.phases?.convergence || {};
+    const critiquesSection = document.getElementById('critiques-section');
+    const critiquesEl = document.getElementById('advisor-critiques');
+    if (peerReview && Object.keys(critiques).length > 0) {
+        critiquesSection.style.display = 'block';
+        critiquesEl.innerHTML = '';
+        for (const [id, critique] of Object.entries(critiques)) {
+            const badgeClass = 'badge-' + id;
+            critiquesEl.innerHTML += `
+                <div class="mb-3">
+                    <div class="d-flex align-items-center mb-1">
+                        <span class="advisor-badge ${badgeClass} me-2">${critique.reviewer}</span>
+                        <small class="text-muted">Peer Review</small>
+                    </div>
+                    <div class="analysis-output">${escapeHtml(critique.critique)}</div>
+                </div>
+            `;
+        }
+    } else {
+        critiquesSection.style.display = 'none';
+    }
+
+    // Meta
+    document.getElementById('elapsed-time').textContent = data.elapsed_seconds || '?';
+    document.getElementById('advisors-consulted').textContent = (data.advisors_consulted || []).join(', ');
+}
+
+async function runScan() {
+    // Switch to scan tab
+    const scanTab = document.getElementById('scan-tab');
+    bootstrap.Tab.getOrCreateInstance(scanTab).show();
+
+    document.getElementById('scan-spinner').style.display = 'block';
+    document.getElementById('scan-results').innerHTML = '';
+
+    try {
+        const resp = await fetch('/api/antifragile/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ agents: ['taleb', 'spitznagel', 'simons', 'asness'] })
+        });
+        const data = await resp.json();
+
+        if (data.error) {
+            document.getElementById('scan-results').innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+            return;
+        }
+
+        displayScanResults(data);
+
+    } catch (err) {
+        document.getElementById('scan-results').innerHTML = `<div class="alert alert-danger">Scan failed: ${err.message}</div>`;
+    } finally {
+        document.getElementById('scan-spinner').style.display = 'none';
+    }
+}
+
+function displayScanResults(data) {
+    const el = document.getElementById('scan-results');
+    let html = `<div class="mb-3"><strong>Total findings: ${data.total_findings}</strong></div>`;
+
+    const labels = { taleb: 'Taleb', spitznagel: 'Spitznagel', simons: 'Simons', asness: 'Asness' };
+    const badges = { taleb: 'badge-taleb', spitznagel: 'badge-spitznagel', simons: 'badge-simons', asness: 'badge-asness' };
+
+    for (const [agentId, findings] of Object.entries(data.findings || {})) {
+        html += `<h6><span class="advisor-badge ${badges[agentId] || ''} me-2">${labels[agentId] || agentId}</span>${findings.length} findings</h6>`;
+        for (const f of findings) {
+            if (f.error) {
+                html += `<div class="finding-card severity-high"><strong>Error:</strong> ${escapeHtml(f.error)}</div>`;
+                continue;
+            }
+            const sev = f.severity || 'low';
+            html += `
+                <div class="finding-card severity-${sev}">
+                    <div class="d-flex justify-content-between">
+                        <strong>${escapeHtml(f.title || 'Finding')}</strong>
+                        <span class="badge bg-${sev === 'critical' ? 'danger' : sev === 'high' ? 'warning' : sev === 'medium' ? 'info' : 'secondary'}">${sev}</span>
+                    </div>
+                    <small class="text-muted d-block mt-1">${escapeHtml(f.description || '')}</small>
+                    ${f.symbol ? `<small class="d-block mt-1"><code>${f.symbol}</code></small>` : ''}
+                </div>
+            `;
+        }
+    }
+
+    el.innerHTML = html;
+}
+
+// Tool functions
+async function runFragility() {
+    const data = {
+        leverage_ratio: parseFloat(document.getElementById('frag-leverage').value),
+        concentration_pct: parseFloat(document.getElementById('frag-concentration').value),
+        years_of_operation: parseInt(document.getElementById('frag-years').value),
+        has_skin_in_game: document.getElementById('frag-skin').checked,
+        revenue_sources: parseInt(document.getElementById('frag-revenue').value),
+        debt_to_equity: parseFloat(document.getElementById('frag-debt').value),
+        tail_exposure: document.getElementById('frag-tail').value,
+    };
+
+    try {
+        const resp = await fetch('/api/antifragile/tools/fragility', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        const result = await resp.json();
+        const el = document.getElementById('fragility-result');
+        if (result.error) { el.innerHTML = `<span class="text-danger">${result.error}</span>`; return; }
+
+        const color = result.fragility_score > 50 ? 'danger' : result.fragility_score > 30 ? 'warning' : 'success';
+        el.innerHTML = `
+            <div class="alert alert-${color} py-2 mb-1">
+                <strong>${result.classification}</strong> - Score: ${result.fragility_score}/100
+            </div>
+            ${(result.recommendations || []).map(r => `<small class="d-block text-muted">- ${r}</small>`).join('')}
+        `;
+    } catch (err) {
+        document.getElementById('fragility-result').innerHTML = `<span class="text-danger">${err.message}</span>`;
+    }
+}
+
+async function runBernoulli() {
+    const dd = parseFloat(document.getElementById('bernoulli-dd').value) / 100;
+    try {
+        const resp = await fetch('/api/antifragile/tools/bernoulli', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ drawdown_pct: dd })
+        });
+        const r = await resp.json();
+        const el = document.getElementById('bernoulli-result');
+        if (r.error) { el.innerHTML = `<span class="text-danger">${r.error}</span>`; return; }
+        el.innerHTML = `
+            <table class="table table-sm table-bordered mb-0">
+                <tr><td>Loss</td><td class="text-danger">${(r.drawdown_pct * 100).toFixed(0)}%</td></tr>
+                <tr><td>Recovery Needed</td><td class="text-warning">${(r.recovery_needed_pct * 100).toFixed(1)}%</td></tr>
+                <tr><td>Years to Recover @10%</td><td>${r.years_to_recover_at_10pct}</td></tr>
+                <tr><td>Wealth Remaining</td><td>${(r.wealth_remaining * 100).toFixed(0)}%</td></tr>
+            </table>
+        `;
+    } catch (err) {
+        document.getElementById('bernoulli-result').innerHTML = `<span class="text-danger">${err.message}</span>`;
+    }
+}
+
+async function runSafeHaven() {
+    const data = {
+        portfolio_return: parseFloat(document.getElementById('haven-return').value) / 100,
+        portfolio_vol: parseFloat(document.getElementById('haven-vol').value) / 100,
+        haven_allocation: parseFloat(document.getElementById('haven-alloc').value) / 100,
+        crash_probability: parseFloat(document.getElementById('haven-crash-prob').value) / 100,
+    };
+    try {
+        const resp = await fetch('/api/antifragile/tools/safe-haven', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        const r = await resp.json();
+        const el = document.getElementById('haven-result');
+        if (r.error) { el.innerHTML = `<span class="text-danger">${r.error}</span>`; return; }
+
+        el.innerHTML = `
+            <table class="table table-sm table-bordered mb-0">
+                <thead><tr><th></th><th>Protected</th><th>Unprotected</th></tr></thead>
+                <tbody>
+                    <tr><td>CAGR</td><td class="text-success">${(r.protected.cagr * 100).toFixed(2)}%</td><td>${(r.unprotected.cagr * 100).toFixed(2)}%</td></tr>
+                    <tr><td>Median Wealth</td><td class="text-success">${r.protected.median_terminal_wealth.toFixed(2)}x</td><td>${r.unprotected.median_terminal_wealth.toFixed(2)}x</td></tr>
+                    <tr><td>Worst 5%</td><td class="text-success">${r.protected.worst_5pct.toFixed(2)}x</td><td class="text-danger">${r.unprotected.worst_5pct.toFixed(2)}x</td></tr>
+                    <tr><td>Survival Rate</td><td>${(r.protected.survival_rate * 100).toFixed(0)}%</td><td>${(r.unprotected.survival_rate * 100).toFixed(0)}%</td></tr>
+                </tbody>
+            </table>
+            <small class="text-muted">10-year Monte Carlo (${r.n_simulations} paths) | Haven: ${(data.haven_allocation*100).toFixed(0)}%</small>
+        `;
+    } catch (err) {
+        document.getElementById('haven-result').innerHTML = `<span class="text-danger">${err.message}</span>`;
+    }
+}
+
+async function runAmbiguity() {
+    const text = document.getElementById('ambiguity-text').value.trim();
+    if (!text) { alert('Please enter text to analyze.'); return; }
+    try {
+        const resp = await fetch('/api/antifragile/tools/ambiguity', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+        });
+        const r = await resp.json();
+        const el = document.getElementById('ambiguity-result');
+        if (r.error) { el.innerHTML = `<span class="text-danger">${r.error}</span>`; return; }
+
+        const color = r.ambiguity_score > 50 ? 'danger' : r.ambiguity_score > 30 ? 'warning' : 'success';
+        el.innerHTML = `
+            <div class="alert alert-${color} py-2 mb-1">
+                <strong>Ambiguity Score: ${r.ambiguity_score}/100</strong><br>
+                <small>${r.risk_level}</small>
+            </div>
+            <small class="text-muted">Hedge words: ${r.hedge_count} | Weasel phrases: ${r.weasel_phrase_count} | Confidence words: ${r.confidence_word_count}</small>
+            ${r.flagged_hedges?.length ? `<br><small class="text-warning">Flagged: ${r.flagged_hedges.join(', ')}</small>` : ''}
+        `;
+    } catch (err) {
+        document.getElementById('ambiguity-result').innerHTML = `<span class="text-danger">${err.message}</span>`;
+    }
+}
+
+async function runLindy() {
+    const concept = document.getElementById('lindy-concept').value.trim();
+    const years = parseInt(document.getElementById('lindy-years').value);
+    if (!concept) { alert('Enter a concept.'); return; }
+    try {
+        const resp = await fetch('/api/antifragile/tools/lindy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ concept, years_existed: years })
+        });
+        const r = await resp.json();
+        const el = document.getElementById('lindy-result');
+        if (r.error) { el.innerHTML = `<span class="text-danger">${r.error}</span>`; return; }
+        el.innerHTML = `
+            <div class="alert alert-${r.lindy_compliant ? 'success' : 'warning'} py-2 mb-0">
+                <strong>${r.concept}</strong>: ${r.years_existed} years old<br>
+                Expected remaining: ${r.expected_remaining_years} years<br>
+                Lindy compliant: ${r.lindy_compliant ? 'Yes' : 'No'}<br>
+                Confidence: ${r.lindy_confidence}
+            </div>
+        `;
+    } catch (err) {
+        document.getElementById('lindy-result').innerHTML = `<span class="text-danger">${err.message}</span>`;
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

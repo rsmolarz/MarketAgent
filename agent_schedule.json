@@ -157,5 +157,10 @@
   "MergerArbitrageAgent": {"interval": 60, "enabled": true, "weight": 1.0, "reason": "event_driven"},
   "AlternativeDataAgent": {"interval": 60, "enabled": true, "weight": 1.0, "reason": "alt_data"},
   "AISemiconductorAgent": {"interval": 60, "enabled": true, "weight": 1.0, "reason": "thematic"},
-  "GeopoliticalRiskAgent_P3": {"interval": 60, "enabled": true, "weight": 1.0, "reason": "geopolitical"}
+  "GeopoliticalRiskAgent_P3": {"interval": 60, "enabled": true, "weight": 1.0, "reason": "geopolitical"},
+  "TalebFragilityAgent": {"interval": 60, "enabled": true, "weight": 1.0, "reason": "antifragile_board"},
+  "SpitznagelSafeHavenAgent": {"interval": 60, "enabled": true, "weight": 1.0, "reason": "antifragile_board"},
+  "SimonsPatternAgent": {"interval": 30, "enabled": true, "weight": 1.0, "reason": "antifragile_board"},
+  "AssnessFactorAgent": {"interval": 60, "enabled": true, "weight": 1.0, "reason": "antifragile_board"},
+  "AntifragileBoardAgent": {"interval": 120, "enabled": true, "weight": 1.0, "reason": "antifragile_board"}
 }

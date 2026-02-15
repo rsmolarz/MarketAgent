@@ -76,6 +76,31 @@ class Config:
                 "rsi_overbought": cls.RSI_OVERBOUGHT,
                 "vix_warning": cls.VIX_WARNING,
                 "vix_critical": cls.VIX_CRITICAL
-            }
+            },
+            "TalebFragilityAgent": {
+                "interval": 60,
+                "framework": "antifragile",
+                "focus": ["fragility", "black_swan", "lindy", "skin_in_game"],
+            },
+            "SpitznagelSafeHavenAgent": {
+                "interval": 60,
+                "framework": "antifragile",
+                "focus": ["drawdown", "geometric_returns", "convexity", "safe_haven"],
+            },
+            "SimonsPatternAgent": {
+                "interval": 30,
+                "framework": "antifragile",
+                "focus": ["mean_reversion", "autocorrelation", "regime_change", "patterns"],
+            },
+            "AssnessFactorAgent": {
+                "interval": 60,
+                "framework": "antifragile",
+                "focus": ["value", "momentum", "behavioral_bias", "factor_discipline"],
+            },
+            "AntifragileBoardAgent": {
+                "interval": 120,
+                "framework": "antifragile",
+                "focus": ["synthesis", "council_protocol", "barbell_strategy"],
+            },
         }
         return configs.get(agent_name, {"interval": cls.DEFAULT_AGENT_INTERVAL})

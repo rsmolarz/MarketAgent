@@ -52,19 +52,44 @@ AVAILABLE_AGENTS = [
     'DatedBasisAgent',
     'CodeGuardianAgent',
     'CTAFlowsAgent',
+    'TalebFragilityAgent',
+    'SpitznagelSafeHavenAgent',
+    'SimonsPatternAgent',
+    'AssnessFactorAgent',
+    'AntifragileBoardAgent',
 ]
+
+# Antifragile Board agents (loaded from antifragile module, not agents/)
+ANTIFRAGILE_AGENT_CLASSES = {
+    'TalebFragilityAgent': 'antifragile.agents',
+    'SpitznagelSafeHavenAgent': 'antifragile.agents',
+    'SimonsPatternAgent': 'antifragile.agents',
+    'AssnessFactorAgent': 'antifragile.agents',
+    'AntifragileBoardAgent': 'antifragile.agents',
+}
 
 
 def get_agent_class(agent_name: str) -> Optional[Type[BaseAgent]]:
     """
     Dynamically import and return an agent class by name
-    
+
     Args:
         agent_name: Name of the agent class
-        
+
     Returns:
         Agent class or None if not found
     """
+    # Check if this is an antifragile board agent first
+    if agent_name in ANTIFRAGILE_AGENT_CLASSES:
+        try:
+            module = importlib.import_module(ANTIFRAGILE_AGENT_CLASSES[agent_name])
+            agent_class = getattr(module, agent_name)
+            if issubclass(agent_class, BaseAgent):
+                return agent_class
+        except (ImportError, AttributeError) as e:
+            logger.error(f"Could not import antifragile agent {agent_name}: {e}")
+            return None
+
     try:
         # Convert agent name to module name (snake_case)
         module_name = ''.join([
