@@ -87,7 +87,7 @@ class SignalBundle(BaseModel):
     def max_conviction(self) -> float:
         if not self.signals:
             return 0.0
-        return max(s.conviction for s in self.signals, key=lambda s: abs(s.conviction))
+        return max((s.conviction for s in self.signals), key=lambda x: abs(x))
 
     def get_signals_for_ticker(self, ticker: str) -> List[Signal]:
         return [s for s in self.signals if s.ticker == ticker]
