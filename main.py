@@ -1,13 +1,14 @@
 """
-Main entry point. Ultra-lightweight WSGI app that responds to health checks
-instantly. The full Flask app loads lazily on the first real request.
+Ultra-minimal WSGI entry point for gunicorn.
+
+Health-check paths (including /) ALWAYS return 200 instantly, no matter what.
+The full Flask app is loaded lazily on the first non-health-check request.
+No background threads, no imports beyond stdlib at module level.
 """
 
 import os
 import sys
-import time
 import logging
-import threading
 
 if ('gunicorn' in os.environ.get('SERVER_SOFTWARE', '') or
     os.environ.get('REPLIT_DEPLOYMENT') == '1' or
@@ -19,99 +20,98 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s: %(message)s',
     handlers=[logging.StreamHandler()]
 )
-logger = logging.getLogger(__name__)
 
-_HEALTH_PATHS = frozenset(('/', '/healthz', '/health', '/ready', '/live', '/status'))
+_HEALTH = frozenset(('/', '/healthz', '/health', '/ready', '/live', '/status'))
 
-_LOADING_BODY = (
-    b"<!DOCTYPE html><html><head><title>Loading</title>"
-    b"<meta http-equiv='refresh' content='3'></head>"
-    b"<body style='background:#1a1a2e;color:#c9a84c;display:flex;"
-    b"align-items:center;justify-content:center;height:100vh;"
-    b"font-family:sans-serif'>"
-    b"<div style='text-align:center'>"
-    b"<h1>Market Inefficiency Agents</h1>"
-    b"<p>Platform is starting up&hellip; please wait.</p>"
-    b"</div></body></html>"
+_OK_BODY = b'OK'
+
+_LOADING = (
+    b'<!DOCTYPE html><html><head><title>Loading</title>'
+    b'<meta http-equiv="refresh" content="3"></head>'
+    b'<body style="background:#1a1a2e;color:#c9a84c;display:flex;'
+    b'align-items:center;justify-content:center;height:100vh;'
+    b'font-family:sans-serif"><div style="text-align:center">'
+    b'<h1>Market Inefficiency Agents</h1>'
+    b'<p>Platform is starting up, please wait...</p>'
+    b'</div></body></html>'
 )
 
 _flask_app = None
-_flask_lock = threading.Lock()
-_flask_loading = False
-_flask_ready = threading.Event()
 
 
-def _load_flask():
-    """Load Flask app in background thread."""
-    global _flask_app, _flask_loading
+def _get_flask():
+    """Load and cache the Flask application (called once, on first real request)."""
+    global _flask_app
+    if _flask_app is not None:
+        return _flask_app
     try:
-        logger.info("Background thread: importing Flask app...")
+        logging.getLogger(__name__).info("Loading Flask application...")
         from app import create_app
-        real = create_app()
-        if real is None:
-            raise RuntimeError("create_app() returned None")
-        with _flask_lock:
-            _flask_app = real
-        _flask_ready.set()
-        logger.info("Background thread: Flask app ready")
+        _flask_app = create_app()
+        logging.getLogger(__name__).info("Flask application loaded")
     except Exception:
-        logger.exception("Background thread: FAILED to load Flask app")
-        _flask_ready.set()
-    finally:
-        with _flask_lock:
-            _flask_loading = False
-
-
-def _ensure_loading():
-    """Start background loading if not already started."""
-    global _flask_loading
-    with _flask_lock:
-        if _flask_app is not None or _flask_loading:
-            return
-        _flask_loading = True
-    t = threading.Thread(target=_load_flask, daemon=True, name="flask-loader")
-    t.start()
+        logging.getLogger(__name__).exception("Failed to load Flask")
+    return _flask_app
 
 
 def app(environ, start_response):
-    """WSGI entry point. Returns instant health-check responses while Flask
-    loads in the background. Once loaded, delegates everything to Flask."""
-
-    _ensure_loading()
-
-    real = _flask_app
-    if real is not None:
-        return real(environ, start_response)
-
+    """WSGI callable – health checks are always instant."""
     path = environ.get('PATH_INFO', '/')
-    if path in _HEALTH_PATHS:
-        body = _LOADING_BODY
+
+    if path in _HEALTH:
+        flask = _flask_app
+        if flask is not None:
+            return flask(environ, start_response)
         start_response('200 OK', [
-            ('Content-Type', 'text/html; charset=utf-8'),
-            ('Content-Length', str(len(body))),
-            ('Cache-Control', 'no-cache'),
+            ('Content-Type', 'text/plain'),
+            ('Content-Length', '2'),
         ])
-        return [body]
+        return [_OK_BODY]
+
+    flask = _flask_app
+    if flask is None:
+        flask = _get_flask()
+
+    if flask is not None:
+        return flask(environ, start_response)
 
     start_response('503 Service Unavailable', [
-        ('Content-Type', 'text/plain'),
+        ('Content-Type', 'text/html; charset=utf-8'),
         ('Retry-After', '5'),
     ])
-    return [b'Service is starting, please retry shortly.']
+    return [_LOADING]
+
+
+def _background_load():
+    """Preload Flask in background so the first real request isn't slow."""
+    import threading
+
+    def _load():
+        import time
+        time.sleep(0.5)
+        _get_flask()
+
+    t = threading.Thread(target=_load, daemon=True, name='flask-preload')
+    t.start()
+
+
+_background_load()
 
 
 if __name__ == '__main__':
-    _ensure_loading()
-    _flask_ready.wait(timeout=60)
+    import time
+    time.sleep(2)
+    if _flask_app is None:
+        _get_flask()
+        time.sleep(3)
     if _flask_app:
         import socket
-        desired_port = int(os.environ.get('PORT', 5000))
+        port = int(os.environ.get('PORT', 5000))
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.bind(('0.0.0.0', desired_port))
-            port = desired_port
+                s.bind(('0.0.0.0', port))
         except OSError:
-            for p in range(desired_port + 1, desired_port + 100):
+            for p in range(port + 1, port + 100):
                 try:
                     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                         s.bind(('0.0.0.0', p))
@@ -119,11 +119,7 @@ if __name__ == '__main__':
                     break
                 except OSError:
                     continue
-            else:
-                raise RuntimeError("No free ports")
-        debug_mode = os.environ.get('DEPLOYMENT_ENV') != 'production'
-        print(f"Starting on http://0.0.0.0:{port}")
-        _flask_app.run(host='0.0.0.0', port=port, debug=debug_mode)
+        debug = os.environ.get('DEPLOYMENT_ENV') != 'production'
+        _flask_app.run(host='0.0.0.0', port=port, debug=debug)
     else:
-        print("ERROR: Flask application failed to load")
         sys.exit(1)
