@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Advisory Board — Market Inefficiency Platform</title>
+    <style>
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --bg-card: #1c2128;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --border-color: #30363d;
+            --accent: #58a6ff;
+            --accent-hover: #79c0ff;
+            --taleb-color: #D32F2F;
+            --spitznagel-color: #1565C0;
+            --simons-color: #2E7D32;
+            --asness-color: #6A1B9A;
+            --moderator-color: #FF8F00;
+            --success: #3fb950;
+            --warning: #d29922;
+            --danger: #f85149;
+            --shadow: 0 3px 12px rgba(0,0,0,0.4);
+            --radius: 10px;
+            --transition: all 0.25s ease;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                         'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ---- HEADER ---- */
+        .board-header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .board-header h1 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .board-header h1 .icon { font-size: 1.5rem; }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .back-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.85rem;
+            transition: var(--transition);
+        }
+        .back-link:hover { color: var(--accent); }
+
+        /* ---- LAYOUT ---- */
+        .board-layout {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* ---- SIDEBAR: Advisor Cards ---- */
+        .advisor-sidebar {
+            width: 280px;
+            min-width: 280px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .sidebar-title {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .advisor-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 14px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+        .advisor-card::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: var(--card-accent);
+        }
+        .advisor-card:hover {
+            border-color: var(--card-accent);
+            transform: translateX(3px);
+        }
+        .advisor-card.selected {
+            border-color: var(--card-accent);
+            background: rgba(255,255,255,0.04);
+        }
+
+        .advisor-card .name {
+            font-weight: 700;
+            font-size: 0.95rem;
+            margin-bottom: 4px;
+            padding-left: 10px;
+        }
+        .advisor-card .role {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            line-height: 1.3;
+            padding-left: 10px;
+        }
+        .advisor-card .expertise-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-top: 8px;
+            padding-left: 10px;
+        }
+        .expertise-tag {
+            font-size: 0.65rem;
+            background: rgba(255,255,255,0.06);
+            color: var(--text-secondary);
+            padding: 2px 7px;
+            border-radius: 20px;
+            white-space: nowrap;
+        }
+
+        .advisor-status {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            margin-top: 8px;
+            padding-left: 10px;
+            font-size: 0.72rem;
+        }
+        .advisor-status.active { display: flex; }
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* ---- MODE SELECTOR ---- */
+        .mode-selector {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            padding: 10px 24px;
+            display: flex;
+            gap: 8px;
+        }
+
+        .mode-btn {
+            padding: 8px 18px;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: var(--transition);
+            font-weight: 500;
+        }
+        .mode-btn:hover {
+            border-color: var(--accent);
+            color: var(--text-primary);
+        }
+        .mode-btn.active {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+            font-weight: 600;
+        }
+
+        /* ---- MAIN CONTENT ---- */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ---- CHAT AREA ---- */
+        .chat-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            scroll-behavior: smooth;
+        }
+
+        .welcome-message {
+            text-align: center;
+            padding: 60px 40px;
+            max-width: 700px;
+            margin: 0 auto;
+        }
+        .welcome-message h2 {
+            font-size: 1.6rem;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+        }
+        .welcome-message p {
+            color: var(--text-secondary);
+            line-height: 1.7;
+            margin-bottom: 20px;
+            font-size: 0.92rem;
+        }
+
+        .example-prompts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            max-width: 600px;
+            margin: 24px auto 0;
+        }
+        .example-prompt {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 14px;
+            cursor: pointer;
+            transition: var(--transition);
+            text-align: left;
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+        .example-prompt:hover {
+            border-color: var(--accent);
+            color: var(--text-primary);
+            transform: translateY(-2px);
+        }
+
+        /* ---- MESSAGE BUBBLES ---- */
+        .message {
+            margin-bottom: 20px;
+            max-width: 900px;
+        }
+        .message.user-message {
+            margin-left: auto;
+            max-width: 700px;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        .avatar {
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: #fff;
+            flex-shrink: 0;
+        }
+        .message-meta {
+            display: flex;
+            flex-direction: column;
+        }
+        .message-author {
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .message-role {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .message-body {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 18px;
+            line-height: 1.7;
+            font-size: 0.88rem;
+            position: relative;
+        }
+        .message-body::before {
+            content: '';
+            position: absolute;
+            left: 0; top: 0; bottom: 0;
+            width: 3px;
+            border-radius: 3px 0 0 3px;
+        }
+        .message.user-message .message-body {
+            background: rgba(88, 166, 255, 0.08);
+            border-color: rgba(88, 166, 255, 0.2);
+        }
+        .message.user-message .message-body::before { background: var(--accent); }
+
+        .message-body h2, .message-body h3 {
+            margin: 14px 0 6px;
+            font-size: 1rem;
+        }
+        .message-body h2:first-child, .message-body h3:first-child { margin-top: 0; }
+        .message-body p { margin-bottom: 10px; }
+        .message-body ul, .message-body ol {
+            margin: 8px 0;
+            padding-left: 24px;
+        }
+        .message-body li { margin-bottom: 4px; }
+        .message-body strong { color: var(--text-primary); }
+        .message-body code {
+            background: rgba(255,255,255,0.06);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.83rem;
+        }
+
+        /* Phase separator */
+        .phase-separator {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 24px 0;
+            color: var(--text-muted);
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+        }
+        .phase-separator::before,
+        .phase-separator::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border-color);
+        }
+
+        /* Typing indicator */
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 18px;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+        }
+        .typing-dots {
+            display: flex;
+            gap: 4px;
+        }
+        .typing-dots span {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            animation: typing 1.4s infinite;
+        }
+        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.3; }
+            30% { transform: translateY(-6px); opacity: 1; }
+        }
+
+        /* ---- SYNTHESIS BOX ---- */
+        .synthesis-box {
+            background: linear-gradient(135deg, rgba(255,143,0,0.08), rgba(255,143,0,0.02));
+            border: 1px solid rgba(255,143,0,0.25);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-top: 20px;
+        }
+        .synthesis-box .message-body { background: transparent; border: none; padding: 0; }
+        .synthesis-box .message-body::before { display: none; }
+
+        /* ---- INPUT AREA ---- */
+        .input-area {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            padding: 16px 24px;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 12px;
+            max-width: 900px;
+            margin: 0 auto;
+            align-items: flex-end;
+        }
+
+        .input-field {
+            flex: 1;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            padding: 14px 18px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            font-family: inherit;
+            resize: none;
+            min-height: 52px;
+            max-height: 200px;
+            line-height: 1.5;
+            transition: var(--transition);
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+        }
+        .input-field::placeholder { color: var(--text-muted); }
+
+        .submit-btn {
+            background: var(--accent);
+            color: #000;
+            border: none;
+            border-radius: var(--radius);
+            padding: 14px 24px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: var(--transition);
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .submit-btn:hover { background: var(--accent-hover); }
+        .submit-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .input-hint {
+            text-align: center;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+
+        /* ---- FRAMEWORK BADGE ---- */
+        .framework-badges {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+        .fw-badge {
+            font-size: 0.68rem;
+            padding: 3px 10px;
+            border-radius: 20px;
+            border: 1px solid;
+            font-weight: 500;
+        }
+        .fw-badge.barbell { color: var(--taleb-color); border-color: var(--taleb-color); }
+        .fw-badge.black-swan { color: var(--danger); border-color: var(--danger); }
+        .fw-badge.alpha { color: var(--simons-color); border-color: var(--simons-color); }
+        .fw-badge.convexity { color: var(--asness-color); border-color: var(--asness-color); }
+
+        /* ---- RESPONSIVE ---- */
+        @media (max-width: 900px) {
+            .advisor-sidebar { display: none; }
+            .example-prompts { grid-template-columns: 1fr; }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        /* Markdown rendering in message body */
+        .message-body table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 12px 0;
+            font-size: 0.82rem;
+        }
+        .message-body th, .message-body td {
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            text-align: left;
+        }
+        .message-body th {
+            background: var(--bg-tertiary);
+            font-weight: 600;
+        }
+        .message-body blockquote {
+            border-left: 3px solid var(--accent);
+            padding-left: 14px;
+            color: var(--text-secondary);
+            margin: 10px 0;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="board-header">
+    <h1>
+        <span class="icon">&#9878;</span>
+        AI Advisory Board
+    </h1>
+    <div class="header-actions">
+        <a href="/" class="back-link">&larr; Back to Dashboard</a>
+    </div>
+</div>
+
+<!-- LAYOUT -->
+<div class="board-layout">
+
+    <!-- SIDEBAR -->
+    <div class="advisor-sidebar">
+        <div class="sidebar-title">Board Members</div>
+
+        <div class="advisor-card" style="--card-accent: var(--taleb-color)"
+             data-advisor="taleb" onclick="selectAdvisor('taleb')">
+            <div class="name">Nassim N. Taleb</div>
+            <div class="role">Chief Risk Philosopher &amp; Antifragility Advisor</div>
+            <div class="expertise-tags">
+                <span class="expertise-tag">Antifragility</span>
+                <span class="expertise-tag">Black Swans</span>
+                <span class="expertise-tag">Optionality</span>
+            </div>
+            <div class="advisor-status" id="status-taleb">
+                <span class="status-dot"></span>
+                <span>Analyzing...</span>
+            </div>
+        </div>
+
+        <div class="advisor-card" style="--card-accent: var(--spitznagel-color)"
+             data-advisor="spitznagel" onclick="selectAdvisor('spitznagel')">
+            <div class="name">Mark Spitznagel</div>
+            <div class="role">Tail-Risk Hedging &amp; Capital Preservation</div>
+            <div class="expertise-tags">
+                <span class="expertise-tag">Safe Havens</span>
+                <span class="expertise-tag">Austrian Econ</span>
+                <span class="expertise-tag">Crash Protection</span>
+            </div>
+            <div class="advisor-status" id="status-spitznagel">
+                <span class="status-dot"></span>
+                <span>Analyzing...</span>
+            </div>
+        </div>
+
+        <div class="advisor-card" style="--card-accent: var(--simons-color)"
+             data-advisor="simons" onclick="selectAdvisor('simons')">
+            <div class="name">Jim Simons</div>
+            <div class="role">Quantitative Signal Extraction &amp; Systematic Alpha</div>
+            <div class="expertise-tags">
+                <span class="expertise-tag">Quant</span>
+                <span class="expertise-tag">Stat Arb</span>
+                <span class="expertise-tag">ML/Signals</span>
+            </div>
+            <div class="advisor-status" id="status-simons">
+                <span class="status-dot"></span>
+                <span>Analyzing...</span>
+            </div>
+        </div>
+
+        <div class="advisor-card" style="--card-accent: var(--asness-color)"
+             data-advisor="asness" onclick="selectAdvisor('asness')">
+            <div class="name">Cliff Asness</div>
+            <div class="role">Factor Investing &amp; Market Efficiency Arbiter</div>
+            <div class="expertise-tags">
+                <span class="expertise-tag">Factors</span>
+                <span class="expertise-tag">Value/Momentum</span>
+                <span class="expertise-tag">Empirical</span>
+            </div>
+            <div class="advisor-status" id="status-asness">
+                <span class="status-dot"></span>
+                <span>Analyzing...</span>
+            </div>
+        </div>
+
+        <div style="margin-top: 20px">
+            <div class="sidebar-title">Frameworks</div>
+            <div class="framework-badges">
+                <span class="fw-badge barbell">Barbell Strategy</span>
+                <span class="fw-badge black-swan">Black Swan Scan</span>
+                <span class="fw-badge alpha">Alpha Extraction</span>
+                <span class="fw-badge convexity">Convexity Map</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN -->
+    <div class="main-content">
+
+        <!-- MODE SELECTOR -->
+        <div class="mode-selector">
+            <button class="mode-btn active" data-mode="debate" onclick="setMode('debate')">
+                Full Board Debate
+            </button>
+            <button class="mode-btn" data-mode="panel" onclick="setMode('panel')">
+                Panel (No Debate)
+            </button>
+            <button class="mode-btn" data-mode="individual" onclick="setMode('individual')">
+                Single Advisor
+            </button>
+        </div>
+
+        <!-- CHAT -->
+        <div class="chat-area" id="chatArea">
+            <div class="welcome-message" id="welcomeMessage">
+                <h2>Welcome to the Advisory Board</h2>
+                <p>
+                    Submit a corporate strategy, investment thesis, or business decision
+                    for analysis by four world-class financial thinkers. Each advisor
+                    brings a radically different philosophical framework &mdash; from
+                    Taleb's antifragility to Simons' quantitative rigor.
+                </p>
+                <p style="font-size:0.82rem; color: var(--text-muted)">
+                    In <strong>Full Board Debate</strong> mode, advisors will analyze
+                    independently, cross-examine each other's positions, and a moderator
+                    will synthesize the final recommendation using the Barbell Strategy framework.
+                </p>
+                <div class="example-prompts">
+                    <div class="example-prompt" onclick="useExample(this)">
+                        We're considering acquiring a distressed competitor at 40 cents on the dollar.
+                        They have $200M in revenue but $150M in debt. Should we proceed?
+                    </div>
+                    <div class="example-prompt" onclick="useExample(this)">
+                        Our company wants to allocate 30% of cash reserves to Bitcoin as
+                        a treasury strategy. Current cash position is $500M.
+                    </div>
+                    <div class="example-prompt" onclick="useExample(this)">
+                        We're launching a new SaaS product line funded entirely by debt.
+                        Projected ROI is 25% but requires 18 months to break even.
+                    </div>
+                    <div class="example-prompt" onclick="useExample(this)">
+                        Should we expand into China given the current geopolitical climate?
+                        We have zero presence there but our competitors are growing 40% YoY.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- INPUT -->
+        <div class="input-area">
+            <div class="input-wrapper">
+                <textarea
+                    class="input-field"
+                    id="proposalInput"
+                    placeholder="Describe your corporate strategy, investment thesis, or business decision..."
+                    rows="2"
+                    onkeydown="handleKeydown(event)"
+                ></textarea>
+                <button class="submit-btn" id="submitBtn" onclick="submitProposal()">
+                    <span>Convene Board</span>
+                    <span>&#9654;</span>
+                </button>
+            </div>
+            <div class="input-hint">
+                Press <strong>Ctrl + Enter</strong> to submit &bull;
+                <span id="modeHint">Full Board Debate with cross-examination &amp; synthesis</span>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+// ---------- State ----------
+let currentMode = 'debate';
+let selectedAdvisor = null;
+let isProcessing = false;
+let sessionId = null;
+
+// ---------- Advisor Metadata ----------
+const ADVISOR_META = {
+    taleb:       { name: 'Nassim N. Taleb',   color: '#D32F2F', initials: 'NT' },
+    spitznagel:  { name: 'Mark Spitznagel',   color: '#1565C0', initials: 'MS' },
+    simons:      { name: 'Jim Simons',         color: '#2E7D32', initials: 'JS' },
+    asness:      { name: 'Cliff Asness',       color: '#6A1B9A', initials: 'CA' },
+    moderator:   { name: 'Board Moderator',    color: '#FF8F00', initials: 'BM' },
+    user:        { name: 'You',                color: '#58a6ff', initials: 'U'  },
+};
+
+// ---------- Mode Selector ----------
+function setMode(mode) {
+    currentMode = mode;
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector(`[data-mode="${mode}"]`).classList.add('active');
+
+    const hints = {
+        debate: 'Full Board Debate with cross-examination & synthesis',
+        panel: 'All advisors respond independently (no debate)',
+        individual: 'Single advisor responds (select from sidebar)',
+    };
+    document.getElementById('modeHint').textContent = hints[mode];
+
+    const btn = document.getElementById('submitBtn');
+    btn.querySelector('span:first-child').textContent =
+        mode === 'debate' ? 'Convene Board' :
+        mode === 'panel' ? 'Ask Panel' : 'Ask Advisor';
+}
+
+// ---------- Advisor Selection ----------
+function selectAdvisor(id) {
+    selectedAdvisor = id;
+    document.querySelectorAll('.advisor-card').forEach(c => c.classList.remove('selected'));
+    document.querySelector(`[data-advisor="${id}"]`).classList.add('selected');
+    if (currentMode !== 'individual') setMode('individual');
+}
+
+// ---------- Example Prompts ----------
+function useExample(el) {
+    document.getElementById('proposalInput').value = el.textContent.trim();
+    document.getElementById('proposalInput').focus();
+}
+
+// ---------- Keyboard ----------
+function handleKeydown(e) {
+    if (e.key === 'Enter' && e.ctrlKey) {
+        e.preventDefault();
+        submitProposal();
+    }
+}
+
+// ---------- Auto-resize textarea ----------
+const textarea = document.getElementById('proposalInput');
+textarea.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+});
+
+// ---------- Markdown Renderer (simple) ----------
+function renderMarkdown(text) {
+    if (!text) return '';
+    return text
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/^[-*] (.+)$/gm, '<li>$1</li>')
+        .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+        .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+        .replace(/\n{2,}/g, '</p><p>')
+        .replace(/\n/g, '<br>')
+        .replace(/^/, '<p>').replace(/$/, '</p>');
+}
+
+// ---------- DOM Helpers ----------
+function addMessage(advisorId, text, extraClass = '') {
+    const meta = ADVISOR_META[advisorId] || ADVISOR_META.moderator;
+    const chatArea = document.getElementById('chatArea');
+    const div = document.createElement('div');
+    div.className = `message ${extraClass}`;
+    div.innerHTML = `
+        <div class="message-header">
+            <div class="avatar" style="background:${meta.color}">${meta.initials}</div>
+            <div class="message-meta">
+                <span class="message-author">${meta.name}</span>
+                <span class="message-role">${advisorId !== 'user' ? (ADVISOR_META[advisorId]?.role || '') : ''}</span>
+            </div>
+        </div>
+        <div class="message-body" style="--msg-color:${meta.color}">
+            ${renderMarkdown(text)}
+        </div>
+    `;
+    div.querySelector('.message-body').style.setProperty('--before-bg', meta.color);
+    div.querySelector('.message-body').setAttribute('style',
+        `${div.querySelector('.message-body').getAttribute('style') || ''}`);
+
+    // set the left border color
+    const body = div.querySelector('.message-body');
+    const beforeStyle = document.createElement('style');
+    beforeStyle.textContent = `#msg-${Date.now()} .message-body::before { background: ${meta.color}; }`;
+    const uniqueId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
+    div.id = uniqueId;
+    const styleTag = document.createElement('style');
+    styleTag.textContent = `#${uniqueId} .message-body::before { background: ${meta.color}; }`;
+    document.head.appendChild(styleTag);
+
+    chatArea.appendChild(div);
+    chatArea.scrollTop = chatArea.scrollHeight;
+    return div;
+}
+
+function addPhaseSeparator(text) {
+    const chatArea = document.getElementById('chatArea');
+    const div = document.createElement('div');
+    div.className = 'phase-separator';
+    div.textContent = text;
+    chatArea.appendChild(div);
+    chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+function showTyping(advisorId) {
+    const meta = ADVISOR_META[advisorId] || ADVISOR_META.moderator;
+    const chatArea = document.getElementById('chatArea');
+    const div = document.createElement('div');
+    div.className = 'typing-indicator';
+    div.id = `typing-${advisorId}`;
+    div.innerHTML = `
+        <div class="avatar" style="background:${meta.color}; width:28px; height:28px; font-size:0.7rem">
+            ${meta.initials}
+        </div>
+        <span>${meta.name} is analyzing...</span>
+        <div class="typing-dots"><span></span><span></span><span></span></div>
+    `;
+    chatArea.appendChild(div);
+    chatArea.scrollTop = chatArea.scrollHeight;
+}
+
+function hideTyping(advisorId) {
+    const el = document.getElementById(`typing-${advisorId}`);
+    if (el) el.remove();
+}
+
+function setAdvisorActive(advisorId, active) {
+    const el = document.getElementById(`status-${advisorId}`);
+    if (el) el.classList.toggle('active', active);
+}
+
+function clearWelcome() {
+    const el = document.getElementById('welcomeMessage');
+    if (el) el.remove();
+}
+
+// ---------- Submit Proposal ----------
+async function submitProposal() {
+    if (isProcessing) return;
+
+    const input = document.getElementById('proposalInput');
+    const proposal = input.value.trim();
+    if (!proposal) return;
+
+    if (currentMode === 'individual' && !selectedAdvisor) {
+        alert('Please select an advisor from the sidebar first.');
+        return;
+    }
+
+    isProcessing = true;
+    document.getElementById('submitBtn').disabled = true;
+    clearWelcome();
+
+    // Show user message
+    addMessage('user', proposal, 'user-message');
+    input.value = '';
+    input.style.height = 'auto';
+
+    try {
+        if (currentMode === 'debate') {
+            await runDebate(proposal);
+        } else if (currentMode === 'panel') {
+            await runPanel(proposal);
+        } else {
+            await runIndividual(proposal);
+        }
+    } catch (err) {
+        addMessage('moderator', `Error: ${err.message}`, '');
+    }
+
+    isProcessing = false;
+    document.getElementById('submitBtn').disabled = false;
+}
+
+// ---------- Run Full Debate ----------
+async function runDebate(proposal) {
+    addPhaseSeparator('Phase 1 — Analytical Frameworks');
+    showTyping('moderator');
+
+    const res = await fetch('/api/advisory-board/debate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposal, include_frameworks: true }),
+    });
+    const data = await res.json();
+    hideTyping('moderator');
+
+    if (data.error) {
+        addMessage('moderator', `Error: ${data.error}`);
+        return;
+    }
+
+    // Show framework badges
+    if (data.frameworks) {
+        const fwNames = Object.keys(data.frameworks);
+        addMessage('moderator',
+            `Analytical frameworks applied: **${fwNames.join(', ')}**\n\n` +
+            `Barbell Strategy, Black Swan Risk Scan, Alpha Extraction, and Convexity Mapping ` +
+            `have been run against your proposal and provided as context to all advisors.`
+        );
+    }
+
+    // Show individual advisor responses
+    addPhaseSeparator('Phase 2 — Independent Analysis');
+    for (const [aid, resp] of Object.entries(data.advisor_responses || {})) {
+        if (resp.response) {
+            addMessage(aid, resp.response);
+        }
+    }
+
+    // Show cross-examination
+    if (data.cross_examination && Object.keys(data.cross_examination).length > 0) {
+        addPhaseSeparator('Phase 3 — Cross-Examination');
+        for (const [aid, text] of Object.entries(data.cross_examination)) {
+            addMessage(aid, text);
+        }
+    }
+
+    // Show synthesis
+    if (data.synthesis) {
+        addPhaseSeparator('Phase 4 — Board Synthesis');
+        addMessage('moderator', data.synthesis);
+    }
+}
+
+// ---------- Run Panel ----------
+async function runPanel(proposal) {
+    addPhaseSeparator('Panel Responses');
+
+    for (const aid of ['taleb', 'spitznagel', 'simons', 'asness']) {
+        setAdvisorActive(aid, true);
+    }
+
+    const res = await fetch('/api/advisory-board/panel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ proposal }),
+    });
+    const data = await res.json();
+
+    for (const aid of ['taleb', 'spitznagel', 'simons', 'asness']) {
+        setAdvisorActive(aid, false);
+    }
+
+    for (const [aid, resp] of Object.entries(data.responses || {})) {
+        if (resp.response) {
+            addMessage(aid, resp.response);
+        }
+    }
+}
+
+// ---------- Run Individual ----------
+async function runIndividual(proposal) {
+    showTyping(selectedAdvisor);
+    setAdvisorActive(selectedAdvisor, true);
+
+    const res = await fetch('/api/advisory-board/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ advisor_id: selectedAdvisor, proposal }),
+    });
+    const data = await res.json();
+
+    hideTyping(selectedAdvisor);
+    setAdvisorActive(selectedAdvisor, false);
+
+    if (data.error) {
+        addMessage('moderator', `Error: ${data.error}`);
+    } else {
+        addMessage(selectedAdvisor, data.response);
+    }
+}
+
+// ---------- Init ----------
+(async function init() {
+    try {
+        const res = await fetch('/api/advisory-board/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        sessionId = data.session_id;
+    } catch (e) {
+        console.warn('Could not create session:', e);
+    }
+})();
+</script>
+
+</body>
+</html>

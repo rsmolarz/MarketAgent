@@ -181,6 +181,7 @@ def create_app():
     from routes.deals import deals_bp
     from routes.distressed_platform import distressed_platform_bp
     from routes.monitoring import monitoring_bp
+    from routes.advisory_board import advisory_board_bp
     from replit_auth import make_replit_blueprint, init_auth
     from oauth_logins import oauth_bp
 
@@ -201,6 +202,7 @@ def create_app():
     app.register_blueprint(deals_bp)
     app.register_blueprint(distressed_platform_bp)
     app.register_blueprint(monitoring_bp)
+    app.register_blueprint(advisory_board_bp)
     app.register_blueprint(replit_bp, url_prefix='/auth')
     app.register_blueprint(oauth_bp)
 
