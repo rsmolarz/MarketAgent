@@ -92,12 +92,25 @@ def _apply_finding_council_migration(db):
 # ------------------------------------------------------------------------------
 # Flask App Factory
 # ------------------------------------------------------------------------------
+class HealthCheckMiddleware:
+    """WSGI middleware that intercepts health check requests at the lowest level.
+    Responds instantly before Flask routing, ensuring deployment health checks pass."""
+    def __init__(self, app):
+        self.app = app
+    def __call__(self, environ, start_response):
+        path = environ.get('PATH_INFO', '/')
+        if path in ('/healthz', '/health', '/ready', '/live'):
+            start_response('200 OK', [('Content-Type', 'text/plain')])
+            return [b'OK']
+        return self.app(environ, start_response)
+
+
 def create_app():
     app = Flask(__name__)
     app.secret_key = os.environ.get("SESSION_SECRET", "dev-secret")
 
     # Required for Replit / proxies
-    app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+    app.wsgi_app = HealthCheckMiddleware(ProxyFix(app.wsgi_app, x_proto=1, x_host=1))
 
     # ------------------------------------------------------------------------------
     # Database config

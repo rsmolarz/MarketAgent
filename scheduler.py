@@ -185,9 +185,7 @@ class AgentScheduler:
                 
         except Exception as e:
             logger.error(f"Error starting agent {agent_name}: {e}")
-            logger.warning(f"[CodeGuardian] Agent {agent_name} startup failed")
-            from services.startup_failure_tracker import track_startup_failure
-            track_startup_failure(agent_name, str(e), str(type(e).__name__))
+            
             return False
     
     def stop_agent(self, agent_name: str) -> bool:
