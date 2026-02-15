@@ -205,7 +205,8 @@ class DailyEmailService:
 
 def send_daily_emails():
     """Standalone function for scheduler to call"""
-    from app import app
+    from app import get_app
+    app = get_app()
     with app.app_context():
         service = DailyEmailService()
         service.send_daily_summary()

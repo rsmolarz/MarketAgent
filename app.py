@@ -268,14 +268,20 @@ def create_app():
     return app
 
 
-# ------------------------------------------------------------------------------
-# App instance
-# ------------------------------------------------------------------------------
-app = create_app()
+# Module-level app instance (used by scripts and services importing `from app import app`)
+app = None
+
+def get_app():
+    """Get or create the Flask app instance."""
+    global app
+    if app is None:
+        app = create_app()
+    return app
 
 # ------------------------------------------------------------------------------
 # Local run (Replit / dev)
 # ------------------------------------------------------------------------------
 if __name__ == "__main__":
+    app = create_app()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)

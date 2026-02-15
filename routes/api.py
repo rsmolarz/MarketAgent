@@ -1577,7 +1577,7 @@ def clear_agent_failures(agent_name):
 # ============================================================================
 # PHASE 1 FIX: System Ready Endpoint
 # ============================================================================
-@app.route('/api/system/ready', methods=['GET'])
+@api_bp.route('/api/system/ready', methods=['GET'])
 def system_ready():
     """Check if system is ready for agent queries
     
