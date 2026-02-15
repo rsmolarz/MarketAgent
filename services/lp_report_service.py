@@ -71,10 +71,12 @@ def format_lp_report(report: dict) -> tuple[str, str, str]:
     for name, a in sorted(agents.items(), key=lambda x: x[1].get("pnl_sum_bps", 0), reverse=True)[:10]:
         decision = a.get("decision", "HOLD")
         color = "#28a745" if decision == "PROMOTE" else ("#dc3545" if decision == "KILL" else "#6c757d")
+        hit_rate_str = f"{a.get('hit_rate', 0)*100:.0f}%"
+        error_rate_str = f"{a.get('error_rate', 0)*100:.1f}%"
         agent_rows.append(
             f"<tr>{td(name)}<td style='border:1px solid #ddd;padding:8px;color:{color}'>{decision}</td>"
-            f"{td(a.get('pnl_sum_bps', 0))}{td(f\"{a.get('hit_rate', 0)*100:.0f}%\")}"
-            f"{td(f\"{a.get('error_rate', 0)*100:.1f}%\")}{td(a.get('runs', 0))}</tr>"
+            f"{td(a.get('pnl_sum_bps', 0))}{td(hit_rate_str)}"
+            f"{td(error_rate_str)}{td(a.get('runs', 0))}</tr>"
         )
     
     html = f"""

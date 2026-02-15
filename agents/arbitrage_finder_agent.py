@@ -1,4 +1,4 @@
-n"""
+"""
 Arbitrage Finder Agent
 
 Detects arbitrage opportunities across cryptocurrency exchanges

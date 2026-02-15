@@ -712,3 +712,46 @@ class LLMCouncilResult(db.Model):
             "confidence": self.confidence,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class GovernorState(db.Model):
+    __tablename__ = "governor_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    drawdown_limit: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.03)
+    current_drawdown: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.0)
+    trades_allowed: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=True)
+    risk_level: Mapped[str | None] = mapped_column(String(16), nullable=True, default="low")
+    last_update: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            "status": self.status,
+            "drawdown_limit": self.drawdown_limit,
+            "current_drawdown": self.current_drawdown,
+            "trades_allowed": self.trades_allowed,
+            "risk_level": self.risk_level,
+            "last_update": self.last_update.isoformat() if self.last_update else None,
+        }
+
+
+class ICMemo(db.Model):
+    __tablename__ = "ic_memos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), nullable=False)
+    memo_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "symbol": self.symbol,
+            "memo_type": self.memo_type,
+            "content": self.content,
+            "confidence": self.confidence,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }

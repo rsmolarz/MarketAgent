@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, current_app
 from flask_login import current_user
-from models import Finding, AgentStatus, MarketData, db
+from models import Finding, AgentStatus, MarketData, GovernorState, ICMemo, db
 from datetime import datetime, timedelta
 import logging
 from functools import wraps
@@ -51,6 +51,59 @@ def api_health():
 def api_healthz():
     """Alternative health check endpoint"""
     return jsonify({'status': 'ok'}), 200
+
+
+@api_bp.route('/governor-state')
+def governor_state():
+    """Get the current governor state for the drawdown governor."""
+    try:
+        state = GovernorState.query.order_by(GovernorState.id.desc()).first()
+        if state:
+            return jsonify(state.to_dict()), 200
+
+        # Return sensible defaults if no state exists yet
+        return jsonify({
+            'status': 'active',
+            'drawdown_limit': 0.03,
+            'current_drawdown': 0.0,
+            'trades_allowed': True,
+            'risk_level': 'low',
+            'last_update': datetime.utcnow().isoformat(),
+        }), 200
+    except Exception as e:
+        logger.error(f"Error fetching governor state: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/ic-memo')
+def ic_memo():
+    """Get the latest IC memo."""
+    try:
+        memo = ICMemo.query.order_by(ICMemo.id.desc()).first()
+        if memo:
+            return jsonify({
+                'title': f'{memo.memo_type} - {memo.symbol}',
+                'thesis': memo.content or '',
+                'key_points': [],
+                'risk_factors': [],
+                'recommendation': 'hold',
+                'confidence': memo.confidence or 0.5,
+                'generated_at': memo.created_at.isoformat() if memo.created_at else None,
+            }), 200
+
+        # Return sensible defaults if no memo exists
+        return jsonify({
+            'title': 'No memo available',
+            'thesis': '',
+            'key_points': [],
+            'risk_factors': [],
+            'recommendation': 'watch',
+            'confidence': 0.5,
+            'generated_at': datetime.utcnow().isoformat(),
+        }), 200
+    except Exception as e:
+        logger.error(f"Error fetching IC memo: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 @api_bp.route('/findings', methods=['GET', 'POST'])
@@ -1590,18 +1643,18 @@ response_cache = {}
 CACHE_TTL_SECONDS = 60
 
 def cached_endpoint(ttl_seconds=CACHE_TTL_SECONDS):
-        """Decorator for caching endpoint responses"""""
-        def decorator(f):
-                    @wraps(f)
-                    def decorated_function(*args, **kwargs):
-                                    cache_key = f"endpoint_{f.__name__}_{str(request.args)}"
+    """Decorator for caching endpoint responses."""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            cache_key = f"endpoint_{f.__name__}_{str(request.args)}"
 
             # Check if cached response exists and is still valid
             if cache_key in response_cache:
-                                cached_data, timestamp = response_cache[cache_key]
-                                if (datetime.now() - timestamp).total_seconds() < ttl_seconds:
-                                                        logger.info(f"Cache hit for {f.__name__}")
-                                                        return cached_data
+                cached_data, timestamp = response_cache[cache_key]
+                if (datetime.now() - timestamp).total_seconds() < ttl_seconds:
+                    logger.info(f"Cache hit for {f.__name__}")
+                    return cached_data
 
             # Call the actual endpoint
             result = f(*args, **kwargs)
@@ -1614,95 +1667,108 @@ def cached_endpoint(ttl_seconds=CACHE_TTL_SECONDS):
         return decorated_function
     return decorator
 
+
 # Alert System for Agent Failures
 class AlertSystem:
-        """Handles alerts for critical system events"""""
+    """Handles alerts for critical system events."""
+
     def __init__(self):
-                self.alerts = []
-                self.alert_threshold = 3  # Alert if 3+ agents fail
+        self.alerts = []
+        self.alert_threshold = 3  # Alert if 3+ agents fail
 
     def check_agent_health(self, agent_count, running_count):
-                """Monitor agent health and trigger alerts"""""
-                if running_count < (agent_count * 0.85):  # Alert if < 85% running
-                                alert = {
-                                                    'timestamp': datetime.now().isoformat(),
-                                                    'type': 'AGENT_FAILURE',
-                                                    'severity': 'critical',
-                                                    'message': f'Only {running_count}/{agent_count} agents running',
-                                                    'status': 'ACTIVE'
-                                }
-                                self.alerts.append(alert)
-                                logger.error(f"⚠️ ALERT: {alert['message']}")
-                                return alert
-                            return None
+        """Monitor agent health and trigger alerts."""
+        if running_count < (agent_count * 0.85):  # Alert if < 85% running
+            alert = {
+                'timestamp': datetime.now().isoformat(),
+                'type': 'AGENT_FAILURE',
+                'severity': 'critical',
+                'message': f'Only {running_count}/{agent_count} agents running',
+                'status': 'ACTIVE'
+            }
+            self.alerts.append(alert)
+            logger.error(f"ALERT: {alert['message']}")
+            return alert
+        return None
 
     def check_endpoint_latency(self, endpoint, latency_ms):
-                """Monitor endpoint latency"""""
+        """Monitor endpoint latency."""
         if latency_ms > 500:  # Alert if > 500ms
-                        alert = {
-                                            'timestamp': datetime.now().isoformat(),
-                                            'type': 'HIGH_LATENCY',
-                                            'severity': 'warning',
-                                            'message': f'Endpoint {endpoint} latency: {latency_ms}ms',
-                                            'status': 'ACTIVE'
-                        }
-                        self.alerts.append(alert)
-                        return alert
-                    return None
+            alert = {
+                'timestamp': datetime.now().isoformat(),
+                'type': 'HIGH_LATENCY',
+                'severity': 'warning',
+                'message': f'Endpoint {endpoint} latency: {latency_ms}ms',
+                'status': 'ACTIVE'
+            }
+            self.alerts.append(alert)
+            return alert
+        return None
 
     def get_active_alerts(self):
-                """Return all active alerts"""""
+        """Return all active alerts."""
         return [a for a in self.alerts if a['status'] == 'ACTIVE']
+
 
 # Initialize Alert System
 alert_system = AlertSystem()
 
+
 # Enhanced Error Handler Wrapper
 def handle_endpoint_errors(f):
-        """Decorator for comprehensive error handling"""""
+    """Decorator for comprehensive error handling."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
-                try:
-                    start_time = datetime.now()
-                                result = f(*args, **kwargs)
+        try:
+            start_time = datetime.now()
+            result = f(*args, **kwargs)
             latency = (datetime.now() - start_time).total_seconds() * 1000
 
             # Check latency and alert if needed
             if latency > 500:
-                                alert_system.check_endpoint_latency(f.__name__, latency)
+                alert_system.check_endpoint_latency(f.__name__, latency)
 
             return result
-except KeyError as e:
+        except KeyError as e:
             logger.error(f"Missing required key in {f.__name__}: {str(e)}")
             return jsonify({'error': f'Missing data: {str(e)}'}), 400
         except ValueError as e:
             logger.error(f"Invalid value in {f.__name__}: {str(e)}")
             return jsonify({'error': f'Invalid input: {str(e)}'}), 422
-except Exception as e:
+        except Exception as e:
             logger.error(f"Unexpected error in {f.__name__}: {str(e)}")
             return jsonify({'error': 'Internal server error', 'details': str(e)}), 500
     return decorated_function
+
 
 # New Alerting Endpoint
 @api_bp.route('/alerts', methods=['GET'])
 @api_login_required
 def get_alerts():
-        """Get all active system alerts"""""
+    """Get all active system alerts."""
     try:
-                alerts = alert_system.get_active_alerts()
+        alerts = alert_system.get_active_alerts()
         return jsonify({
-                        'alerts': alerts,
-                        'count': len(alerts),
-                        'timestamp': datetime.now().isoformat()
+            'alerts': alerts,
+            'count': len(alerts),
+            'timestamp': datetime.now().isoformat()
         }), 200
-except Exception as e:
+    except Exception as e:
         logger.error(f"Error fetching alerts: {e}")
         return jsonify({'error': str(e)}), 500
 
+
 # System Health Endpoint with Rate Limiting
 @api_bp.route('/system/health', methods=['GET'])
-@l
-        })
-                        }
-                                }
-)
+@api_login_required
+def system_health():
+    """Get system health status."""
+    try:
+        return jsonify({
+            'status': 'healthy',
+            'alerts': len(alert_system.get_active_alerts()),
+            'timestamp': datetime.now().isoformat()
+        }), 200
+    except Exception as e:
+        logger.error(f"Error checking system health: {e}")
+        return jsonify({'error': str(e)}), 500
