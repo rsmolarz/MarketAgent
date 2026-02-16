@@ -704,7 +704,11 @@ class AmbiguityScorer:
     HEDGE_WORDS = [
         "may", "might", "could", "possibly", "potentially", "approximately",
         "generally", "typically", "substantially", "materially", "certain",
-        "reasonably", "largely", "somewhat", "partially", "subject to",
+        "reasonably", "largely", "somewhat", "partially",
+    ]
+
+    HEDGE_PHRASES = [
+        "subject to",
     ]
 
     WEASEL_PHRASES = [
@@ -740,8 +744,9 @@ class AmbiguityScorer:
         if word_count < 10:
             return {"score": 0, "warning": "text too short for reliable analysis"}
 
-        # Count hedge words
+        # Count hedge words (single words + multi-word phrases)
         hedge_count = sum(1 for w in words if w in cls.HEDGE_WORDS)
+        hedge_count += sum(1 for phrase in cls.HEDGE_PHRASES if phrase in text_lower)
         hedge_density = hedge_count / word_count
 
         # Count weasel phrases
@@ -768,6 +773,7 @@ class AmbiguityScorer:
         score = max(0, min(100, score))
 
         flagged_hedges = [w for w in words if w in cls.HEDGE_WORDS][:10]
+        flagged_hedges += [p for p in cls.HEDGE_PHRASES if p in text_lower]
         flagged_weasels = [p for p in cls.WEASEL_PHRASES if p in text_lower]
 
         if score >= 60:

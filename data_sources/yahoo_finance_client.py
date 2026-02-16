@@ -95,6 +95,10 @@ class YahooFinanceClient:
                 'volume': info.get('volume'),
                 'avg_volume': info.get('averageVolume'),
                 'pe_ratio': info.get('trailingPE'),
+                'pb_ratio': info.get('priceToBook'),
+                'dividend_yield': info.get('dividendYield'),
+                'fcf_yield': (info.get('freeCashflow') / info.get('marketCap'))
+                    if info.get('freeCashflow') and info.get('marketCap') else None,
                 '52_week_high': info.get('fiftyTwoWeekHigh'),
                 '52_week_low': info.get('fiftyTwoWeekLow'),
                 'sector': info.get('sector'),

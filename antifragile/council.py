@@ -56,72 +56,84 @@ def _get_llm_client():
 
 
 def _call_llm(system_prompt: str, user_message: str, temperature: float = 0.3) -> str:
-    """Call the available LLM with system and user prompts."""
-    provider, credentials = _get_llm_client()
+    """Call the available LLM with cascading fallback across providers."""
+    # Build ordered list of available providers
+    providers = []
 
-    if provider == "anthropic":
-        return _call_anthropic(system_prompt, user_message, credentials, temperature)
-    elif provider == "openai":
-        api_key, base_url = credentials
-        return _call_openai(system_prompt, user_message, api_key, base_url, temperature)
-    elif provider == "gemini":
-        return _call_gemini(system_prompt, user_message, credentials, temperature)
-    else:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if api_key:
+        providers.append(("anthropic", api_key))
+
+    api_key = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if api_key:
+        base_url = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
+        providers.append(("openai", (api_key, base_url)))
+
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    if api_key:
+        providers.append(("gemini", api_key))
+
+    if not providers:
         return "[LLM unavailable - no API keys configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GEMINI_API_KEY.]"
+
+    last_error = None
+    for provider, credentials in providers:
+        try:
+            if provider == "anthropic":
+                return _call_anthropic(system_prompt, user_message, credentials, temperature)
+            elif provider == "openai":
+                api_key, base_url = credentials
+                return _call_openai(system_prompt, user_message, api_key, base_url, temperature)
+            elif provider == "gemini":
+                return _call_gemini(system_prompt, user_message, credentials, temperature)
+        except Exception as e:
+            last_error = e
+            logger.warning(f"Provider {provider} failed, trying next: {e}")
+            continue
+
+    return f"[All LLM providers failed. Last error: {last_error}]"
 
 
 def _call_anthropic(system: str, user: str, api_key: str, temperature: float) -> str:
-    try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-        response = client.messages.create(
-            model=os.environ.get("ANTIFRAGILE_CLAUDE_MODEL", "claude-sonnet-4-20250514"),
-            max_tokens=2000,
-            temperature=temperature,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-        )
-        return response.content[0].text if response.content else ""
-    except Exception as e:
-        logger.error(f"Anthropic call failed: {e}")
-        return f"[Anthropic error: {e}]"
+    import anthropic
+    client = anthropic.Anthropic(api_key=api_key)
+    response = client.messages.create(
+        model=os.environ.get("ANTIFRAGILE_CLAUDE_MODEL", "claude-sonnet-4-20250514"),
+        max_tokens=2000,
+        temperature=temperature,
+        system=system,
+        messages=[{"role": "user", "content": user}],
+    )
+    return response.content[0].text if response.content else ""
 
 
 def _call_openai(system: str, user: str, api_key: str, base_url: Optional[str], temperature: float) -> str:
-    try:
-        from openai import OpenAI
-        kwargs = {"api_key": api_key}
-        if base_url:
-            kwargs["base_url"] = base_url
-        client = OpenAI(**kwargs)
-        response = client.chat.completions.create(
-            model=os.environ.get("ANTIFRAGILE_OPENAI_MODEL", "gpt-4o"),
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            max_tokens=2000,
-            temperature=temperature,
-        )
-        return response.choices[0].message.content or ""
-    except Exception as e:
-        logger.error(f"OpenAI call failed: {e}")
-        return f"[OpenAI error: {e}]"
+    from openai import OpenAI
+    kwargs = {"api_key": api_key}
+    if base_url:
+        kwargs["base_url"] = base_url
+    client = OpenAI(**kwargs)
+    response = client.chat.completions.create(
+        model=os.environ.get("ANTIFRAGILE_OPENAI_MODEL", "gpt-4o"),
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+        max_tokens=2000,
+        temperature=temperature,
+    )
+    return response.choices[0].message.content or ""
 
 
 def _call_gemini(system: str, user: str, api_key: str, temperature: float) -> str:
-    try:
-        from google import genai
-        client = genai.Client(api_key=api_key)
-        combined = f"SYSTEM:\n{system}\n\nUSER:\n{user}"
-        response = client.models.generate_content(
-            model=os.environ.get("ANTIFRAGILE_GEMINI_MODEL", "gemini-2.5-flash"),
-            contents=combined,
-        )
-        return response.text or ""
-    except Exception as e:
-        logger.error(f"Gemini call failed: {e}")
-        return f"[Gemini error: {e}]"
+    from google import genai
+    client = genai.Client(api_key=api_key)
+    combined = f"SYSTEM:\n{system}\n\nUSER:\n{user}"
+    response = client.models.generate_content(
+        model=os.environ.get("ANTIFRAGILE_GEMINI_MODEL", "gemini-2.0-flash"),
+        contents=combined,
+    )
+    return response.text or ""
 
 
 # ---------------------------------------------------------------------------

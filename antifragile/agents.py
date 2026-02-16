@@ -631,7 +631,9 @@ class AssnessFactorAgent(BaseAgent):
                 # Value analysis
                 value_result = self.factor_analyzer.value_score(
                     pe_ratio=info.get("pe_ratio"),
+                    pb_ratio=info.get("pb_ratio"),
                     dividend_yield=info.get("dividend_yield") if info.get("dividend_yield") else None,
+                    fcf_yield=info.get("fcf_yield"),
                 )
                 if "error" in value_result:
                     continue
@@ -763,12 +765,12 @@ class AssnessFactorAgent(BaseAgent):
                 ))
 
             # Check for momentum crash risk (extreme momentum = vulnerable)
-            mom_12m = float(spy_data["Close"].iloc[-1] / spy_data["Close"].iloc[0]) - 1
-            if mom_12m > 0.25:
+            mom_6m = float(spy_data["Close"].iloc[-1] / spy_data["Close"].iloc[0]) - 1
+            if mom_6m > 0.25:
                 findings.append(self.create_finding(
                     title="Behavioral Alert: Momentum Crash Risk Elevated",
                     description=(
-                        f"SPY 6-month momentum: {mom_12m*100:.1f}%. "
+                        f"SPY 6-month momentum: {mom_6m*100:.1f}%. "
                         "Extended momentum runs historically end with sharp reversals. "
                         "This is not a timing signal - but a discipline check. "
                         "Ensure positions are sized for a momentum crash scenario."
@@ -778,7 +780,7 @@ class AssnessFactorAgent(BaseAgent):
                     symbol="SPY",
                     market_type="equity",
                     metadata={
-                        "momentum_6m": mom_12m,
+                        "momentum_6m": mom_6m,
                         "framework": "asness",
                         "signal": "momentum_crash_risk",
                     },
